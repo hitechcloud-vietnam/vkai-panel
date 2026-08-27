@@ -40,6 +40,7 @@ type Router struct {
 	configHandler        *ConfigHandler
 	dockerHandler        *DockerHandler
 	apiKeyHandler        *APIKeyHandler
+	wafHandler           *WAFHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -75,6 +76,7 @@ func NewRouter(
 	configHandler *ConfigHandler,
 	dockerHandler *DockerHandler,
 	apiKeyHandler *APIKeyHandler,
+	wafHandler *WAFHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -112,6 +114,7 @@ func NewRouter(
 		configHandler:        configHandler,
 		dockerHandler:        dockerHandler,
 		apiKeyHandler:        apiKeyHandler,
+		wafHandler:           wafHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -611,6 +614,31 @@ func (r *Router) Setup() *gin.Engine {
 			apiKeys.GET("/:id", r.apiKeyHandler.Get)
 			apiKeys.PUT("/:id", r.apiKeyHandler.Update)
 			apiKeys.DELETE("/:id", r.apiKeyHandler.Delete)
+		}
+
+		// WAF (Web Application Firewall)
+		waf := protected.Group("/waf")
+		{
+			// Rules
+			waf.GET("/rules", r.wafHandler.ListRules)
+			waf.GET("/rules/:id", r.wafHandler.GetRule)
+			waf.POST("/rules", r.wafHandler.CreateRule)
+			waf.PUT("/rules/:id", r.wafHandler.UpdateRule)
+			waf.DELETE("/rules/:id", r.wafHandler.DeleteRule)
+			waf.POST("/rules/:id/toggle", r.wafHandler.ToggleRule)
+
+			// Policies
+			waf.GET("/policies", r.wafHandler.ListPolicies)
+			waf.GET("/policies/:id", r.wafHandler.GetPolicy)
+			waf.POST("/policies", r.wafHandler.CreatePolicy)
+			waf.PUT("/policies/:id", r.wafHandler.UpdatePolicy)
+			waf.DELETE("/policies/:id", r.wafHandler.DeletePolicy)
+
+			// Events
+			waf.GET("/events", r.wafHandler.ListEvents)
+
+			// Stats
+			waf.GET("/stats", r.wafHandler.GetStats)
 		}
 
 		// Config

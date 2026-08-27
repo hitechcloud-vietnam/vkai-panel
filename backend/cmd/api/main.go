@@ -193,6 +193,11 @@ func main() {
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, logger)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService, logger)
 
+	// Initialize WAF (Web Application Firewall)
+	wafRepo := repository.NewWAFRepository(db.DB)
+	wafService := service.NewWAFService(wafRepo)
+	wafHandler := handler.NewWAFHandler(wafService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -225,6 +230,7 @@ func main() {
 		configHandler,
 		dockerHandler,
 		apiKeyHandler,
+		wafHandler,
 		jwtManager,
 		logger,
 	)

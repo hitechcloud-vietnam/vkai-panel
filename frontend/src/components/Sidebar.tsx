@@ -110,6 +110,11 @@ const menuItems: MenuItem[] = [
     href: '/security',
   },
   {
+    label: 'WAF Pro',
+    icon: <Shield size={18} />,
+    href: '/waf',
+  },
+  {
     label: 'Backups',
     icon: <HardDrive size={18} />,
     href: '/backups',
