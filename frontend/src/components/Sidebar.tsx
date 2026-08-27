@@ -132,6 +132,11 @@ const menuItems: MenuItem[] = [
     href: '/mail-server',
   },
   {
+    label: 'File Protection',
+    icon: <Shield size={18} />,
+    href: '/file-protection',
+  },
+  {
     label: 'Backups',
     icon: <HardDrive size={18} />,
     href: '/backups',

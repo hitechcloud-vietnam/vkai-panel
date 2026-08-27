@@ -213,6 +213,11 @@ func main() {
 	mailServerService := service.NewMailServerService(mailServerRepo, logger)
 	mailServerHandler := handler.NewMailServerHandler(mailServerService, logger)
 
+	// Initialize File Protection
+	fileProtectionRepo := repository.NewFileProtectionRepository(db.DB, logger)
+	fileProtectionService := service.NewFileProtectionService(fileProtectionRepo, logger)
+	fileProtectionHandler := handler.NewFileProtectionHandler(fileProtectionService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -249,6 +254,7 @@ func main() {
 		websiteStatsHandler,
 		emailMarketingHandler,
 		mailServerHandler,
+		fileProtectionHandler,
 		jwtManager,
 		logger,
 	)

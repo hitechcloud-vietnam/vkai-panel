@@ -44,6 +44,7 @@ type Router struct {
 	websiteStatsHandler  *WebsiteStatsHandler
 	emailMarketingHandler *EmailMarketingHandler
 	mailServerHandler    *MailServerHandler
+	fileProtectionHandler *FileProtectionHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -83,6 +84,7 @@ func NewRouter(
 	websiteStatsHandler *WebsiteStatsHandler,
 	emailMarketingHandler *EmailMarketingHandler,
 	mailServerHandler *MailServerHandler,
+	fileProtectionHandler *FileProtectionHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -124,6 +126,7 @@ func NewRouter(
 		websiteStatsHandler:  websiteStatsHandler,
 		emailMarketingHandler: emailMarketingHandler,
 		mailServerHandler:    mailServerHandler,
+		fileProtectionHandler: fileProtectionHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -686,6 +689,30 @@ func (r *Router) Setup() *gin.Engine {
 			emailMarketing.GET("/templates", r.emailMarketingHandler.ListTemplates)
 			emailMarketing.POST("/templates", r.emailMarketingHandler.CreateTemplate)
 			emailMarketing.DELETE("/templates/:id", r.emailMarketingHandler.DeleteTemplate)
+		}
+
+		// File Protection
+		fileProtection := protected.Group("/file-protection")
+		{
+			fileProtection.GET("/stats", r.fileProtectionHandler.GetStats)
+
+			// Rules
+			fileProtection.GET("/rules", r.fileProtectionHandler.ListRules)
+			fileProtection.POST("/rules", r.fileProtectionHandler.CreateRule)
+			fileProtection.GET("/rules/:id", r.fileProtectionHandler.GetRule)
+			fileProtection.PUT("/rules/:id", r.fileProtectionHandler.UpdateRule)
+			fileProtection.DELETE("/rules/:id", r.fileProtectionHandler.DeleteRule)
+			fileProtection.POST("/rules/:id/toggle", r.fileProtectionHandler.ToggleRule)
+
+			// Events
+			fileProtection.GET("/events", r.fileProtectionHandler.ListEvents)
+			fileProtection.PUT("/events/:id/read", r.fileProtectionHandler.MarkEventRead)
+			fileProtection.PUT("/events/read-all", r.fileProtectionHandler.MarkAllEventsRead)
+
+			// Quarantine
+			fileProtection.GET("/quarantine", r.fileProtectionHandler.ListQuarantine)
+			fileProtection.POST("/quarantine/:id/restore", r.fileProtectionHandler.RestoreQuarantine)
+			fileProtection.DELETE("/quarantine/:id", r.fileProtectionHandler.DeleteQuarantine)
 		}
 
 		// Mail Server
