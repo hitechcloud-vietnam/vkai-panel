@@ -139,6 +139,24 @@ previous_release() {
 # =============================================================================
 # Release package validation
 # =============================================================================
+# validate_package rejects anything the CI deploy user should not be able to hand
+# to a root-owned script. The deploy user may write into /tmp, so the argument is
+# attacker-controlled from this script's point of view even though CI produced it.
+validate_package() {
+    local pkg="$1"
+
+    [[ "$pkg" =~ ^/tmp/vkai-panel-[0-9a-f]{7,40}\.tar\.gz$ ]] \
+        || die "Refusing package ${pkg}: expected /tmp/vkai-panel-<sha>.tar.gz"
+    [[ -f "$pkg" ]] || die "Package not found: ${pkg}"
+    [[ -L "$pkg" ]] && die "Refusing package ${pkg}: it is a symlink"
+
+    # An archive member starting with / or containing .. escapes the release
+    # directory when extracted as root. tar would happily follow it.
+    local bad
+    bad="$(tar -tzf "$pkg" | grep -E '^/|(^|/)\.\.(/|$)' | head -n5 || true)"
+    [[ -z "$bad" ]] || die "Refusing package ${pkg}: unsafe member paths:"$'\n'"${bad}"
+}
+
 validate_release() {
     local dir="$1"
     [[ -d "$dir" ]] || die "Release directory not found: ${dir}"
@@ -227,6 +245,10 @@ run_migrations() {
 # Switching releases and health checking
 # =============================================================================
 restart_services() {
+    if ! systemctl list-unit-files "${SVC_API}.service" --no-legend | grep -q .; then
+        die "${SVC_API}.service does not exist. This host has never been installed;
+run deploy/install.sh once before deploying releases to it."
+    fi
     log "Restarting the services..."
     systemctl daemon-reload
     systemctl restart "$SVC_API"
@@ -278,6 +300,13 @@ health_check() {
 deploy_release() {
     local file="${1:-}"
     [[ -n "$file" ]] || die "No release package given. Usage: $0 deploy <file.tar.gz>"
+
+    # Only enforced for the unattended CI path, where the caller is the deploy
+    # user and the argument reaches a root-owned script through sudo. An operator
+    # running this by hand is already root and can pass any path they like.
+    if [[ "${VKAI_DEPLOY_STRICT:-auto}" != "off" && "$file" == /tmp/* ]]; then
+        validate_package "$file"
+    fi
     [[ -f "$file" ]] || die "Release package not found: ${file}"
 
     create_directories
@@ -290,7 +319,7 @@ deploy_release() {
 
     log "Unpacking ${file} -> ${dir}"
     install -d -o "$VKAI_USER" -g "$VKAI_GROUP" -m 750 "$dir"
-    tar -xzf "$file" -C "$dir"
+    tar -xzf "$file" -C "$dir" --no-same-owner --no-same-permissions
 
     validate_release "$dir"
     link_shared_state "$dir"

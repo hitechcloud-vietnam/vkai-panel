@@ -223,14 +223,20 @@ jobs:
           host: ${{ secrets.STAGING_HOST }}
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
+          # The deploy user is granted exactly one privileged command:
+          # /vkai-panel/bin/vkai-deploy, installed root-owned by install.sh.
+          # Extracting the script from the uploaded package and running it with
+          # `sudo bash` would be equivalent to unrestricted root, because the
+          # deploy user controls that file's contents.
           script: |
             set -euo pipefail
             PKG=/tmp/vkai-panel-${{ github.sha }}.tar.gz
-            WORK=$(mktemp -d)
-            trap 'rm -rf "$WORK"' EXIT
-            tar -xzf "$PKG" -C "$WORK" ./deploy/scripts/deploy.sh
-            sudo bash "$WORK/deploy/scripts/deploy.sh" deploy "$PKG"
-            echo "Staging deployment successful!"
+            test -x /vkai-panel/bin/vkai-deploy || {
+              echo "::error::/vkai-panel/bin/vkai-deploy is missing. Run deploy/install.sh on this host first."
+              exit 1
+            }
+            sudo -n /vkai-panel/bin/vkai-deploy deploy "$PKG"
+            echo "Staging deployment successful."
 
   deploy-production:
     name: Deploy to Production
@@ -279,8 +285,7 @@ jobs:
             PKG=/tmp/vkai-panel-${{ github.sha }}.tar.gz
             WORK=$(mktemp -d)
             trap 'rm -rf "$WORK"' EXIT
-            tar -xzf "$PKG" -C "$WORK" ./deploy/scripts/deploy.sh
-            sudo bash "$WORK/deploy/scripts/deploy.sh" deploy "$PKG"
+            sudo -n /vkai-panel/bin/vkai-deploy deploy "$PKG"
             echo "Production deployment successful!"
 
       # NOTE: creating the GitHub Release is release.yml's job exclusively.
