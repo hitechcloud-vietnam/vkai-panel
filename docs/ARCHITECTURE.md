@@ -27,6 +27,24 @@ VKAI Panel is an enterprise-grade multi-server hosting control panel designed fo
 4. **Performance**: Optimized for high concurrency
 5. **Reliability**: Fault tolerance and recovery
 6. **Maintainability**: Clean code and documentation
+7. **Bare-metal runtime**: the panel itself ships as native Linux processes -- a
+   Go binary and a Next.js standalone build supervised by systemd. No container
+   runtime is involved in running, building or installing the panel.
+
+### Two Different Meanings of "Docker"
+
+This distinction matters throughout the document, so it is stated once here.
+
+| | Docker as panel infrastructure | Docker as a customer-facing feature |
+|---|---|---|
+| Status | **Removed** | **Kept, fully supported** |
+| What it was / is | `Dockerfile`, `docker-compose.yml` used to build and run the panel | The Docker screen, `/api/v1/docker/*`, `docker:*` RBAC permissions |
+| Replaced by | `deploy/install.sh` + systemd units | Nothing -- it remains a first-class feature |
+| Docker Engine required on the panel host? | No | Only if the customer wants to use the feature |
+
+The panel **does not run inside Docker**; the panel **manages Docker** on behalf
+of its users. Removing the container-based deployment path did not remove any
+container-management functionality.
 
 ---
 
@@ -660,22 +678,106 @@ WantedBy=multi-user.target
 ```ini
 # /etc/systemd/system/vkai-ui.service
 [Unit]
-Description=VKAI Panel UI
-After=network.target vkai-api.service
+Description=VKAI Panel UI (Next.js standalone)
+After=network-online.target vkai-api.service
 
 [Service]
 Type=simple
 User=vkai
 Group=vkai
 WorkingDirectory=/vkai-panel/panel
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
 EnvironmentFile=/vkai-panel/etc/.env
-ExecStart=/usr/bin/npm run start
-Restart=always
+ExecStart=/usr/bin/node /vkai-panel/panel/.next/standalone/server.js
+Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+The UI is served from the Next.js **standalone** output, started directly by
+`node`. The build step must copy `.next/static` and `public/` into
+`.next/standalone`; without them the page renders but every `/_next/static/*.js`
+returns 404 and the browser shows *"Application error: a client-side exception
+has occurred"*.
+
+The authoritative unit files live in `deploy/systemd/`. All three carry systemd
+hardening (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
+`PrivateTmp`, and a narrow `ReadWritePaths` allow-list).
+
+### Release Layout and Rollback
+
+Deployments are directory-based. Each release is unpacked into its own versioned
+directory under `/vkai-panel/releases/`, and the `current` symlink names the
+release that is live. Switching releases is repointing that symlink and
+restarting the units; rolling back is repointing it the other way.
+
+```
+/vkai-panel/
+├── releases/
+│   ├── 20250315_101500/                    # previous release, kept for rollback
+│   │   ├── core/bin/vkai-api
+│   │   ├── core/migrations/*.sql
+│   │   ├── panel/.next/standalone/server.js
+│   │   └── agent/bin/vkai-agent
+│   └── 20250316_143000/                    # newly deployed release
+├── current -> releases/20250316_143000     # the active release
+├── etc/                                    # .env, panel_access.json  -- shared
+├── logs/                                   # shared
+├── www/                                    # customer sites, backups -- shared
+└── ssl/                                    # shared
+```
+
+Only the code is versioned. `etc/`, `logs/`, `www/` and `ssl/` are **shared
+state**: they live outside every release, so a deploy never overwrites them and a
+rollback never reverts them. `deploy.sh` links `/vkai-panel/etc/.env` into each
+release tree, because Next.js only reads `.env` from a project root.
+
+The systemd units start the panel from `/vkai-panel/core` and
+`/vkai-panel/panel`. Those paths must resolve to the release that `current`
+points at -- otherwise switching the symlink has no effect on what actually runs.
+
+`deploy/scripts/deploy.sh` owns the lifecycle:
+
+1. Unpack the package into a new `releases/<timestamp>/` directory.
+2. **Validate** it -- API binary present and executable, `server.js` present, and
+   `.next/standalone/.next/static` present -- before touching the running system.
+3. Dump the database to `www/backup/predeploy_<timestamp>.sql.gz`.
+4. Apply pending migrations **from the new release, before the switch**, so a
+   failing migration aborts while the old release is still serving.
+5. Repoint `current` and restart `vkai-api`, `vkai-ui` (and `vkai-agent` if
+   enabled), then reload nginx.
+6. Health-check both the API (`/health`) and the UI, retrying for about 30s.
+7. On failure, **switch back to the previous release automatically** and
+   health-check again.
+8. Keep the active release plus the five most recent older ones; delete the rest.
+
+Rollback restores **code only**. Database migrations are never reversed, which is
+why the pre-deploy dump in step 3 is the real recovery path for a bad migration.
+
+### nginx
+
+nginx terminates the panel port and proxies to the two loopback services. The
+vhost is installed as `/etc/nginx/conf.d/vkai-panel.conf` from
+`deploy/nginx/vkai-panel.conf`:
+
+```nginx
+upstream vkai_ui  { server 127.0.0.1:3000;  keepalive 32; }
+upstream vkai_api { server 127.0.0.1:30110; keepalive 32; }
+
+server {
+    listen 8888;              # VKAI_PANEL_PORT -- never 80 or 443
+    listen [::]:8888;
+    ...
+}
+```
+
+This file contains no `listen 80` and no `listen 443`, by design: those ports
+belong to customer vhosts, which nginx serves from entirely separate server
+blocks. The panel port is a separate listener on the same nginx instance.
 
 ---
 

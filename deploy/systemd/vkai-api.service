@@ -1,6 +1,12 @@
 # =============================================================================
 # VKAI Panel - API (Go)  |  HiTechCloud (hitechcloud.vn)
-# Cai dat: /etc/systemd/system/vkai-api.service
+# Installed as: /etc/systemd/system/vkai-api.service
+#
+# A native Go binary, NOT a container.
+# Every path goes through the symlink /vkai-panel/current -> running release:
+#   - deploy/install.sh points current at /vkai-panel (built in place)
+#   - deploy/scripts/deploy.sh points current at /vkai-panel/releases/<version>
+# Switching release = move the symlink + "systemctl restart vkai-api".
 # =============================================================================
 [Unit]
 Description=VKAI Panel API (core)
@@ -12,8 +18,8 @@ Wants=network-online.target postgresql.service
 Type=simple
 User=vkai
 Group=vkai
-WorkingDirectory=/vkai-panel/core
-ExecStart=/vkai-panel/core/bin/vkai-api
+WorkingDirectory=/vkai-panel/current/core
+ExecStart=/vkai-panel/current/core/bin/vkai-api
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -22,18 +28,19 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vkai-api
 
-# --- Cong truy cap panel -----------------------------------------------------
-# Panel nghe tren CONG RIENG. 80/443 danh cho website cua khach nen khong bao
-# gio duoc dat o day. Cac dong Environment= la GIA TRI MAC DINH: chung duoc
-# khai bao TRUOC EnvironmentFile nen bat cu gia tri nao trong .env deu thang.
+# --- Panel access ------------------------------------------------------------
+# The API binds LOOPBACK ONLY; nginx owns the public panel port and forwards to
+# it. 80/443 belong to the customer websites and must never appear here. These
+# Environment= lines are DEFAULTS: they are declared BEFORE EnvironmentFile, so
+# anything set in .env wins.
 Environment=VKAI_PANEL_ENABLED=true
 Environment=VKAI_PANEL_BIND=127.0.0.1
-Environment=VKAI_PANEL_PORT=8888
+Environment=VKAI_PANEL_PORT=30110
 Environment=VKAI_PANEL_ENTRANCE_ENABLED=true
 Environment=VKAI_PANEL_CONFIG_FILE=/vkai-panel/etc/panel_access.json
 EnvironmentFile=/vkai-panel/etc/.env
 
-# --- Gia co bao mat ----------------------------------------------------------
+# --- Hardening ---------------------------------------------------------------
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -43,20 +50,21 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-# Chi nhung thu muc panel THUC SU ghi vao moi duoc mo. /vkai-panel/core khong
-# nam trong danh sach: binary chi can doc.
+# Only the directories the panel really writes to are opened. The release tree
+# (/vkai-panel/current/...) is not among them: the binary only reads it.
+# Every path below lives OUTSIDE the release, so it survives each deployment.
 ReadWritePaths=/vkai-panel/etc
 ReadWritePaths=/vkai-panel/www
 ReadWritePaths=/vkai-panel/logs
 ReadWritePaths=/vkai-panel/ssl
 ReadWritePaths=/vkai-panel/tmp
-# Panel quan ly web server va chung chi cua khach.
+# The panel manages the web server and the customer certificates.
 ReadWritePaths=-/etc/nginx
 ReadWritePaths=-/etc/apache2
 ReadWritePaths=-/etc/httpd
 ReadWritePaths=-/etc/letsencrypt
 
-# --- Gioi han tai nguyen -----------------------------------------------------
+# --- Resource limits ---------------------------------------------------------
 LimitNOFILE=65536
 LimitNPROC=4096
 

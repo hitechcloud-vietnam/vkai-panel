@@ -16,7 +16,7 @@ Mục lục:
 - [Ràng buộc theo tên miền](#ràng-buộc-theo-tên-miền)
 - [Bật TLS cho panel](#bật-tls-cho-panel)
 - [Chạy sau reverse proxy](#chạy-sau-reverse-proxy)
-- [Docker](#docker)
+- [Cổng nội bộ và systemd](#cổng-nội-bộ-và-systemd)
 - [Toàn bộ biến môi trường](#toàn-bộ-biến-môi-trường)
 - [Khắc phục sự cố](#khắc-phục-sự-cố)
 
@@ -51,7 +51,8 @@ Mọi trường hợp bị chặn đều nhận **404 trung tính** giống hệ
 không chuyển hướng, không gợi ý, không lộ dấu vết là có panel ở đây.
 
 Ngoại lệ duy nhất: `/api/v1/health`, `/health`, `/ready`, `/live` luôn trả lời
-để healthcheck của Docker/Kubernetes hoạt động mà không cần biết lối vào.
+để trình giám sát và script kiểm tra sức khoẻ hoạt động được mà không cần biết
+lối vào an toàn.
 
 ---
 
@@ -320,36 +321,51 @@ IP ở tầng nginx, và location cho lối vào an toàn.
 
 ---
 
-## Docker
+## Cổng nội bộ và systemd
 
-`docker-compose.yml` chỉ publish **một** cổng cho panel:
+Panel chạy trần trên máy: các tiến trình do systemd quản lý, không có container
+nào tham gia. Chỉ **một** cổng được mở ra ngoài.
 
-```yaml
-nginx:
-  ports:
-    - "${VKAI_PANEL_PORT:-8888}:8888"   # KHÔNG map 80/443
-```
+| Thành phần | Unit | Địa chỉ lắng nghe | Mở ra Internet |
+|---|---|---|---|
+| nginx (vhost panel) | `nginx` | `0.0.0.0:8888` (`VKAI_PANEL_PORT`) | Có — cổng duy nhất |
+| API | `vkai-api` | `127.0.0.1:30110` | Không |
+| Giao diện | `vkai-ui` | `127.0.0.1:3000` | Không |
+| Agent | `vkai-agent` | `127.0.0.1:30111` | Không |
+| PostgreSQL | `postgresql` | `127.0.0.1:5432` | Không |
+| Redis | `redis-server` | `127.0.0.1:6379` | Không |
 
-Các cổng khác (`3000`, `30110`, `30111`, `5432`, `6379`) chỉ nghe `127.0.0.1`
-hoặc chỉ nằm trong mạng nội bộ của compose.
+`3000`, `30110`, `30111`, `5432`, `6379` chỉ nghe loopback. Không mở chúng trên
+tường lửa; mọi truy cập từ ngoài phải đi qua nginx trên cổng panel.
 
-Các service trong `docker-compose.yml`: `vkai-core` (API), `vkai-ui` (giao diện),
-`vkai-agent`, `nginx`, `postgres`, `redis`.
+Đổi cổng panel rồi khởi động lại:
 
 ```bash
-# Đổi cổng panel
-VKAI_PANEL_PORT=9001 docker compose up -d
-
-# Xem thông tin truy cập (lối vào sinh tự động)
-docker compose logs vkai-core | grep -A20 "THONG TIN TRUY CAP"
-docker compose exec vkai-core vkai-panelctl panel info
+sudo vkai port 9001          # cập nhật .env, nginx, tường lửa, SELinux
+sudo systemctl restart vkai-api vkai-ui
+sudo systemctl reload nginx
 ```
 
-Lối vào sinh tự động được lưu trong thư mục cấu hình gắn từ máy chủ
-(`${VKAI_PANEL_ROOT:-/vkai-panel}/etc`) nên vẫn giữ nguyên sau khi build lại image.
+Xem thông tin truy cập (lối vào sinh tự động):
 
-**Website của khách** phải chạy ở stack/nginx riêng giữ 80/443 — không thêm hai
-cổng đó vào service nginx của panel.
+```bash
+vkai info
+vkai-panelctl panel info
+sudo journalctl -u vkai-api | grep -A20 "THONG TIN TRUY CAP"
+```
+
+Lối vào sinh tự động được lưu trong `/vkai-panel/etc/panel_access.json` (quyền
+`0600`) nên **vẫn giữ nguyên** sau khi build lại hay triển khai bản phát hành
+mới — thư mục `etc/` không nằm trong gói release.
+
+**Website của khách** dùng các server block riêng của nginx giữ 80/443. Vhost
+panel (`/etc/nginx/conf.d/vkai-panel.conf`) không chứa `listen 80` hay
+`listen 443`, và không được phép chứa.
+
+> Lưu ý: panel **không** chạy trong Docker. Docker trong VKAI Panel là **tính
+> năng** để khách quản lý container của họ — xem màn hình Docker và
+> `/api/v1/docker/*`. Nếu khách bật tính năng đó, container của họ hoàn toàn
+> tách biệt với các tiến trình của panel và không liên quan tới cổng panel.
 
 ---
 

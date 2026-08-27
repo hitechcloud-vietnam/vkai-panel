@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# VKAI Panel - lop tuong thich cho duong dan cu "scripts/install.sh"
+# VKAI Panel - compatibility shim for the old path "scripts/install.sh"
 # HiTechCloud (hitechcloud.vn)
 #
-# Bo cai dat THAT nam o deploy/install.sh. Truoc day co hai ban cai song song
-# (scripts/install.sh va deploy/install.sh) voi duong dan, ten dich vu va cach
-# sinh bi mat khac nhau - chay nham ban se ra mot he thong khong khop voi tai
-# lieu. Nay chi con MOT ban; file nay chuyen tiep moi tham so sang do.
+# The real installer lives at deploy/install.sh. There used to be two parallel
+# installers (scripts/install.sh and deploy/install.sh) with different paths,
+# service names and secret generation - running the wrong one produced a system
+# that did not match the documentation. There is only one now; this file
+# forwards every argument to it.
 #
-#   bash scripts/install.sh --port 8888 --yes
-# tuong duong
-#   bash deploy/install.sh --port 8888 --yes
+#   bash scripts/install.sh --port 8888
+# is the same as
+#   bash deploy/install.sh --port 8888
 # =============================================================================
 
 set -Eeuo pipefail
@@ -20,12 +21,12 @@ readonly REPO_ROOT
 readonly INSTALLER="${REPO_ROOT}/deploy/install.sh"
 
 if [[ ! -f "$INSTALLER" ]]; then
-    echo "LOI: khong tim thay bo cai ${INSTALLER}" >&2
-    echo "Hay chay script nay tu trong ma nguon VKAI Panel da giai nen day du." >&2
+    echo "ERROR: installer not found at ${INSTALLER}" >&2
+    echo "Run this script from a complete, unpacked VKAI Panel source tree." >&2
     exit 1
 fi
 
-echo "==> scripts/install.sh chi la loi tat. Dang chay: deploy/install.sh $*"
+echo "==> scripts/install.sh is only a shortcut. Running: deploy/install.sh $*"
 echo
 
 exec bash "$INSTALLER" "$@"

@@ -1,0 +1,24 @@
+# =============================================================================
+# VKAI Panel - certificate renewal timer  |  HiTechCloud (hitechcloud.vn)
+# Installed as: /etc/systemd/system/vkai-cert-renew.timer
+#
+# Twice a day, with a random delay so that a fleet of panels does not hit the
+# ACME endpoint at the same second. An IP certificate lasts about six days, so
+# the renewal window is measured in hours, not weeks.
+# =============================================================================
+[Unit]
+Description=Renew the VKAI Panel certificate twice a day
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+
+[Timer]
+OnCalendar=*-*-* 03,15:00:00
+RandomizedDelaySec=3600
+# Catch up after the machine was switched off over a renewal window.
+Persistent=true
+# The first run happens shortly after boot as well, which matters on a machine
+# that was suspended for longer than the certificate lifetime.
+OnBootSec=15min
+Unit=vkai-cert-renew.service
+
+[Install]
+WantedBy=timers.target

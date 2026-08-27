@@ -1,9 +1,13 @@
 # =============================================================================
 # VKAI Panel - node agent  |  HiTechCloud (hitechcloud.vn)
-# Cai dat: /etc/systemd/system/vkai-agent.service
+# Installed as: /etc/systemd/system/vkai-agent.service
 #
-# Agent thu thap so lieu he thong va thuc thi thao tac cap may chu, nen chay
-# bang root. Day la dich vu TUY CHON: bat bang "systemctl enable --now vkai-agent".
+# The agent collects system metrics and performs host level operations, which is
+# why it runs as root. It is OPTIONAL: enable it with
+# "systemctl enable --now vkai-agent".
+#
+# A native Go binary, NOT a container. Every path goes through the symlink
+# /vkai-panel/current -> running release.
 # =============================================================================
 [Unit]
 Description=VKAI Panel node agent
@@ -15,8 +19,8 @@ Wants=network-online.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=/vkai-panel/agent
-ExecStart=/vkai-panel/agent/bin/vkai-agent
+WorkingDirectory=/vkai-panel/current/agent
+ExecStart=/vkai-panel/current/agent/bin/vkai-agent
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=30
@@ -26,9 +30,9 @@ SyslogIdentifier=vkai-agent
 
 EnvironmentFile=/vkai-panel/etc/.env
 
-# --- Gia co bao mat ----------------------------------------------------------
-# Agent can doc /proc va /sys de bao cao tai nguyen, nhung khong duoc ghi de
-# len he thong tap tin ngoai cac thu muc cua panel.
+# --- Hardening ---------------------------------------------------------------
+# The agent reads /proc and /sys to report resource usage, but must not write
+# anywhere outside the panel directories.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

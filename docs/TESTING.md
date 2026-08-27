@@ -659,11 +659,12 @@ export default function () {
 ### OWASP ZAP
 
 ```bash
-# Run OWASP ZAP scan
-docker run -t owasp/zap2docker-stable zap-baseline.py \
-  -t http://localhost:3000 \
-  -r report.html
+# Install the ZAP CLI once, then run the baseline scan against a running dev UI
+zap.sh -cmd -quickurl http://localhost:3000 -quickout "$PWD/zap-report.html"
 ```
+
+External scanners are the developer's own tooling choice and are unrelated to
+how the panel is built or deployed -- the panel itself ships no container image.
 
 ### SQL Injection Tests
 
@@ -737,36 +738,29 @@ test.describe('XSS Prevention', () => {
 
 ## Test Environment
 
-### Docker Compose for Testing
+### Test Databases
 
-```yaml
-# docker-compose.test.yml
-version: '3.8'
+Tests run against a second PostgreSQL database and a second Redis logical
+database on the locally installed servers. No container runtime is involved.
 
-services:
-  postgres-test:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: vkai_test
-      POSTGRES_USER: vkai_test
-      POSTGRES_PASSWORD: test_password
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vkai_test -d vkai_test"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+```bash
+# One-time: dedicated test role and database on the local PostgreSQL
+sudo -u postgres psql -c "CREATE ROLE vkai_test LOGIN PASSWORD 'test_password';"
+sudo -u postgres createdb -O vkai_test vkai_test
 
-  redis-test:
-    image: redis:7-alpine
-    ports:
-      - "6380:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+# Apply the schema
+make migrate DATABASE_URL=postgres://vkai_test:test_password@localhost:5432/vkai_test
+
+# Redis: use logical database 1 so the dev data in database 0 is untouched
+redis-cli -n 1 FLUSHDB
+```
+
+Reset between runs:
+
+```bash
+sudo -u postgres dropdb --if-exists vkai_test
+sudo -u postgres createdb -O vkai_test vkai_test
+make migrate DATABASE_URL=postgres://vkai_test:test_password@localhost:5432/vkai_test
 ```
 
 ### Test Configuration
@@ -774,14 +768,15 @@ services:
 ```bash
 # .env.test
 VKAI_DB_HOST=localhost
-VKAI_DB_PORT=5433
+VKAI_DB_PORT=5432
 VKAI_DB_NAME=vkai_test
 VKAI_DB_USER=vkai_test
 VKAI_DB_PASSWORD=test_password
 VKAI_DB_SSLMODE=disable
 
 VKAI_REDIS_HOST=localhost
-VKAI_REDIS_PORT=6380
+VKAI_REDIS_PORT=6379
+VKAI_REDIS_DB=1
 
 VKAI_JWT_SECRET=test-secret-key-at-least-32-characters
 VKAI_SECRET_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff

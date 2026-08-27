@@ -4,6 +4,71 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Removed - Docker is no longer how the panel is built or run
+
+The panel now builds and runs **bare-metal** on Linux: a Go binary for the API, a
+Next.js standalone build for the UI, a Go binary for the agent, all supervised by
+systemd. PostgreSQL, Redis and nginx are installed natively by the system package
+manager. The host running the panel no longer needs Docker Engine.
+
+Removed from the repository:
+
+- `Dockerfile` at the repository root and in `core/`, `panel/` and `agent/`.
+- `docker-compose.yml`, `docker-compose.dev.yml`, the root `.dockerignore` and
+  the per-component `.dockerignore` files.
+- The `docker/` directory, which only ever served the container build of the
+  panel.
+- The "Docker Build" job and every `docker/*` step in the GitHub Actions
+  workflows.
+- All documentation describing how to install or run the panel with `docker` or
+  `docker compose`.
+
+What replaces them:
+
+- **Installation**: one command through `deploy/install.sh`, which detects the OS
+  family and installs PostgreSQL, Redis and nginx natively.
+- **Development**: `setup-dev.sh` installs the databases natively and prepares
+  the dev `.env` files; no container runtime in the development loop.
+- **Deployment**: a packaged `.tar.gz` release unpacked into
+  `/vkai-panel/releases/<version>/` with a `current` symlink naming the live
+  release, driven by `deploy/scripts/deploy.sh` (validate, back up, migrate,
+  switch, restart, health-check, auto-rollback on failure).
+
+> **Docker management remains a full product feature.** This change removes only
+> the use of Docker *to build and run the panel itself*. The Docker screen in the
+> UI, the `/api/v1/docker/*` API, the Docker service layer and the `docker:*`
+> RBAC permissions are all unchanged, and customers continue to manage their own
+> containers, images, volumes, networks and compose stacks from the panel. In
+> short: the panel does not run in Docker, the panel manages Docker. Install
+> Docker Engine on the host only if you intend to use that feature.
+
+### Documentation - bare-metal build and run model
+
+- `README.md` gained a prominent section distinguishing the two meanings of
+  "Docker" in this project, plus sections on release deployment and day-to-day
+  operations. The source tree listing no longer shows `Dockerfile`,
+  `docker-compose.yml` or `docker/`.
+- `docs/ARCHITECTURE.md` documents the release-directory layout
+  (`/vkai-panel/releases/<version>` plus the `current` symlink), the shared state
+  that lives outside releases, the corrected `vkai-ui` unit (Next.js standalone
+  started by `node`, not `npm run start`), and the nginx panel vhost.
+- `docs/DEPLOYMENT.md` gained "Release Deployment and Rollback" and "Operations":
+  package layout, the exact deploy sequence, rollback semantics and the fact that
+  database migrations are never reversed, reading logs with `journalctl` for
+  `vkai-api` / `vkai-ui` / `vkai-agent`, the `/health`, `/ready` and `/live`
+  endpoints, and a quick incident lookup table.
+- `docs/DEVELOPMENT.md`, `docs/DEVELOPER_GUIDE.md` and `docs/CONTRIBUTING.md`
+  describe the development databases as natively installed via `setup-dev.sh`.
+- `docs/PANEL_ACCESS.md` replaced its Docker Compose section with an internal
+  ports and systemd section.
+- `docs/SECURITY.md` replaced the container hardening guidance with the systemd
+  sandboxing actually shipped in `deploy/systemd/`, and notes that `docker:*`
+  permissions are root-equivalent on the host.
+- `docs/TESTING.md` describes test databases on the locally installed PostgreSQL
+  and Redis instead of a `docker-compose.test.yml`.
+- `deploy/README.md` and `docs/FAQ.md` state the two roles of Docker explicitly
+  so the change is not misread as dropping container management.
+
 ### Changed - whitelabel to VKAI Panel (HiTechCloud)
 
 - Product name is **VKAI Panel**, vendor **HiTechCloud** (hitechcloud.vn).

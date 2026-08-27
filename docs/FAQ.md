@@ -29,7 +29,25 @@ VKAI Panel is an enterprise-grade multi-server hosting control panel designed fo
 - **Database**: PostgreSQL 16, Redis 7
 - **Agent**: Go binary (vkaid)
 - **Reverse Proxy**: Nginx
-- **Services**: systemd (no Docker required)
+- **Services**: systemd - a Go binary plus a Next.js standalone build, run
+  bare-metal. The panel is never containerised and the host does not need
+  Docker Engine.
+
+### Docker was removed? Can I still manage containers?
+
+Yes, container management is fully supported. Two different things share the name
+"Docker" here:
+
+- **Docker as a way to run the panel** - removed. There is no `Dockerfile` and no
+  `docker-compose.yml`; the panel installs with `deploy/install.sh` and runs
+  under systemd.
+- **Docker as a panel feature** - kept. The Docker screen, the
+  `/api/v1/docker/*` API and the `docker:*` RBAC permissions are unchanged, and
+  you keep managing your containers, images, volumes, networks and compose
+  stacks from the panel.
+
+The panel does not run in Docker; the panel manages Docker. Install Docker Engine
+on the host only if you want to use that feature.
 
 ### Is VKAI Panel free?
 

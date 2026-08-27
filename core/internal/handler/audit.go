@@ -25,6 +25,16 @@ func NewAuditHandler(service *service.AuditService, logger *zap.Logger) *AuditHa
 	}
 }
 
+// Service exposes the audit service so other handlers constructed inside the
+// router can record entries without changing the router's constructor
+// signature, which the API entry point passes positionally.
+func (h *AuditHandler) Service() *service.AuditService {
+	if h == nil {
+		return nil
+	}
+	return h.service
+}
+
 func (h *AuditHandler) Get(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

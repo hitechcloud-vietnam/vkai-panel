@@ -4,13 +4,19 @@ name: CI
 # backend-ci.yml and frontend-ci.yml were removed: they duplicated these jobs
 # with drifting configuration (postgres 15 vs 16, codecov v3 vs v4,
 # REDIS_URL vs REDIS_HOST), which made a change green in one file and red in
-# the other. Every job below runs on every push/PR to main and develop.
+# the other. Every job below runs on every push/PR to main and develop, with
+# one exception: "Package" (dong goi ban phat hanh tran) chi chay cho push vao
+# main, cho tag v*, va cho Pull Request cham vao deploy/ hoac .github/ - xem
+# job "Package Scope".
 #
 # Thu muc ma nguon: core/ (Go API), panel/ (Next.js UI), agent/ (Go node agent).
 
 on:
   push:
     branches: [main, develop]
+    # Tag v* kich hoat CI de ban phat hanh duoc dong goi (job "Package").
+    tags:
+      - 'v*'
   pull_request:
     branches: [main, develop]
 
@@ -307,17 +313,74 @@ jobs:
         with:
           args: --all-projects
 
-  docker:
-    name: Docker Build
+  # Job "Docker Build" da bi go bo: panel khong con duoc dong goi/chay bang
+  # Docker nua. Core API, Panel UI va Agent chay TRAN tren Linux (binary Go +
+  # Next.js standalone + systemd). Docker van la TINH NANG cho khach hang
+  # (core/internal/docker, panel/src/app/(dashboard)/docker) - phan do khong lien
+  # quan toi cach dung chinh panel.
+
+  package-scope:
+    name: Package Scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.decide.outputs.needed }}
+
+    steps:
+      # Dong goi phat hanh chi can thiet cho push vao main va cho tag: Pull
+      # Request giu nhip nhanh. Ngoai le: PR cham vao deploy/ hoac .github/ thay
+      # doi chinh cach dong goi/trien khai, nen phai duoc dong goi thu.
+      # Loc theo duong dan o muc `on:` khong dung duoc vi no ap cho ca workflow;
+      # gh api tra ve danh sach file cua PR ma khong can them action nao.
+      - name: Quyet dinh co can dong goi khong
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" != "pull_request" ]; then
+            case "$REF" in
+              refs/heads/main|refs/tags/v*)
+                echo "Push vao ${REF} -> dong goi."
+                echo "needed=true" >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "Push vao ${REF} -> bo qua dong goi."
+                echo "needed=false" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
+            exit 0
+          fi
+
+          FILES="$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files" \
+                     --jq '.[].filename')"
+          if printf '%s\n' "$FILES" | grep -Eq '^(deploy/|\.github/)'; then
+            echo "PR cham vao deploy/ hoac .github/ -> dong goi."
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR khong cham vao deploy/ hoac .github/ -> bo qua dong goi."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  package:
+    name: Package
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [core, panel, agent]
-    permissions:
-      contents: read
-      packages: write
+    needs: [package-scope, core, panel, agent]
+    if: needs.package-scope.outputs.needed == 'true'
 
     env:
-      IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+      # Bo cuc goi phat hanh do deploy/scripts/deploy.sh quy dinh:
+      #   core/bin/vkai-api, core/migrations/*.sql,
+      #   panel/.next/standalone/server.js, agent/bin/vkai-agent
+      # Doi bo cuc o day = deploy.sh tu choi goi ngay o buoc validate_release.
+      DIST: ${{ github.workspace }}/dist
+      PKG: vkai-panel-${{ github.sha }}.tar.gz
 
     steps:
       - name: Checkout code
@@ -328,46 +391,113 @@ jobs:
         env:
           VKAI_CRYPT_KEY: ${{ secrets.VKAI_CRYPT_KEY }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # GHCR authenticates with the built-in GITHUB_TOKEN, so no repository
-      # secret is required and pull requests are never blocked on a missing one.
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          go-version-file: core/go.mod
+          cache: true
+          cache-dependency-path: core/go.sum
 
-      - name: Build Core image
-        uses: docker/build-push-action@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          context: ./core
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.IMAGE_PREFIX }}-core:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: panel/package-lock.json
 
-      - name: Build Panel UI image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./panel
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.IMAGE_PREFIX }}-ui:latest
-          # NEXT_PUBLIC_API_URL is inlined into the bundle at build time, so it
-          # must be passed as a build arg, not as a runtime environment value.
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # `go build -o` khong tu tao thu muc cha.
+      - name: Prepare dist
+        run: mkdir -p "$DIST/core/bin" "$DIST/agent/bin" "$DIST/panel" "$DIST/deploy"
 
-      - name: Build Agent image
-        uses: docker/build-push-action@v6
+      # CGO_ENABLED=0: binary tinh, chay duoc tren may chu khong cung glibc.
+      # -trimpath -ldflags "-s -w": bo duong dan build va bang ky hieu.
+      - name: Build Core API and CLI
+        working-directory: core
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          set -euo pipefail
+          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-api"      ./cmd/api
+          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-cli"      ./cmd/cli
+          # panelctl la cong cu quan tri bat buoc cua ban cai (deploy/install.sh
+          # cai no vao /usr/local/bin), nen no thuoc goi phat hanh.
+          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-panelctl" ./cmd/panelctl
+
+      - name: Build Agent
+        working-directory: agent
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          set -euo pipefail
+          # Package main cua agent nam o ./cmd, khong phai ./cmd/agent.
+          go build -trimpath -ldflags "-s -w" -o "$DIST/agent/bin/vkai-agent" ./cmd
+
+      - name: Stage migrations
+        run: cp -r core/migrations "$DIST/core/migrations"
+
+      - name: Build Panel UI
+        working-directory: panel
+        env:
+          # NEXT_PUBLIC_* duoc nhung vao bundle luc BUILD. Gia tri phai la URL ma
+          # TRINH DUYET goi duoc; rong = cung origin qua reverse proxy cua panel.
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || '' }}
+        run: |
+          set -euo pipefail
+          npm ci
+          # `npm run build` da chay postbuild:standalone, buoc nay copy
+          # .next/static va public/ vao .next/standalone.
+          npm run build
+
+      # Chan tu day thay vi de may chu phat hien: thieu server.js thi
+      # vkai-ui.service khong khoi dong duoc, thieu .next/standalone/.next/static
+      # thi trang tra ve HTML nhung moi /_next/static/*.js deu 404.
+      - name: Verify standalone build
+        working-directory: panel
+        run: |
+          set -euo pipefail
+          test -f .next/standalone/server.js \
+            || { echo "::error::Thieu panel/.next/standalone/server.js sau khi build."; exit 1; }
+          test -d .next/standalone/.next/static \
+            || { echo "::error::Thieu panel/.next/standalone/.next/static (postbuild:standalone khong chay?)."; exit 1; }
+          echo "OK: ban build standalone day du."
+
+      - name: Stage Panel UI
+        working-directory: panel
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIST/panel/.next"
+          cp -r .next/standalone "$DIST/panel/.next/standalone"
+          cp package.json "$DIST/panel/package.json"
+
+      # Unit systemd va cau hinh nginx mau di kem de may chu trien khai khong
+      # phai clone lai repository.
+      - name: Stage systemd units, nginx sample and deploy script
+        run: |
+          set -euo pipefail
+          cp -r deploy/systemd "$DIST/deploy/systemd"
+          mkdir -p "$DIST/deploy/nginx" "$DIST/deploy/scripts"
+          cp deploy/nginx/vkai-panel.conf "$DIST/deploy/nginx/vkai-panel.conf"
+          # deploy.sh di kem trong goi de may chu trien khai khong can clone repo.
+          cp deploy/scripts/deploy.sh "$DIST/deploy/scripts/deploy.sh"
+          chmod +x "$DIST/deploy/scripts/deploy.sh"
+
+      - name: Create release package
+        run: |
+          set -euo pipefail
+          tar -czf "$PKG" -C "$DIST" .
+          sha256sum "$PKG" | tee "$PKG.sha256"
+          ls -l "$PKG"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          context: ./agent
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.IMAGE_PREFIX }}-agent:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: vkai-panel-package
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ env.PKG }}
+            ${{ env.PKG }}.sha256

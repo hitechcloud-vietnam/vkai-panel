@@ -5,15 +5,17 @@
 1. [Production Deployment](#production-deployment)
 2. [System Requirements](#system-requirements)
 3. [Installation](#installation)
-4. [Configuration](#configuration)
-5. [SSL Setup](#ssl-setup)
-6. [Domain Setup](#domain-setup)
-7. [Backup Strategy](#backup-strategy)
-8. [Monitoring](#monitoring)
-9. [Security Hardening](#security-hardening)
-10. [Performance Optimization](#performance-optimization)
-11. [High Availability](#high-availability)
-12. [Troubleshooting](#troubleshooting)
+4. [Release Deployment and Rollback](#release-deployment-and-rollback)
+5. [Operations](#operations)
+6. [Configuration](#configuration)
+7. [SSL Setup](#ssl-setup)
+8. [Domain Setup](#domain-setup)
+9. [Backup Strategy](#backup-strategy)
+10. [Monitoring](#monitoring)
+11. [Security Hardening](#security-hardening)
+12. [Performance Optimization](#performance-optimization)
+13. [High Availability](#high-availability)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -21,7 +23,22 @@
 
 ### Overview
 
-VKAI Panel is designed to run as systemd services without Docker. This guide covers production deployment on Ubuntu/Debian systems.
+VKAI Panel runs **bare-metal**: a Go binary for the API, a Next.js standalone
+build for the UI, an optional Go agent, all supervised by systemd. PostgreSQL,
+Redis and nginx are installed natively by the package manager. There is no
+container image, no `docker-compose.yml`, and no `docker` step anywhere in the
+install or deploy path -- the panel host does not need Docker Engine at all.
+
+> **Docker is still a product feature.** Do not read the paragraph above as
+> "Docker support was dropped". The panel's Docker screen, the
+> `/api/v1/docker/*` API and the `docker:*` RBAC permissions are unchanged, and
+> customers keep using the panel to manage *their* containers, images, volumes,
+> networks and compose stacks. What was removed is only the use of Docker to
+> build and run the panel itself. In short: **the panel does not run in Docker,
+> the panel manages Docker.** If your customers use that feature, install Docker
+> Engine on the host as you would any other managed service.
+
+This guide covers production deployment on Ubuntu/Debian and RHEL-family systems.
 
 ### Architecture
 
@@ -62,6 +79,8 @@ websites hosted on this server. The panel answers only on `VKAI_PANEL_PORT`
 | Path | Contents |
 |------|----------|
 | `/vkai-panel/` | Installation root |
+| `/vkai-panel/releases/<version>/` | Unpacked releases, five most recent kept |
+| `/vkai-panel/current` | Symlink to the release that is live |
 | `/vkai-panel/core/` | API source and binaries (`vkai-api`) |
 | `/vkai-panel/panel/` | Built UI served by `vkai-ui` |
 | `/vkai-panel/www/domains/<domain>/` | Customer website document roots |
@@ -400,6 +419,256 @@ Only if you need TLS termination or a hostname in front of the panel. The proxy
 must listen on the **panel port**, never on 80/443, and you must set
 `VKAI_PANEL_TRUSTED_PROXIES` to the proxy address so `X-Forwarded-For` is
 trusted. Full instructions: [PANEL_ACCESS.md](PANEL_ACCESS.md).
+
+---
+
+## Release Deployment and Rollback
+
+Lần cài đầu dùng `deploy/install.sh`. Các lần cập nhật sau đó dùng **gói phát
+hành** `.tar.gz`: không build trên máy chủ thật, không `git pull` trên máy chủ
+thật.
+
+### Mô hình thư mục release
+
+Mỗi bản phát hành được giải nén vào **một thư mục riêng theo phiên bản**, và
+symlink `current` trỏ tới bản đang chạy:
+
+```
+/vkai-panel/
+├── releases/
+│   ├── 20250315_101500/                 # bản trước, giữ lại để quay lui
+│   └── 20250316_143000/                 # bản vừa triển khai
+├── current -> releases/20250316_143000  # bản đang chạy
+├── etc/                                 # .env, panel_access.json  - dùng chung
+├── logs/                                # dùng chung
+├── www/                                 # site khách, bản sao lưu - dùng chung
+└── ssl/                                 # dùng chung
+```
+
+Chỉ **mã nguồn** được đánh phiên bản. `etc/`, `logs/`, `www/`, `ssl/` là **dữ
+liệu dùng chung**, nằm ngoài mọi release: triển khai không ghi đè chúng và quay
+lui cũng không đưa chúng về cũ.
+
+Hệ thống giữ bản đang chạy **cộng 5 bản cũ gần nhất**, phần còn lại bị xoá.
+
+```bash
+sudo bash deploy/scripts/deploy.sh list      # các bản đang giữ, đánh dấu bản đang chạy
+```
+
+### Cấu trúc gói release
+
+Gói `.tar.gz` bắt buộc phải có:
+
+```
+core/bin/vkai-api                       # binary API, phải có quyền thực thi
+core/migrations/*.sql                   # migration
+panel/.next/standalone/server.js        # bản build UI
+panel/.next/standalone/.next/static     # BẮT BUỘC
+agent/bin/vkai-agent                    # tuỳ chọn
+```
+
+Thiếu `.next/standalone/.next/static` thì trang vẫn trả về HTML nhưng mọi
+`/_next/static/*.js` đều 404, và trình duyệt báo *"Application error: a
+client-side exception has occurred"*. `deploy.sh` kiểm tra điều này **trước khi**
+dừng dịch vụ, nên gói hỏng sẽ bị từ chối thay vì làm sập panel đang chạy.
+
+Đóng gói trên máy build (không phải máy chủ thật):
+
+```bash
+make build
+tar -czf vkai-panel-1.2.0.tar.gz -C dist .
+```
+
+### Triển khai
+
+```bash
+# Chép gói lên máy chủ rồi chạy
+sudo bash deploy/scripts/deploy.sh deploy /tmp/vkai-panel-1.2.0.tar.gz
+```
+
+Lệnh này làm tuần tự:
+
+1. Giải nén gói vào `/vkai-panel/releases/<dấu-thời-gian>/`.
+2. **Kiểm tra gói hợp lệ** trước khi động vào hệ thống đang chạy.
+3. Liên kết `/vkai-panel/etc/.env` vào trong bản mới (Next.js chỉ đọc `.env` ở
+   gốc dự án).
+4. Sao lưu CSDL vào `/vkai-panel/www/backup/predeploy_<thời-gian>.sql.gz`.
+5. Chạy các migration còn thiếu **từ bản mới, trước khi đổi symlink** — migration
+   hỏng thì dừng ngay trong lúc bản cũ vẫn đang phục vụ. Trạng thái ghi trong
+   `/vkai-panel/etc/migrations.applied`.
+6. Trỏ `current` sang bản mới, `systemctl restart vkai-api vkai-ui`
+   (thêm `vkai-agent` nếu đã bật) và `reload nginx`.
+7. Kiểm tra sức khoẻ **cả API lẫn giao diện**, thử lại tối đa 15 lần cách nhau 2
+   giây.
+8. **Hỏng thì tự động quay lui** về bản trước rồi kiểm tra sức khoẻ lại.
+9. Thành công thì xoá các bản cũ vượt quá 5 bản.
+
+Nhờ bước 8, một bản phát hành lỗi không làm panel chết hẳn: script tự đưa về bản
+trước và báo rõ thư mục chứa bản hỏng để điều tra.
+
+Xem trạng thái:
+
+```bash
+sudo bash deploy/scripts/deploy.sh status
+readlink -f /vkai-panel/current      # bản đang chạy
+ls -1 /vkai-panel/releases/          # các bản còn giữ
+```
+
+### Quay lui
+
+```bash
+sudo bash deploy/scripts/deploy.sh rollback
+```
+
+Lệnh này tìm bản ngay trước bản đang chạy trong `/vkai-panel/releases/`, kiểm tra
+bản đó còn đầy đủ, trỏ `current` về bản cũ, khởi động lại dịch vụ rồi kiểm tra
+sức khoẻ. Dùng khi bản mới chạy được qua health check nhưng lỗi lộ ra sau đó
+(triển khai lỗi ngay lập tức thì bước 8 ở trên đã tự quay lui rồi).
+
+> **Quay lui chỉ đưa MÃ NGUỒN về bản cũ.** Migration cơ sở dữ liệu **không** được
+> quay lui. Nếu bản vừa triển khai có migration phá vỡ tương thích ngược, phải
+> khôi phục CSDL từ bản sao lưu `predeploy_*.sql.gz` đã tạo ở bước 3:
+>
+> ```bash
+> gunzip -c /vkai-panel/www/backup/predeploy_20250316_143000.sql.gz \
+>   | psql -h 127.0.0.1 -U vkai -d vkai_panel
+> ```
+
+Nếu cần quay về một bản cũ hơn (không phải bản liền trước), hãy triển khai lại
+chính gói `.tar.gz` của bản đó bằng lệnh `deploy`.
+
+### Cập nhật tại chỗ (máy lẻ, không dùng CI)
+
+```bash
+sudo vkai update            # build lại core/ và panel/, khởi động lại dịch vụ
+```
+
+Cách này không tạo thư mục release nên **không quay lui được** bằng `rollback`.
+Với máy chủ thật, luôn ưu tiên gói `.tar.gz`.
+
+---
+
+## Operations
+
+### Xem nhật ký bằng journalctl
+
+Cả ba dịch vụ đều ghi thẳng vào journald (`StandardOutput=journal`), với
+`SyslogIdentifier` lần lượt là `vkai-api`, `vkai-ui`, `vkai-agent`.
+
+```bash
+# Theo dõi trực tiếp
+sudo journalctl -u vkai-api -f
+sudo journalctl -u vkai-ui -f
+sudo journalctl -u vkai-agent -f
+
+# N dòng cuối, không mở pager
+sudo journalctl -u vkai-api -n 200 --no-pager
+
+# Theo khoảng thời gian
+sudo journalctl -u vkai-api --since "2025-03-16 14:00" --until "2025-03-16 15:00"
+sudo journalctl -u vkai-api --since "1 hour ago"
+
+# Chỉ lấy lỗi
+sudo journalctl -u vkai-api -p err --since today
+
+# Cả ba dịch vụ trên cùng một dòng thời gian - rất hữu ích khi gỡ lỗi
+sudo journalctl -u vkai-api -u vkai-ui -u vkai-agent --since "30 min ago"
+
+# Nhật ký của lần khởi động hiện tại
+sudo journalctl -u vkai-api -b
+
+# Xuất JSON để đưa vào công cụ khác
+sudo journalctl -u vkai-api -o json --since today > /tmp/api.json
+```
+
+Banner truy cập panel (cổng + lối vào an toàn) được in một lần lúc khởi động:
+
+```bash
+sudo journalctl -u vkai-api | grep -A20 "THONG TIN TRUY CAP"
+```
+
+Lối tắt qua lệnh `vkai`:
+
+```bash
+vkai logs api | ui | agent | nginx | install
+```
+
+Nhật ký nginx của panel và của từng website khách nằm trong tệp, không nằm trong
+journald:
+
+```bash
+tail -f /vkai-panel/logs/sites/<domain>/access.log
+tail -f /vkai-panel/logs/sites/<domain>/error.log
+```
+
+### Kiểm tra sức khoẻ
+
+API có ba endpoint, nghe trên loopback cổng 30110 và **không** yêu cầu lối vào an
+toàn (để health check hoạt động mà không cần biết đường dẫn bí mật):
+
+| Endpoint | Ý nghĩa |
+|---|---|
+| `GET /health` | Tiến trình còn sống |
+| `GET /ready` | Sẵn sàng phục vụ - đã nối được CSDL và Redis |
+| `GET /live` | Liveness, dùng cho trình giám sát |
+
+```bash
+# API
+curl -fsS http://127.0.0.1:30110/health
+curl -fsS http://127.0.0.1:30110/ready
+
+# Giao diện
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/
+
+# Qua nginx, dùng cổng panel thật
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/health
+
+# Trạng thái unit
+systemctl is-active vkai-api vkai-ui vkai-agent
+systemctl status vkai-api vkai-ui --no-pager
+
+# Phụ trợ
+pg_isready -h 127.0.0.1 -p 5432
+redis-cli ping
+sudo nginx -t
+```
+
+Kiểm tra nhanh toàn bộ:
+
+```bash
+sudo bash deploy/scripts/deploy.sh status    # bản đang chạy + trạng thái unit + log gần nhất
+sudo bash deploy/scripts/deploy.sh list      # các bản phát hành đang giữ
+vkai status
+```
+
+`deploy.sh` đọc cổng từ `/vkai-panel/etc/.env` (`VKAI_SERVER_PORT` cho API,
+`PORT` cho giao diện), nên nếu đã đổi cổng nội bộ thì health check vẫn đúng.
+
+### Khởi động lại và nạp lại cấu hình
+
+```bash
+sudo systemctl restart vkai-api vkai-ui     # khởi động lại
+sudo systemctl reload vkai-api              # nạp lại cấu hình (SIGHUP)
+sudo systemctl daemon-reload                # sau khi sửa tệp unit
+sudo systemctl reload nginx                 # sau khi sửa vhost
+vkai restart                                # tương đương, qua lệnh vkai
+```
+
+Sửa `/vkai-panel/etc/.env` thì **phải** khởi động lại `vkai-api` và `vkai-ui` -
+cả hai chỉ đọc tệp này lúc khởi động. Riêng `NEXT_PUBLIC_*` được Next.js nhúng
+vào bundle **lúc build**, nên đổi các biến đó bắt buộc phải build lại UI, khởi
+động lại không đủ.
+
+### Bảng tra cứu sự cố nhanh
+
+| Triệu chứng | Kiểm tra đầu tiên |
+|---|---|
+| Panel không mở được | `systemctl is-active vkai-api vkai-ui`, rồi `journalctl -u vkai-api -n 100` |
+| nginx trả 502 | `curl http://127.0.0.1:3000/` và `curl http://127.0.0.1:30110/health` |
+| "Application error: a client-side exception" | `ls /vkai-panel/panel/.next/standalone/.next/static` |
+| Lỗi sau khi triển khai | `deploy.sh rollback`, rồi đọc `journalctl -u vkai-api -b` |
+| Không nối được CSDL | `pg_isready`, `journalctl -u postgresql -n 50` |
+| Mọi đường dẫn đều trả 404 trung tính | Sai lối vào an toàn - chạy `vkai info` |
 
 ---
 
@@ -1079,13 +1348,10 @@ sudo -u postgres psql -c "SELECT count(*) FROM pg_stat_activity;"
 # Update system packages
 sudo apt update && sudo apt upgrade -y
 
-# Update VKAI Panel
-vkai update
-# or, from a source checkout:
-#   cd /vkai-panel && git pull origin main
-#   cd core  && sudo -u vkai go build -o bin/vkai-api ./cmd/api/
-#   cd ../panel && sudo -u vkai npm ci && sudo -u vkai npm run build
-sudo systemctl restart vkai-api vkai-ui
+# Update VKAI Panel - preferred path: deploy a packaged release
+sudo bash deploy/scripts/deploy.sh deploy /tmp/vkai-panel-<version>.tar.gz
+# Single-server shortcut that rebuilds in place (no rollback point):
+#   sudo vkai update
 
 # Clean up old logs
 find /vkai-panel/logs -name "*.log" -mtime +30 -delete

@@ -1,5 +1,17 @@
 name: Deploy
 
+# Panel duoc trien khai TRAN tren Linux: binary Go + Next.js standalone +
+# systemd. Khong con image Docker nao trong duong di phat hanh. (Docker van la
+# tinh nang cho khach hang quan ly container cua ho, khong lien quan o day.)
+#
+# Bo cuc goi phat hanh o day PHAI trung voi job "Package" trong ci.yml va voi
+# thu tu ma deploy/scripts/deploy.sh kiem tra:
+#   core/bin/vkai-api, core/bin/vkai-cli, core/bin/vkai-panelctl
+#   core/migrations/*.sql
+#   panel/.next/standalone/server.js (kem .next/static va public)
+#   agent/bin/vkai-agent
+#   deploy/systemd/*.service, deploy/nginx/vkai-panel.conf, deploy/scripts/deploy.sh
+
 on:
   push:
     branches: [main]
@@ -26,10 +38,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The `secrets` context is not available in a job-level `if` - only `github`,
+  # `needs`, `vars` and `inputs` are. Reading a secret there makes the whole
+  # workflow file invalid, and GitHub then fails the run without starting any
+  # job, which reads as "deploy is broken" rather than "deploy is not configured".
+  # Secrets are readable from a step's `env`, so probe them once here and let
+  # every deployment job gate on the result.
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      staging: ${{ steps.probe.outputs.staging }}
+      production: ${{ steps.probe.outputs.production }}
+    steps:
+      - id: probe
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${STAGING_HOST:-}" ] && [ -n "${STAGING_SSH_KEY:-}" ]; then
+            echo "staging=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "staging=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Staging secrets are not configured; the staging deployment will be skipped."
+          fi
+          if [ -n "${PRODUCTION_HOST:-}" ] && [ -n "${PRODUCTION_SSH_KEY:-}" ]; then
+            echo "production=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "production=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Production secrets are not configured; the production deployment will be skipped."
+          fi
+
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    env:
+      DIST: ${{ github.workspace }}/dist
+      PKG: vkai-panel-${{ github.sha }}.tar.gz
 
     steps:
       - name: Checkout code
@@ -51,62 +102,98 @@ jobs:
 
       # `go build -o` does not create parent directories, so dist/ must exist first.
       - name: Prepare dist
-        run: mkdir -p dist/panel
+        run: mkdir -p "$DIST/core/bin" "$DIST/agent/bin" "$DIST/panel" "$DIST/deploy"
 
-      - name: Build Core API
+      - name: Build Core API and CLI
         working-directory: core
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
         run: |
           set -euo pipefail
-          # Only ./cmd/api and ./cmd/cli exist; ./cmd/agent never did.
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/api ./cmd/api
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/vkai-cli ./cmd/cli
+          # Only ./cmd/api, ./cmd/cli and ./cmd/panelctl are shipped; ./cmd/agent never existed.
+          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-api"      ./cmd/api
+          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-cli"      ./cmd/cli
+          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-panelctl" ./cmd/panelctl
 
       - name: Build Agent
         working-directory: agent
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
         run: |
           set -euo pipefail
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/vkaid ./cmd
+          go build -trimpath -ldflags "-s -w" -o "$DIST/agent/bin/vkai-agent" ./cmd
 
       - name: Stage migrations
-        run: cp -r core/migrations dist/migrations
+        run: cp -r core/migrations "$DIST/core/migrations"
 
       - name: Build Panel UI
         working-directory: panel
         env:
           # Inlined into the bundle at BUILD time. Must be a URL the BROWSER can
-          # reach; empty = same-origin through the panel reverse proxy. Never an
-          # internal hostname such as http://vkai-core:30110.
+          # reach; empty = same-origin through the panel reverse proxy.
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || '' }}
         run: |
           set -euo pipefail
           npm ci
+          # `npm run build` chay ca postbuild:standalone (copy .next/static va
+          # public/ vao .next/standalone).
           npm run build
-          cp -r .next ../dist/panel/.next
-          cp package.json package-lock.json ../dist/panel/
-          if [ -d public ]; then cp -r public ../dist/panel/; fi
+
+      - name: Verify standalone build
+        working-directory: panel
+        run: |
+          set -euo pipefail
+          test -f .next/standalone/server.js \
+            || { echo "::error::Thieu panel/.next/standalone/server.js sau khi build."; exit 1; }
+          test -d .next/standalone/.next/static \
+            || { echo "::error::Thieu panel/.next/standalone/.next/static (postbuild:standalone khong chay?)."; exit 1; }
+
+      - name: Stage Panel UI
+        working-directory: panel
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIST/panel/.next"
+          cp -r .next/standalone "$DIST/panel/.next/standalone"
+          cp package.json "$DIST/panel/package.json"
+
+      - name: Stage systemd units, nginx sample and deploy script
+        run: |
+          set -euo pipefail
+          cp -r deploy/systemd "$DIST/deploy/systemd"
+          mkdir -p "$DIST/deploy/nginx" "$DIST/deploy/scripts"
+          cp deploy/nginx/vkai-panel.conf "$DIST/deploy/nginx/vkai-panel.conf"
+          cp deploy/scripts/deploy.sh "$DIST/deploy/scripts/deploy.sh"
+          chmod +x "$DIST/deploy/scripts/deploy.sh"
 
       - name: Create deployment package
-        run: tar -czf vkai-panel-${{ github.sha }}.tar.gz -C dist .
+        run: |
+          set -euo pipefail
+          tar -czf "$PKG" -C "$DIST" .
+          sha256sum "$PKG" | tee "$PKG.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: deployment-package
           if-no-files-found: error
-          path: vkai-panel-${{ github.sha }}.tar.gz
+          path: |
+            ${{ env.PKG }}
+            ${{ env.PKG }}.sha256
 
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: build
+    needs: [preflight, build]
     # `inputs.environment` (not github.event.inputs.*) so the value is null,
     # rather than an empty string, on push events.
-    # Bo qua khi chua cau hinh secret may chu: khong co secret thi khong the trien khai,
-    # va mot workflow do vi thieu ha tang se lam nhieu tin hieu CI tren main.
     if: >-
       (github.ref == 'refs/heads/main' || inputs.environment == 'staging')
-      && secrets.STAGING_HOST != '' && secrets.STAGING_SSH_KEY != ''
+      && needs.preflight.outputs.staging == 'true'
     environment: staging
 
     steps:
@@ -126,6 +213,10 @@ jobs:
           source: vkai-panel-${{ github.sha }}.tar.gz
           target: /tmp
 
+      # deploy/scripts/deploy.sh la mot ban sao duy nhat cua quy trinh trien khai
+      # (kiem tra goi, sao luu CSDL, rsync vao /vkai-panel/core va /vkai-panel/panel
+      # dung noi systemd tro toi, chay migration, restart, health check, don ban cu).
+      # Goi tu day thay vi viet lai cac buoc do trong workflow.
       - name: Deploy to staging server
         uses: appleboy/ssh-action@v1
         with:
@@ -134,20 +225,18 @@ jobs:
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             set -euo pipefail
-            mkdir -p /vkai-panel/releases/${{ github.sha }}
-            tar -xzf /tmp/vkai-panel-${{ github.sha }}.tar.gz \
-              -C /vkai-panel/releases/${{ github.sha }}
-            ln -sfn /vkai-panel/releases/${{ github.sha }} /vkai-panel/current
-            sudo systemctl restart vkai-api vkai-ui
-            sleep 5
-            curl -fsS http://localhost:30110/health
+            PKG=/tmp/vkai-panel-${{ github.sha }}.tar.gz
+            WORK=$(mktemp -d)
+            trap 'rm -rf "$WORK"' EXIT
+            tar -xzf "$PKG" -C "$WORK" ./deploy/scripts/deploy.sh
+            sudo bash "$WORK/deploy/scripts/deploy.sh" deploy "$PKG"
             echo "Staging deployment successful!"
 
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [build, deploy-staging]
+    needs: [preflight, build, deploy-staging]
     # A job whose `needs` target is skipped is skipped too, unless the condition
     # tolerates it. On a v* tag deploy-staging is skipped, which previously made
     # production unreachable in every scenario.
@@ -156,13 +245,8 @@ jobs:
       && needs.build.result == 'success'
       && (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped')
       && (startsWith(github.ref, 'refs/tags/v') || inputs.environment == 'production')
-      && secrets.PRODUCTION_HOST != '' && secrets.PRODUCTION_SSH_KEY != ''
+      && needs.preflight.outputs.production == 'true'
     environment: production
-
-    # The `secrets` context is not available in a step-level `if:`, so the
-    # connection string is mapped to env and the step tests the env value.
-    env:
-      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
 
     steps:
       - name: Download artifact
@@ -179,6 +263,11 @@ jobs:
           source: vkai-panel-${{ github.sha }}.tar.gz
           target: /tmp
 
+      # `./api migrate up` was removed: cmd/api is a plain HTTP server with no
+      # subcommand parsing, so it would bind a port and hang until the SSH step
+      # timed out. Migration chay ben trong deploy.sh (run_migrations), doc thong
+      # tin ket noi tu /vkai-panel/etc/.env, nen khong con buoc migration rieng
+      # va khong can secret PRODUCTION_DATABASE_URL nua.
       - name: Deploy to production server
         uses: appleboy/ssh-action@v1
         with:
@@ -187,33 +276,12 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             set -euo pipefail
-            mkdir -p /vkai-panel/releases/${{ github.sha }}
-            tar -xzf /tmp/vkai-panel-${{ github.sha }}.tar.gz \
-              -C /vkai-panel/releases/${{ github.sha }}
-            ln -sfn /vkai-panel/releases/${{ github.sha }} /vkai-panel/current
-            sudo systemctl restart vkai-api vkai-ui
-            sleep 10
-            curl -fsS http://localhost:30110/health
+            PKG=/tmp/vkai-panel-${{ github.sha }}.tar.gz
+            WORK=$(mktemp -d)
+            trap 'rm -rf "$WORK"' EXIT
+            tar -xzf "$PKG" -C "$WORK" ./deploy/scripts/deploy.sh
+            sudo bash "$WORK/deploy/scripts/deploy.sh" deploy "$PKG"
             echo "Production deployment successful!"
-
-      # `./api migrate up` was removed: cmd/api is a plain HTTP server with no
-      # subcommand parsing, so it would bind a port and hang until the SSH step
-      # timed out. Migrations now run as plain SQL, and only when a connection
-      # string is configured.
-      - name: Run database migrations
-        if: ${{ env.DATABASE_URL != '' }}
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          envs: DATABASE_URL
-          script: |
-            set -euo pipefail
-            for f in /vkai-panel/current/migrations/*.sql; do
-              echo "Applying $(basename "$f")"
-              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
-            done
 
       # NOTE: creating the GitHub Release is release.yml's job exclusively.
       # Doing it here as well made two workflows race for the same tag.

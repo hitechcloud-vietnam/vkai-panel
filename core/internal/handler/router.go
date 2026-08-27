@@ -5,7 +5,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/auth"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/config"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 )
 
 type Router struct {
@@ -49,6 +51,7 @@ type Router struct {
 	dailyReportHandler    *DailyReportHandler
 	scheduledTaskHandler  *ScheduledTaskHandler
 	tamperProofHandler    *TamperProofHandler
+	panelSettingsHandler  *PanelSettingsHandler
 	jwtManager            *auth.JWTManager
 	logger                *zap.Logger
 }
@@ -98,7 +101,7 @@ func NewRouter(
 ) *Router {
 	engine := gin.New()
 
-	return &Router{
+	r := &Router{
 		engine:                engine,
 		authHandler:           authHandler,
 		serverHandler:         serverHandler,
@@ -142,6 +145,38 @@ func NewRouter(
 		jwtManager:            jwtManager,
 		logger:                logger,
 	}
+
+	// The panel access settings handler is built here rather than being passed
+	// in: the API entry point calls NewRouter positionally, so growing the
+	// parameter list would break every caller for a dependency the router can
+	// resolve on its own.
+	r.panelSettingsHandler = newPanelSettingsHandler(auditHandler, logger)
+
+	return r
+}
+
+// newPanelSettingsHandler loads the panel access configuration this process is
+// serving and wires it to the audit trail. A configuration that cannot be read
+// is not fatal - every other route still works - so the failure is logged and
+// the settings routes answer 503 instead.
+func newPanelSettingsHandler(auditHandler *AuditHandler, logger *zap.Logger) *PanelSettingsHandler {
+	panelCfg, err := config.LoadPanelAccess()
+	if err != nil {
+		if logger != nil {
+			logger.Error("panel access settings unavailable: cannot load configuration", zap.Error(err))
+		}
+		return NewPanelSettingsHandler(nil, logger)
+	}
+
+	var auditService *service.AuditService
+	if auditHandler != nil {
+		auditService = auditHandler.Service()
+	}
+
+	return NewPanelSettingsHandler(
+		service.NewPanelSettingsService(panelCfg, auditService, logger),
+		logger,
+	)
 }
 
 func (r *Router) Setup() *gin.Engine {
@@ -888,25 +923,36 @@ func (r *Router) Setup() *gin.Engine {
 			dailyReports.GET("/deliveries", r.dailyReportHandler.ListDeliveries)
 		}
 
-		// Config
-		config := protected.Group("/config", middleware.RequireAdmin())
+		// Panel access settings. Administrator only: these routes change the
+		// port, the security entrance, the IP allow list and the panel's own
+		// TLS, which is to say they change who can reach the panel at all.
+		panel := protected.Group("/panel", middleware.RequireAdmin())
 		{
-			config.POST("/snapshots", r.configHandler.CreateSnapshot)
-			config.GET("/snapshots", r.configHandler.ListSnapshots)
-			config.GET("/snapshots/:id", r.configHandler.GetSnapshot)
-			config.DELETE("/snapshots/:id", r.configHandler.DeleteSnapshot)
-			config.POST("/rollback", r.configHandler.Rollback)
-			config.GET("/diff", r.configHandler.GetDiff)
-			config.GET("/history", r.configHandler.GetSnapshotHistory)
-			config.GET("/stats", r.configHandler.GetConfigStats)
-			config.POST("/cleanup", r.configHandler.CleanupOldSnapshots)
-			config.POST("/validate", r.configHandler.ValidateConfig)
+			panel.GET("/settings", r.panelSettingsHandler.Get)
+			panel.PUT("/settings", r.panelSettingsHandler.Update)
+			panel.POST("/settings/entrance/regenerate", r.panelSettingsHandler.RegenerateEntrance)
+			panel.POST("/settings/tls/reissue", r.panelSettingsHandler.ReissueCertificate)
+		}
 
-			config.POST("/templates", r.configHandler.CreateTemplate)
-			config.GET("/templates", r.configHandler.ListTemplates)
-			config.GET("/templates/:id", r.configHandler.GetTemplate)
-			config.PUT("/templates/:id", r.configHandler.UpdateTemplate)
-			config.DELETE("/templates/:id", r.configHandler.DeleteTemplate)
+		// Config
+		configRoutes := protected.Group("/config", middleware.RequireAdmin())
+		{
+			configRoutes.POST("/snapshots", r.configHandler.CreateSnapshot)
+			configRoutes.GET("/snapshots", r.configHandler.ListSnapshots)
+			configRoutes.GET("/snapshots/:id", r.configHandler.GetSnapshot)
+			configRoutes.DELETE("/snapshots/:id", r.configHandler.DeleteSnapshot)
+			configRoutes.POST("/rollback", r.configHandler.Rollback)
+			configRoutes.GET("/diff", r.configHandler.GetDiff)
+			configRoutes.GET("/history", r.configHandler.GetSnapshotHistory)
+			configRoutes.GET("/stats", r.configHandler.GetConfigStats)
+			configRoutes.POST("/cleanup", r.configHandler.CleanupOldSnapshots)
+			configRoutes.POST("/validate", r.configHandler.ValidateConfig)
+
+			configRoutes.POST("/templates", r.configHandler.CreateTemplate)
+			configRoutes.GET("/templates", r.configHandler.ListTemplates)
+			configRoutes.GET("/templates/:id", r.configHandler.GetTemplate)
+			configRoutes.PUT("/templates/:id", r.configHandler.UpdateTemplate)
+			configRoutes.DELETE("/templates/:id", r.configHandler.DeleteTemplate)
 		}
 	}
 

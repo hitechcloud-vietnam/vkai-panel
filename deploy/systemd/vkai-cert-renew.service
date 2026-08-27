@@ -1,0 +1,37 @@
+# =============================================================================
+# VKAI Panel - panel certificate renewal  |  HiTechCloud (hitechcloud.vn)
+# Installed as: /etc/systemd/system/vkai-cert-renew.service
+#
+# Renews the certificate the panel serves on its own port. It is enabled by
+# deploy/install.sh only with --tls-mode letsencrypt.
+#
+# Why daily rather than monthly: Let's Encrypt issues a certificate for an IP
+# ADDRESS only through the "shortlived" profile, and those certificates live for
+# about six days. A weekly job would already be too slow.
+#
+# This unit deliberately does NOT use the distribution's certbot. Ubuntu 24.04
+# still ships certbot 2.9.0, which knows nothing about ACME profiles, and the
+# panel must install identically on nine OS families. certbot stays responsible
+# for the CUSTOMER site certificates.
+# =============================================================================
+[Unit]
+Description=Renew the VKAI Panel certificate
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+# "vkai cert renew" is a no-op when the certificate is still far from expiry, so
+# running it every day costs nothing.
+ExecStart=/usr/local/bin/vkai cert renew --quiet
+EnvironmentFile=-/vkai-panel/etc/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-cert-renew
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

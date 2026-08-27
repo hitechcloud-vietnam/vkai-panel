@@ -2,10 +2,13 @@ package config
 
 import (
 	"crypto/tls"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadPanelAccessGeneratesAndPersistsAnEntrance(t *testing.T) {
@@ -198,5 +201,334 @@ func TestAccessURLUsesThePublicPortWhenProxied(t *testing.T) {
 	}
 	if !strings.Contains(cfg.Banner(), "ufw allow 8888/tcp") {
 		t.Fatal("the banner must advise opening the port operators actually connect to")
+	}
+}
+
+func TestTLSModeDefaultsToSelfSigned(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "panel_access.json")
+	t.Setenv("VKAI_PANEL_CONFIG_FILE", state)
+
+	cfg, err := LoadPanelAccess()
+	if err != nil {
+		t.Fatalf("LoadPanelAccess: %v", err)
+	}
+
+	if cfg.TLSMode() != TLSModeSelfSigned {
+		t.Fatalf("TLSMode() = %q, want %q", cfg.TLSMode(), TLSModeSelfSigned)
+	}
+	if !cfg.TLS.Enabled {
+		t.Fatal("TLS is off by default: the first login would travel in cleartext")
+	}
+	if !cfg.TLS.ACME.UseStaging {
+		t.Fatal("ACME staging is off by default: a misconfigured install would burn production rate limits")
+	}
+	// The mode has to be written back concretely, so the next build never has
+	// to guess what an older state file meant.
+	if cfg.TLS.Mode != TLSModeSelfSigned {
+		t.Fatalf("persisted TLS.Mode = %q, want it resolved to %q", cfg.TLS.Mode, TLSModeSelfSigned)
+	}
+}
+
+func TestLegacyStateFileWithoutAModeKeepsWorking(t *testing.T) {
+	dir := t.TempDir()
+
+	cases := []struct {
+		name     string
+		stored   string
+		wantMode string
+	}{
+		{
+			name:     "self signed",
+			stored:   `{"tls":{"enabled":true,"self_signed":true,"cert_file":"/x.crt","key_file":"/x.key"}}`,
+			wantMode: TLSModeSelfSigned,
+		},
+		{
+			// Written by a build that predates modes: self_signed=false meant
+			// "the operator supplied their own files". Reading it as
+			// self-signed would overwrite that certificate on the next start.
+			name:     "operator supplied files",
+			stored:   `{"tls":{"enabled":true,"self_signed":false,"cert_file":"/x.crt","key_file":"/x.key"}}`,
+			wantMode: TLSModeCustom,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := filepath.Join(dir, tc.name+".json")
+			if err := os.WriteFile(state, []byte(tc.stored), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("VKAI_PANEL_CONFIG_FILE", state)
+
+			cfg, err := LoadPanelAccess()
+			if err != nil {
+				t.Fatalf("LoadPanelAccess: %v", err)
+			}
+			if cfg.TLSMode() != tc.wantMode {
+				t.Fatalf("TLSMode() = %q, want %q", cfg.TLSMode(), tc.wantMode)
+			}
+		})
+	}
+}
+
+func TestACMEEnvironmentVariables(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "panel_access.json")
+	t.Setenv("VKAI_PANEL_CONFIG_FILE", state)
+	t.Setenv("VKAI_PANEL_TLS_MODE", "letsencrypt")
+	t.Setenv("VKAI_PANEL_ACME_EMAIL", "ops@hitechcloud.vn")
+	t.Setenv("VKAI_PANEL_ACME_STAGING", "false")
+	t.Setenv("VKAI_PANEL_ACME_PROFILE", "tlsserver")
+
+	cfg, err := LoadPanelAccess()
+	if err != nil {
+		t.Fatalf("LoadPanelAccess: %v", err)
+	}
+
+	if cfg.TLSMode() != TLSModeLetsEncrypt {
+		t.Fatalf("TLSMode() = %q, want %q", cfg.TLSMode(), TLSModeLetsEncrypt)
+	}
+	if !cfg.UsesACME() {
+		t.Fatal("UsesACME() = false in letsencrypt mode")
+	}
+	if cfg.TLS.ACME.Email != "ops@hitechcloud.vn" {
+		t.Fatalf("Email = %q", cfg.TLS.ACME.Email)
+	}
+	if cfg.TLS.ACME.UseStaging {
+		t.Fatal("staging was not switched off by VKAI_PANEL_ACME_STAGING=false")
+	}
+	if cfg.TLS.ACME.Profile != ACMEProfileTLSServer {
+		t.Fatalf("Profile = %q, want %q", cfg.TLS.ACME.Profile, ACMEProfileTLSServer)
+	}
+	if !cfg.IsEnvOverridden("tls_mode") {
+		t.Fatal("tls_mode is not marked as environment-pinned")
+	}
+	// A CA-issued certificate still needs somewhere to live.
+	if cfg.TLS.CertFile == "" || cfg.TLS.KeyFile == "" {
+		t.Fatal("no certificate path was derived for letsencrypt mode")
+	}
+}
+
+func TestLegacySelfSignedFlagStillSelectsTheMode(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "panel_access.json")
+	t.Setenv("VKAI_PANEL_CONFIG_FILE", state)
+	t.Setenv("VKAI_PANEL_TLS_SELF_SIGNED", "true")
+
+	cfg, err := LoadPanelAccess()
+	if err != nil {
+		t.Fatalf("LoadPanelAccess: %v", err)
+	}
+	if cfg.TLSMode() != TLSModeSelfSigned {
+		t.Fatalf("TLSMode() = %q, want the legacy flag to still work", cfg.TLSMode())
+	}
+}
+
+func TestExplicitCertificateFilesSwitchToCustomMode(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("VKAI_PANEL_CONFIG_FILE", filepath.Join(dir, "panel_access.json"))
+	t.Setenv("VKAI_PANEL_TLS_CERT", filepath.Join(dir, "mine.crt"))
+	t.Setenv("VKAI_PANEL_TLS_KEY", filepath.Join(dir, "mine.key"))
+
+	cfg, err := LoadPanelAccess()
+	if err != nil {
+		t.Fatalf("LoadPanelAccess: %v", err)
+	}
+	if cfg.TLSMode() != TLSModeCustom {
+		t.Fatalf("TLSMode() = %q, want %q so the supplied pair is never overwritten", cfg.TLSMode(), TLSModeCustom)
+	}
+}
+
+func TestModeEnvironmentBeatsTheOlderFlags(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("VKAI_PANEL_CONFIG_FILE", filepath.Join(dir, "panel_access.json"))
+	t.Setenv("VKAI_PANEL_TLS_CERT", filepath.Join(dir, "mine.crt"))
+	t.Setenv("VKAI_PANEL_TLS_SELF_SIGNED", "true")
+	t.Setenv("VKAI_PANEL_TLS_MODE", "letsencrypt")
+
+	cfg, err := LoadPanelAccess()
+	if err != nil {
+		t.Fatalf("LoadPanelAccess: %v", err)
+	}
+	if cfg.TLSMode() != TLSModeLetsEncrypt {
+		t.Fatalf("TLSMode() = %q, want the explicit mode to win", cfg.TLSMode())
+	}
+}
+
+func TestInvalidTLSModeAndACMESettingsAreRejected(t *testing.T) {
+	t.Run("mode", func(t *testing.T) {
+		t.Setenv("VKAI_PANEL_CONFIG_FILE", filepath.Join(t.TempDir(), "panel_access.json"))
+		t.Setenv("VKAI_PANEL_TLS_MODE", "vault")
+		if _, err := LoadPanelAccess(); err == nil {
+			t.Fatal("an unknown TLS mode was accepted")
+		}
+	})
+
+	t.Run("email", func(t *testing.T) {
+		t.Setenv("VKAI_PANEL_CONFIG_FILE", filepath.Join(t.TempDir(), "panel_access.json"))
+		t.Setenv("VKAI_PANEL_TLS_MODE", "letsencrypt")
+		t.Setenv("VKAI_PANEL_ACME_EMAIL", "not-an-address")
+		if _, err := LoadPanelAccess(); err == nil {
+			t.Fatal("an unparseable ACME contact address was accepted")
+		}
+	})
+
+	t.Run("profile", func(t *testing.T) {
+		t.Setenv("VKAI_PANEL_CONFIG_FILE", filepath.Join(t.TempDir(), "panel_access.json"))
+		t.Setenv("VKAI_PANEL_TLS_MODE", "letsencrypt")
+		t.Setenv("VKAI_PANEL_ACME_PROFILE", "short lived/../x")
+		if _, err := LoadPanelAccess(); err == nil {
+			t.Fatal("a malformed ACME profile name was accepted")
+		}
+	})
+}
+
+func TestACMEIdentifierPrefersThePinnedDomain(t *testing.T) {
+	cfg := DefaultPanelAccess()
+	cfg.Domain = "Panel.Example.COM"
+
+	id, err := cfg.ACMEIdentifier()
+	if err != nil {
+		t.Fatalf("ACMEIdentifier: %v", err)
+	}
+	if id.Type != ACMEIdentifierDNS || id.Value != "panel.example.com" {
+		t.Fatalf("identifier = %+v, want a lower-cased dns identifier", id)
+	}
+	if got := cfg.ACMEProfileFor(id.Type); got != ACMEProfileTLSServer {
+		t.Fatalf("profile for a dns identifier = %q, want %q", got, ACMEProfileTLSServer)
+	}
+}
+
+func TestIPIdentifiersUseTheShortLivedProfile(t *testing.T) {
+	// Certificates for a bare IP address are only issued under "shortlived",
+	// which is about six days. Anything else is refused by the CA.
+	if got := DefaultACMEProfile(ACMEIdentifierIP); got != ACMEProfileShortLived {
+		t.Fatalf("DefaultACMEProfile(ip) = %q, want %q", got, ACMEProfileShortLived)
+	}
+	if got := DefaultACMEProfile(ACMEIdentifierDNS); got != ACMEProfileTLSServer {
+		t.Fatalf("DefaultACMEProfile(dns) = %q, want %q", got, ACMEProfileTLSServer)
+	}
+
+	cfg := DefaultPanelAccess()
+	cfg.TLS.ACME.Profile = "classic"
+	if got := cfg.ACMEProfileFor(ACMEIdentifierIP); got != ACMEProfileClassic {
+		t.Fatalf("an operator-pinned profile was ignored: %q", got)
+	}
+}
+
+func TestUnroutableAddressesAreNeverOrdered(t *testing.T) {
+	// Ordering one of these does not merely fail: it spends the per-account
+	// failed-validation rate limit, which then blocks every later order.
+	unroutable := []string{
+		"127.0.0.1",       // loopback
+		"10.1.2.3",        // RFC1918
+		"172.16.0.9",      // RFC1918
+		"172.31.255.254",  // RFC1918, top of the block
+		"192.168.1.1",     // RFC1918
+		"169.254.10.10",   // link-local
+		"100.64.0.1",      // CGNAT, RFC6598
+		"100.127.255.255", // CGNAT, top of the block
+		"0.0.0.0",
+		"224.0.0.1",
+		"255.255.255.255",
+	}
+	for _, raw := range unroutable {
+		if IsPubliclyRoutableIPv4(net.ParseIP(raw)) {
+			t.Fatalf("%s is treated as publicly routable", raw)
+		}
+	}
+
+	routable := []string{"116.118.2.44", "8.8.8.8", "172.32.0.1", "100.128.0.1", "9.255.255.255"}
+	for _, raw := range routable {
+		if !IsPubliclyRoutableIPv4(net.ParseIP(raw)) {
+			t.Fatalf("%s is treated as unroutable, so a valid install could never get a certificate", raw)
+		}
+	}
+}
+
+func TestBannerNamesTheCertificateSource(t *testing.T) {
+	cfg := DefaultPanelAccess()
+	cfg.Entrance = "/vkai_a1b2c3d4"
+	cfg.Domain = "panel.example.com"
+	cfg.TLS.Mode = TLSModeLetsEncrypt
+
+	// Before the TLS manager reports in, the banner falls back to the mode.
+	if !strings.Contains(cfg.Banner(), "letsencrypt (staging)") {
+		t.Fatalf("the banner does not name the requested source:\n%s", cfg.Banner())
+	}
+
+	// Once it does, the banner names what is actually on the wire - here, the
+	// fallback an unreachable CA left behind.
+	cfg.CertSource = "self-signed (fallback)"
+	banner := cfg.Banner()
+	if !strings.Contains(banner, "self-signed (fallback)") {
+		t.Fatalf("the banner hides the fallback:\n%s", banner)
+	}
+}
+
+func TestEnsureTLSMaterialDoesNotOverwriteAnIssuedCertificate(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := DefaultPanelAccess()
+	cfg.Domain = "panel.example.com"
+	cfg.TLS.Mode = TLSModeLetsEncrypt
+	cfg.TLS.CertFile = filepath.Join(dir, "panel.crt")
+	cfg.TLS.KeyFile = filepath.Join(dir, "panel.key")
+
+	// First call bootstraps a local pair, because the panel must answer HTTPS
+	// before any ACME order can finish.
+	certFile, keyFile, err := cfg.EnsureTLSMaterial()
+	if err != nil {
+		t.Fatalf("EnsureTLSMaterial: %v", err)
+	}
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		t.Fatalf("the bootstrap pair does not load: %v", err)
+	}
+
+	// Stand in for what the TLS manager writes after a successful order. The
+	// second call must leave it exactly as it is: regenerating here would throw
+	// away a certificate that cost a rate limit to obtain.
+	marker := []byte("-----BEGIN CERTIFICATE-----\nissued\n-----END CERTIFICATE-----\n")
+	if err := os.WriteFile(certFile, marker, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := cfg.EnsureTLSMaterial(); err != nil {
+		t.Fatalf("second EnsureTLSMaterial: %v", err)
+	}
+	got, err := os.ReadFile(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(marker) {
+		t.Fatal("the issued certificate was overwritten by the self-signed generator")
+	}
+}
+
+func TestCustomModeWithoutFilesIsRejectedAtLoad(t *testing.T) {
+	cfg := DefaultPanelAccess()
+	cfg.TLS.Mode = TLSModeCustom
+	cfg.TLS.SelfSigned = false
+	cfg.TLS.CertFile = ""
+	cfg.TLS.KeyFile = ""
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("custom TLS mode was accepted with no certificate paths")
+	}
+}
+
+func TestRecordACMEResult(t *testing.T) {
+	cfg := DefaultPanelAccess()
+
+	cfg.RecordACMEResult(time.Time{}, errors.New("connection refused"))
+	if cfg.TLS.ACME.LastError == "" {
+		t.Fatal("the failure was not recorded, so the UI could not explain the fallback")
+	}
+
+	at := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	cfg.RecordACMEResult(at, nil)
+	if !cfg.TLS.ACME.LastIssuedAt.Equal(at) {
+		t.Fatalf("LastIssuedAt = %s, want %s", cfg.TLS.ACME.LastIssuedAt, at)
+	}
+	if cfg.TLS.ACME.LastError != "" {
+		t.Fatal("a successful issuance left the previous error behind")
 	}
 }
