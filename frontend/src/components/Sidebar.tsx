@@ -137,6 +137,11 @@ const menuItems: MenuItem[] = [
     href: '/file-protection',
   },
   {
+    label: 'Daily Reports',
+    icon: <FileText size={18} />,
+    href: '/daily-reports',
+  },
+  {
     label: 'Backups',
     icon: <HardDrive size={18} />,
     href: '/backups',

@@ -46,6 +46,7 @@ type Router struct {
 	mailServerHandler    *MailServerHandler
 	fileProtectionHandler *FileProtectionHandler
 	multiUserHandler     *MultiUserHandler
+	dailyReportHandler   *DailyReportHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -87,6 +88,7 @@ func NewRouter(
 	mailServerHandler *MailServerHandler,
 	fileProtectionHandler *FileProtectionHandler,
 	multiUserHandler *MultiUserHandler,
+	dailyReportHandler *DailyReportHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -130,6 +132,7 @@ func NewRouter(
 		mailServerHandler:    mailServerHandler,
 		fileProtectionHandler: fileProtectionHandler,
 		multiUserHandler:     multiUserHandler,
+		dailyReportHandler:   dailyReportHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -783,6 +786,28 @@ func (r *Router) Setup() *gin.Engine {
 
 			// Activity log
 			multiUser.GET("/activities", r.multiUserHandler.ListActivities)
+		}
+
+		// Daily Reports
+		dailyReports := protected.Group("/daily-reports")
+		{
+			dailyReports.GET("/stats", r.dailyReportHandler.GetStats)
+
+			// Reports
+			dailyReports.GET("/reports", r.dailyReportHandler.ListReports)
+			dailyReports.POST("/reports/generate", r.dailyReportHandler.GenerateReport)
+			dailyReports.GET("/reports/:id", r.dailyReportHandler.GetReport)
+			dailyReports.DELETE("/reports/:id", r.dailyReportHandler.DeleteReport)
+
+			// Schedules
+			dailyReports.GET("/schedules", r.dailyReportHandler.ListSchedules)
+			dailyReports.POST("/schedules", r.dailyReportHandler.CreateSchedule)
+			dailyReports.GET("/schedules/:id", r.dailyReportHandler.GetSchedule)
+			dailyReports.PUT("/schedules/:id", r.dailyReportHandler.UpdateSchedule)
+			dailyReports.DELETE("/schedules/:id", r.dailyReportHandler.DeleteSchedule)
+
+			// Deliveries
+			dailyReports.GET("/deliveries", r.dailyReportHandler.ListDeliveries)
 		}
 
 		// Config

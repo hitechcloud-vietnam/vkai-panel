@@ -223,6 +223,11 @@ func main() {
 	multiUserService := service.NewMultiUserService(multiUserRepo, logger)
 	multiUserHandler := handler.NewMultiUserHandler(multiUserService, logger)
 
+	// Initialize Daily Report Pro
+	dailyReportRepo := repository.NewDailyReportRepository(db.DB, logger)
+	dailyReportService := service.NewDailyReportService(dailyReportRepo, logger)
+	dailyReportHandler := handler.NewDailyReportHandler(dailyReportService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -261,6 +266,7 @@ func main() {
 		mailServerHandler,
 		fileProtectionHandler,
 		multiUserHandler,
+		dailyReportHandler,
 		jwtManager,
 		logger,
 	)
