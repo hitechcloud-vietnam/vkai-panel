@@ -1,6 +1,6 @@
 # VKAI Panel — Cài đặt & Triển khai
 
-HiTech Cloud (hitechcloud.vn)
+HiTechCloud (hitechcloud.vn)
 
 Panel **không bao giờ** dùng cổng 80/443. Hai cổng đó dành riêng cho website của
 khách. Panel nghe trên **cổng riêng** (mặc định `8888`) kèm một **lối vào an

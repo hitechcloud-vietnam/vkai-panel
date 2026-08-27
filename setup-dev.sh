@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# VKAI Panel - Development Setup Script (HiTech Cloud)
+# VKAI Panel - Development Setup Script (HiTechCloud)
 # Uses Docker only for databases (PostgreSQL, Redis)
 #
 # Thu muc ma nguon: core/ (Go API), panel/ (Next.js UI), agent/ (Go agent)
@@ -23,7 +23,7 @@ print_banner() {
     echo -e "${BLUE}"
     echo "╔═══════════════════════════════════════════════════════════╗"
     echo "║           VKAI Panel - Development Setup                  ║"
-    echo "║           HiTech Cloud - hitechcloud.vn                   ║"
+    echo "║           HiTechCloud - hitechcloud.vn                   ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }

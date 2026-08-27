@@ -18,10 +18,18 @@
   --ink-secondary: #4b5563; /* gray-600    */
   --ink-muted: #6b7280;     /* gray-500    */
   --ink-faint: #9ca3af;     /* gray-400    */
-  --accent: #2563eb;        /* blue-600    */
-  --accent-hover: #1d4ed8;  /* blue-700    */
-  --accent-soft: #eff6ff;   /* blue-50     */
-  --accent-text: #1d4ed8;   /* blue-700    */
+  --brand: #0b398c;         /* brand-600 - navy logo   */
+  --brand-hover: #092e70;   /* brand-700               */
+  --brand-soft: #eff4fc;    /* brand-50                */
+  --brand-line: #b3c8ef;    /* brand-200               */
+  --brand-text: #092e70;    /* brand-700 - lien ket    */
+  --brand-ring: #1f53b0;    /* brand-500 - focus ring  */
+  --brand-accent: #1791c8;  /* accent-500 - cyan logo  */
+  /* Bi danh cu: giu ten --accent* de khong vo CSS/inline style con sot lai. */
+  --accent: var(--brand);
+  --accent-hover: var(--brand-hover);
+  --accent-soft: var(--brand-soft);
+  --accent-text: var(--brand-text);
   --success: #059669;       /* emerald-600 */
   --success-soft: #ecfdf5;  /* emerald-50  */
   --warning: #d97706;       /* amber-600   */
@@ -55,7 +63,7 @@ body {
 /* Accessibility: focus ring ro rang tren moi phan tu tuong tac */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--accent);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--brand-ring);
   border-radius: 6px;
 }
 
@@ -193,14 +201,14 @@ tbody tr:hover {
 }
 
 .btn-primary {
-  background-color: var(--accent);
-  border-color: var(--accent);
+  background-color: var(--brand);
+  border-color: var(--brand);
   color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background-color: var(--brand-hover);
+  border-color: var(--brand-hover);
 }
 
 .btn-secondary {
@@ -259,8 +267,8 @@ tbody tr:hover {
 .select:focus,
 .textarea:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  border-color: var(--brand-ring);
+  box-shadow: 0 0 0 1px var(--brand-ring);
 }
 
 .input:disabled,
@@ -311,6 +319,18 @@ tbody tr:hover {
   color: var(--info);
 }
 
+.badge-brand {
+  background-color: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  color: var(--brand-text);
+}
+
+.badge-accent {
+  background-color: #ecf7fc;
+  border: 1px solid #a5d8ef;
+  color: #0e5d82;
+}
+
 .badge-neutral {
   background-color: #f3f4f6;
   color: var(--ink-secondary);
@@ -328,7 +348,7 @@ tbody tr:hover {
 .progress-bar-fill {
   height: 100%;
   border-radius: 3px;
-  background-color: var(--accent);
+  background-color: var(--brand);
   transition: width 0.3s ease;
 }
 
@@ -357,8 +377,8 @@ tbody tr:hover {
 }
 
 .tab.active {
-  color: var(--accent-text);
-  border-bottom-color: var(--accent);
+  color: var(--brand-text);
+  border-bottom-color: var(--brand);
 }
 
 /* Code / mono */

@@ -694,7 +694,7 @@ Yes, the MIT License allows commercial use.
 
 While not required, attribution is appreciated:
 ```markdown
-This project uses [VKAI Panel](https://github.com/hitechcloud-vietnam/vkai-panel) by [HiTech Cloud Vietnam](https://hitechcloud.vn).
+This project uses [VKAI Panel](https://github.com/hitechcloud-vietnam/vkai-panel) by [HiTechCloud Vietnam](https://hitechcloud.vn).
 ```
 
 ---

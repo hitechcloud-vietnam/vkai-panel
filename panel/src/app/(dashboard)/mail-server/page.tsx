@@ -58,11 +58,11 @@ const TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide te
 const TD = 'px-4 py-3 text-sm text-gray-700';
 const ROW = 'border-b border-gray-100 hover:bg-gray-50';
 const INPUT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_DANGER =
   'inline-flex items-center gap-2 rounded-md bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-1';
 const ICON_DANGER =
@@ -72,7 +72,7 @@ const MODAL_BACKDROP = 'fixed inset-0 z-50 flex items-center justify-center bg-g
 const MODAL_PANEL = 'w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-lg';
 
 const STAT_TONES: Record<string, { wrap: string; icon: string }> = {
-  blue: { wrap: 'bg-blue-50', icon: 'text-blue-600' },
+  blue: { wrap: 'bg-brand-50', icon: 'text-brand-600' },
   emerald: { wrap: 'bg-emerald-50', icon: 'text-emerald-600' },
   sky: { wrap: 'bg-sky-50', icon: 'text-sky-600' },
   amber: { wrap: 'bg-amber-50', icon: 'text-amber-600' },
@@ -307,9 +307,9 @@ export default function MailServerPage() {
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -409,7 +409,7 @@ export default function MailServerPage() {
                     <td className={TD}>{a.used_mb ?? 0}/{a.quota_mb ?? 0} MB</td>
                     <td className={TD}>{a.forward_to || '—'}</td>
                     <td className="px-4 py-3">
-                      <span className={`${BADGE} ${a.auto_reply ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`${BADGE} ${a.auto_reply ? 'bg-brand-50 text-brand-700' : 'bg-gray-100 text-gray-600'}`}>
                         {a.auto_reply ? 'On' : 'Off'}
                       </span>
                     </td>
@@ -504,7 +504,7 @@ export default function MailServerPage() {
                         q.status === 'sent' ? 'bg-emerald-50 text-emerald-700' :
                         q.status === 'failed' ? 'bg-red-50 text-red-700' :
                         q.status === 'deferred' ? 'bg-amber-50 text-amber-700' :
-                        'bg-blue-50 text-blue-700'
+                        'bg-brand-50 text-brand-700'
                       }`}>
                         {q.status || 'unknown'}
                       </span>

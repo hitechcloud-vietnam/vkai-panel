@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # VKAI Panel - lop tuong thich cho duong dan cu "scripts/install.sh"
-# HiTech Cloud (hitechcloud.vn)
+# HiTechCloud (hitechcloud.vn)
 #
 # Bo cai dat THAT nam o deploy/install.sh. Truoc day co hai ban cai song song
 # (scripts/install.sh va deploy/install.sh) voi duong dan, ten dich vu va cach

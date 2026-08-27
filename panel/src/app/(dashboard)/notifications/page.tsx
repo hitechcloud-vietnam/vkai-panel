@@ -40,14 +40,14 @@ const CARD_CLASS = 'rounded-lg border border-gray-200 bg-white shadow-sm';
 const CARD_HEADER_CLASS =
   'flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-5 py-4';
 const CARD_TITLE_CLASS = 'text-sm font-semibold text-gray-900';
-const BTN_PRIMARY = 'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500';
+const BTN_PRIMARY = 'bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-500';
 const BTN_SECONDARY =
-  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-blue-500';
+  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-brand-500';
 const BADGE_BASE = 'rounded-md border-transparent px-2 py-0.5 text-xs font-medium';
 const TABS_LIST_CLASS =
   'inline-flex h-auto items-center gap-1 rounded-md border border-gray-200 bg-white p-1 text-gray-600';
 const TABS_TRIGGER_CLASS =
-  'rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none';
+  'rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none';
 
 function formatTimestamp(value: string): string {
   if (!value) return '—';
@@ -118,7 +118,7 @@ export default function NotificationsPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'unread':
-        return 'bg-blue-50 text-blue-700';
+        return 'bg-brand-50 text-brand-700';
       case 'read':
         return 'bg-gray-100 text-gray-700';
       case 'archived':
@@ -182,7 +182,7 @@ export default function NotificationsPage() {
           <TabsTrigger value="inbox" className={TABS_TRIGGER_CLASS}>
             Inbox
             {unreadCount > 0 && (
-              <Badge variant="outline" className={`${BADGE_BASE} ml-2 bg-blue-50 text-blue-700`}>{unreadCount}</Badge>
+              <Badge variant="outline" className={`${BADGE_BASE} ml-2 bg-brand-50 text-brand-700`}>{unreadCount}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="templates" className={TABS_TRIGGER_CLASS}>Templates</TabsTrigger>
@@ -211,7 +211,7 @@ export default function NotificationsPage() {
                     <div
                       key={notification.id}
                       className={`flex flex-wrap items-start justify-between gap-3 rounded-md border border-gray-200 px-4 py-3 ${
-                        notification.status === 'unread' ? 'bg-blue-50' : 'bg-white'
+                        notification.status === 'unread' ? 'bg-brand-50' : 'bg-white'
                       }`}
                     >
                       <div className="flex items-start gap-3">

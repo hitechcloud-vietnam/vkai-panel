@@ -579,7 +579,7 @@ func (p *PanelAccessConfig) Banner() string {
 	line := strings.Repeat("=", width)
 
 	b.WriteString("\n" + line + "\n")
-	b.WriteString("  VKAI PANEL - HiTech Cloud (hitechcloud.vn)\n")
+	b.WriteString("  VKAI PANEL - HiTechCloud (hitechcloud.vn)\n")
 	b.WriteString("  THONG TIN TRUY CAP (khong dung cong 80/443)\n")
 	b.WriteString(line + "\n")
 	for _, row := range rows {
@@ -763,7 +763,7 @@ func generateSelfSignedCert(certFile, keyFile string, hosts []string) error {
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   "VKAI Panel",
-			Organization: []string{"HiTech Cloud"},
+			Organization: []string{"HiTechCloud"},
 		},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.AddDate(2, 0, 0),

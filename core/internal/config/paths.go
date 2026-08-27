@@ -1,6 +1,6 @@
 package config
 
-// System path layout for VKAI Panel (HiTech Cloud).
+// System path layout for VKAI Panel (HiTechCloud).
 //
 // Every absolute path the panel writes to or reads from is declared here and
 // nowhere else. A literal "/var/www" or "/opt/vkai-panel" left in a service is

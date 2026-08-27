@@ -56,11 +56,11 @@ const CARD_HEADER_CLASS =
 const CARD_TITLE_CLASS = 'text-sm font-semibold text-gray-900';
 const TH_CLASS = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50';
 const INPUT_CLASS =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 const BADGE_BASE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 
 function formatDateTime(value: string): string {
@@ -213,7 +213,7 @@ export default function FileProtectionPage() {
       case 'critical': return 'bg-red-50 text-red-700';
       case 'high': return 'bg-orange-50 text-orange-700';
       case 'medium': return 'bg-amber-50 text-amber-700';
-      default: return 'bg-blue-50 text-blue-700';
+      default: return 'bg-brand-50 text-brand-700';
     }
   };
 
@@ -291,9 +291,9 @@ export default function FileProtectionPage() {
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   aria-current={activeTab === tab.id ? 'page' : undefined}
-                  className={`-mb-px flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  className={`-mb-px flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                     activeTab === tab.id
-                      ? 'border-blue-600 text-blue-700'
+                      ? 'border-brand-600 text-brand-700'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-900'
                   }`}
                 >
@@ -345,7 +345,7 @@ export default function FileProtectionPage() {
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
                             {r.watch_create && <span className={`${BADGE_BASE} bg-emerald-50 text-emerald-700`} title="Create">C</span>}
-                            {r.watch_modify && <span className={`${BADGE_BASE} bg-blue-50 text-blue-700`} title="Modify">M</span>}
+                            {r.watch_modify && <span className={`${BADGE_BASE} bg-brand-50 text-brand-700`} title="Modify">M</span>}
                             {r.watch_delete && <span className={`${BADGE_BASE} bg-red-50 text-red-700`} title="Delete">D</span>}
                             {r.watch_permissions && <span className={`${BADGE_BASE} bg-sky-50 text-sky-700`} title="Permissions">P</span>}
                           </div>
@@ -355,7 +355,7 @@ export default function FileProtectionPage() {
                             type="button"
                             onClick={() => toggleRule(r.id)}
                             aria-label={r.is_active ? `Disable rule ${r.name}` : `Enable rule ${r.name}`}
-                            className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                           >
                             {r.is_active
                               ? <ToggleRight className="h-5 w-5 text-emerald-600" aria-hidden="true" />
@@ -414,7 +414,7 @@ export default function FileProtectionPage() {
                         </td>
                       </tr>
                     ) : events.map((e) => (
-                      <tr key={e.id} className={`hover:bg-gray-50 ${!e.is_read ? 'bg-blue-50' : ''}`}>
+                      <tr key={e.id} className={`hover:bg-gray-50 ${!e.is_read ? 'bg-brand-50' : ''}`}>
                         <td className="max-w-[250px] truncate px-4 py-3 font-mono text-sm text-gray-900">{e.file_path || '—'}</td>
                         <td className="px-4 py-3">
                           <span className={`${BADGE_BASE} ${eventTypeColor(e.event_type)}`}>
@@ -479,7 +479,7 @@ export default function FileProtectionPage() {
                               <button
                                 type="button"
                                 onClick={() => restoreQuarantine(q.id)}
-                                className="rounded-md px-2 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="rounded-md px-2 py-1 text-sm font-medium text-brand-700 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                               >
                                 Restore
                               </button>
@@ -548,7 +548,7 @@ export default function FileProtectionPage() {
                   type="checkbox"
                   checked={newRule.recursive}
                   onChange={(e) => setNewRule({ ...newRule, recursive: e.target.checked })}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                 /> Recursive
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -558,7 +558,7 @@ export default function FileProtectionPage() {
                       type="checkbox"
                       checked={newRule[key]}
                       onChange={(e) => setNewRule({ ...newRule, [key]: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                     />
                     {key.replace('watch_', '').charAt(0).toUpperCase() + key.replace('watch_', '').slice(1)}
                   </label>

@@ -102,7 +102,11 @@ jobs:
     needs: build
     # `inputs.environment` (not github.event.inputs.*) so the value is null,
     # rather than an empty string, on push events.
-    if: github.ref == 'refs/heads/main' || inputs.environment == 'staging'
+    # Bo qua khi chua cau hinh secret may chu: khong co secret thi khong the trien khai,
+    # va mot workflow do vi thieu ha tang se lam nhieu tin hieu CI tren main.
+    if: >-
+      (github.ref == 'refs/heads/main' || inputs.environment == 'staging')
+      && secrets.STAGING_HOST != '' && secrets.STAGING_SSH_KEY != ''
     environment: staging
 
     steps:
@@ -152,6 +156,7 @@ jobs:
       && needs.build.result == 'success'
       && (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped')
       && (startsWith(github.ref, 'refs/tags/v') || inputs.environment == 'production')
+      && secrets.PRODUCTION_HOST != '' && secrets.PRODUCTION_SSH_KEY != ''
     environment: production
 
     # The `secrets` context is not available in a step-level `if:`, so the

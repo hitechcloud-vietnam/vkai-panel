@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # VKAI Panel - trien khai ban phat hanh (release) da dong goi san
-# HiTech Cloud (hitechcloud.vn)
+# HiTechCloud (hitechcloud.vn)
 #
 #   deploy.sh deploy <file.tar.gz>   Trien khai ban moi
 #   deploy.sh rollback               Quay ve ban truoc

@@ -33,14 +33,14 @@ const CARD_CLASS = 'rounded-lg border border-gray-200 bg-white shadow-sm';
 const CARD_HEADER_CLASS = 'flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-5 py-4';
 const CARD_TITLE_CLASS = 'text-sm font-semibold text-gray-900';
 const BTN_PRIMARY =
-  'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500';
+  'bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-500';
 const BTN_SECONDARY =
-  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-blue-500';
+  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-brand-500';
 const BTN_DANGER = 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500';
 const INPUT_CLASS =
-  'w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0';
+  'w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0';
 const SELECT_CLASS =
-  'border-gray-300 bg-white text-sm text-gray-900 focus:ring-1 focus:ring-blue-500 focus:ring-offset-0';
+  'border-gray-300 bg-white text-sm text-gray-900 focus:ring-1 focus:ring-brand-500 focus:ring-offset-0';
 const BADGE_BASE = 'rounded-md border-transparent px-2 py-0.5 text-xs font-medium';
 
 function formatTimestamp(value: string): string {
@@ -123,7 +123,7 @@ export default function AuditPage() {
   const getActionColor = (action: string) => {
     const value = (action || '').toLowerCase();
     if (value.includes('create') || value.includes('add')) return 'bg-emerald-50 text-emerald-700';
-    if (value.includes('update') || value.includes('edit')) return 'bg-blue-50 text-blue-700';
+    if (value.includes('update') || value.includes('edit')) return 'bg-brand-50 text-brand-700';
     if (value.includes('delete') || value.includes('remove')) return 'bg-red-50 text-red-700';
     if (value.includes('login') || value.includes('auth')) return 'bg-sky-50 text-sky-700';
     return 'bg-gray-100 text-gray-700';
@@ -320,7 +320,7 @@ export default function AuditPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-blue-700 hover:bg-blue-50 hover:text-blue-700"
+                          className="text-brand-700 hover:bg-brand-50 hover:text-brand-700"
                         >
                           View
                         </Button>

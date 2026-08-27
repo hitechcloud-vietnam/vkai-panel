@@ -44,10 +44,10 @@ const TD = 'px-4 py-3 text-sm text-gray-700';
 const ROW = 'border-b border-gray-100 hover:bg-gray-50';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const SELECT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const LABEL = 'mb-1.5 block text-sm font-medium text-gray-700';
 const LINK_BTN =
-  'rounded-md px-2 py-1 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  'rounded-md px-2 py-1 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -118,7 +118,7 @@ export default function JobsPage() {
     switch (status) {
       case 'completed': return 'bg-emerald-50 text-emerald-700';
       case 'failed': return 'bg-red-50 text-red-700';
-      case 'active': return 'bg-blue-50 text-blue-700';
+      case 'active': return 'bg-brand-50 text-brand-700';
       case 'pending': return 'bg-amber-50 text-amber-700';
       case 'cancelled': return 'bg-gray-100 text-gray-700';
       default: return 'bg-gray-100 text-gray-700';
@@ -331,7 +331,7 @@ export default function JobsPage() {
                           <button
                             type="button"
                             onClick={() => handleRetry(job.id)}
-                            className={`${LINK_BTN} text-blue-700 hover:bg-blue-50`}
+                            className={`${LINK_BTN} text-brand-700 hover:bg-brand-50`}
                           >
                             Retry
                           </button>

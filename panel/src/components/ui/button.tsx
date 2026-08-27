@@ -4,13 +4,13 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         // Nut chinh
-        default: "border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700",
-        primary: "border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700",
+        default: "border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700",
+        primary: "border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700",
         // Nut phu
         secondary: "border-gray-300 bg-white text-gray-700 hover:bg-gray-50",
         outline: "border-gray-300 bg-white text-gray-700 hover:bg-gray-50",
@@ -20,7 +20,7 @@ const buttonVariants = cva(
         "danger-outline": "border-red-300 bg-white text-red-700 hover:bg-red-50",
         // Nut mo
         ghost: "border-transparent bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-        link: "border-transparent bg-transparent text-blue-700 underline-offset-4 hover:underline",
+        link: "border-transparent bg-transparent text-brand-700 underline-offset-4 hover:text-brand-800 hover:underline",
       },
       size: {
         default: "h-9 px-3.5 py-2",

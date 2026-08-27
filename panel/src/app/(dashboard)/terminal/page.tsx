@@ -485,7 +485,7 @@ export default function TerminalPage() {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" aria-hidden="true" />
+          <Loader2 className="h-8 w-8 animate-spin text-brand-600" aria-hidden="true" />
           <p className="text-sm text-gray-600">Loading terminal...</p>
         </div>
       </div>
@@ -579,7 +579,7 @@ export default function TerminalPage() {
                     className={cn(
                       'group flex items-center gap-2 rounded-md px-3 py-2 cursor-pointer border',
                       session.id === activeSessionId
-                        ? 'bg-blue-50 border-blue-200 text-blue-700'
+                        ? 'bg-brand-50 border-brand-200 text-brand-700'
                         : 'border-transparent text-gray-700 hover:bg-gray-50',
                     )}
                   >
@@ -608,7 +608,7 @@ export default function TerminalPage() {
                             reconnectSession(session.id);
                           }}
                           aria-label={`Reconnect ${session.name}`}
-                          className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                           title="Reconnect"
                         >
                           <Wifi className="h-3 w-3" aria-hidden="true" />
@@ -621,7 +621,7 @@ export default function TerminalPage() {
                           closeSession(session.id);
                         }}
                         aria-label={`Close ${session.name}`}
-                        className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                         title="Close session"
                       >
                         <X className="h-3 w-3" aria-hidden="true" />
@@ -658,7 +658,7 @@ export default function TerminalPage() {
                   className={cn(
                     'group flex items-center gap-2 px-4 py-2 text-xs cursor-pointer border-r border-gray-200 min-w-[120px]',
                     session.id === activeSessionId
-                      ? 'bg-white text-gray-900 border-b-2 border-b-blue-600'
+                      ? 'bg-white text-gray-900 border-b-2 border-b-brand-600'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
                   )}
                 >
@@ -680,7 +680,7 @@ export default function TerminalPage() {
                       closeSession(session.id);
                     }}
                     aria-label={`Close ${session.name}`}
-                    className="rounded-md p-0.5 text-gray-500 hover:bg-gray-200 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className="rounded-md p-0.5 text-gray-500 hover:bg-gray-200 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <X className="h-3 w-3" aria-hidden="true" />
                   </button>
@@ -698,7 +698,7 @@ export default function TerminalPage() {
                 <p className="text-sm text-gray-600 mb-5">Create a new session to get started</p>
                 <Button
                   onClick={() => createSession()}
-                  className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
+                  className="gap-2 bg-brand-600 text-white hover:bg-brand-700"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   New Session
@@ -744,7 +744,7 @@ export default function TerminalPage() {
                   <button
                     type="button"
                     onClick={() => reconnectSession(activeSession.id)}
-                    className="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-brand-700 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <Wifi className="h-3 w-3" aria-hidden="true" />
                     Reconnect

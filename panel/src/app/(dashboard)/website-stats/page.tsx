@@ -60,7 +60,7 @@ const TD = 'px-4 py-3 text-sm text-gray-700';
 const ROW = 'border-b border-gray-100 hover:bg-gray-50';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 
 export default function WebsiteStatsPage() {
   const [overview, setOverview] = useState<StatsOverview | null>(null);
@@ -145,7 +145,7 @@ export default function WebsiteStatsPage() {
             id="stats-range"
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
           >
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
@@ -176,9 +176,9 @@ export default function WebsiteStatsPage() {
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -203,8 +203,8 @@ export default function WebsiteStatsPage() {
                     {formatNumber(overview?.total_page_views || 0)}
                   </p>
                 </div>
-                <div className="rounded-md bg-blue-50 p-2.5">
-                  <Eye className="text-blue-600" size={20} />
+                <div className="rounded-md bg-brand-50 p-2.5">
+                  <Eye className="text-brand-600" size={20} />
                 </div>
               </div>
             </div>
@@ -285,7 +285,7 @@ export default function WebsiteStatsPage() {
                           <span className="w-16 text-xs text-gray-500">{(day?.date || '').slice(5) || '—'}</span>
                           <div className="h-6 flex-1 overflow-hidden rounded-md bg-gray-100">
                             <div
-                              className="flex h-full items-center justify-end rounded-md bg-blue-600 pr-2"
+                              className="flex h-full items-center justify-end rounded-md bg-brand-600 pr-2"
                               style={{ width: `${((day?.page_views ?? 0) / getMaxPageViews()) * 100}%` }}
                             >
                               {(day?.page_views ?? 0) > 0 && (
@@ -395,7 +395,7 @@ export default function WebsiteStatsPage() {
                           <td className="px-4 py-3">
                             <span className={`${BADGE} ${
                               visitor.method === 'GET' ? 'bg-emerald-50 text-emerald-700' :
-                              visitor.method === 'POST' ? 'bg-blue-50 text-blue-700' :
+                              visitor.method === 'POST' ? 'bg-brand-50 text-brand-700' :
                               'bg-gray-100 text-gray-700'
                             }`}>
                               {visitor?.method || '—'}

@@ -181,7 +181,7 @@ func runSSLSelfSigned(cmd *cobra.Command, args []string) {
 		"-newkey", "rsa:2048",
 		"-keyout", keyFile,
 		"-out", certFile,
-		"-subj", fmt.Sprintf("/CN=%s/O=HiTech Cloud/OU=VKAI Panel/C=VN", sslDomain))
+		"-subj", fmt.Sprintf("/CN=%s/O=HiTechCloud/OU=VKAI Panel/C=VN", sslDomain))
 	cmdExec.Stdout = os.Stdout
 	cmdExec.Stderr = os.Stderr
 
