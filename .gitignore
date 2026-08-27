@@ -1,0 +1,35 @@
+# vKAI Panel
+*.log
+*.tmp
+.env
+.env.local
+.env.production
+
+# Backend
+backend/vendor/
+backend/tmp/
+backend/logs/
+backend/config.yaml
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+
+# Agent
+agent/vendor/
+agent/tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/data/
