@@ -43,6 +43,7 @@ type Router struct {
 	wafHandler           *WAFHandler
 	websiteStatsHandler  *WebsiteStatsHandler
 	emailMarketingHandler *EmailMarketingHandler
+	mailServerHandler    *MailServerHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -81,6 +82,7 @@ func NewRouter(
 	wafHandler *WAFHandler,
 	websiteStatsHandler *WebsiteStatsHandler,
 	emailMarketingHandler *EmailMarketingHandler,
+	mailServerHandler *MailServerHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -121,6 +123,7 @@ func NewRouter(
 		wafHandler:           wafHandler,
 		websiteStatsHandler:  websiteStatsHandler,
 		emailMarketingHandler: emailMarketingHandler,
+		mailServerHandler:    mailServerHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -683,6 +686,43 @@ func (r *Router) Setup() *gin.Engine {
 			emailMarketing.GET("/templates", r.emailMarketingHandler.ListTemplates)
 			emailMarketing.POST("/templates", r.emailMarketingHandler.CreateTemplate)
 			emailMarketing.DELETE("/templates/:id", r.emailMarketingHandler.DeleteTemplate)
+		}
+
+		// Mail Server
+		mailServer := protected.Group("/mail-server")
+		{
+			mailServer.GET("/stats", r.mailServerHandler.GetStats)
+
+			// Domains
+			mailServer.GET("/domains", r.mailServerHandler.ListDomains)
+			mailServer.POST("/domains", r.mailServerHandler.CreateDomain)
+			mailServer.GET("/domains/:id", r.mailServerHandler.GetDomain)
+			mailServer.DELETE("/domains/:id", r.mailServerHandler.DeleteDomain)
+
+			// Accounts
+			mailServer.GET("/accounts", r.mailServerHandler.ListAccounts)
+			mailServer.POST("/accounts", r.mailServerHandler.CreateAccount)
+			mailServer.GET("/accounts/:id", r.mailServerHandler.GetAccount)
+			mailServer.PUT("/accounts/:id", r.mailServerHandler.UpdateAccount)
+			mailServer.DELETE("/accounts/:id", r.mailServerHandler.DeleteAccount)
+
+			// Aliases
+			mailServer.GET("/aliases", r.mailServerHandler.ListAliases)
+			mailServer.POST("/aliases", r.mailServerHandler.CreateAlias)
+			mailServer.DELETE("/aliases/:id", r.mailServerHandler.DeleteAlias)
+
+			// Queue
+			mailServer.GET("/queue", r.mailServerHandler.ListQueue)
+			mailServer.DELETE("/queue/:id", r.mailServerHandler.DeleteQueueItem)
+			mailServer.POST("/queue/flush", r.mailServerHandler.FlushQueue)
+
+			// Spam Filter
+			mailServer.GET("/spam-filter", r.mailServerHandler.GetSpamFilter)
+			mailServer.PUT("/spam-filter", r.mailServerHandler.UpdateSpamFilter)
+
+			// Server Config
+			mailServer.GET("/config", r.mailServerHandler.GetServerConfig)
+			mailServer.PUT("/config", r.mailServerHandler.UpdateServerConfig)
 		}
 
 		// Config

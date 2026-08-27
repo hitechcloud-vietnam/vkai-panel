@@ -127,6 +127,11 @@ const menuItems: MenuItem[] = [
     href: '/email-marketing',
   },
   {
+    label: 'Mail Server',
+    icon: <Server size={18} />,
+    href: '/mail-server',
+  },
+  {
     label: 'Backups',
     icon: <HardDrive size={18} />,
     href: '/backups',
