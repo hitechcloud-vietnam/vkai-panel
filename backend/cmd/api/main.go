@@ -185,6 +185,14 @@ func main() {
 	configService := service.NewConfigService(configRepo, logger)
 	configHandler := handler.NewConfigHandler(configService, logger)
 
+	// Initialize Docker management
+	dockerHandler := handler.NewDockerHandler(logger)
+
+	// Initialize API keys
+	apiKeyRepo := repository.NewAPIKeyRepository(db.DB)
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, logger)
+	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -215,6 +223,8 @@ func main() {
 		wsHandler,
 		jobHandler,
 		configHandler,
+		dockerHandler,
+		apiKeyHandler,
 		jwtManager,
 		logger,
 	)

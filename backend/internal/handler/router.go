@@ -9,37 +9,39 @@ import (
 )
 
 type Router struct {
-	engine            *gin.Engine
-	authHandler       *AuthHandler
-	serverHandler     *ServerHandler
-	tenantHandler     *TenantHandler
-	userHandler       *UserHandler
-	healthHandler     *HealthHandler
-	websiteHandler    *WebsiteHandler
-	sslHandler        *SSLHandler
-	databaseHandler   *DatabaseHandler
-	cronHandler       *CronHandler
-	firewallHandler   *FirewallHandler
-	backupHandler     *BackupHandler
-	serviceHandler    *ServiceHandler
-	fileManagerHandler *FileManagerHandler
-	monitoringHandler *MonitoringHandler
-	logHandler        *LogHandler
-	notificationHandler *NotificationHandler
-	auditHandler      *AuditHandler
-	clusterHandler    *ClusterHandler
-	phpHandler        *PHPHandler
-	dnsHandler        *DNSHandler
-	securityHandler   *SecurityHandler
-	nodeAppHandler    *NodeAppHandler
-	reverseProxyHandler *ReverseProxyHandler
+	engine               *gin.Engine
+	authHandler          *AuthHandler
+	serverHandler        *ServerHandler
+	tenantHandler        *TenantHandler
+	userHandler          *UserHandler
+	healthHandler        *HealthHandler
+	websiteHandler       *WebsiteHandler
+	sslHandler           *SSLHandler
+	databaseHandler      *DatabaseHandler
+	cronHandler          *CronHandler
+	firewallHandler      *FirewallHandler
+	backupHandler        *BackupHandler
+	serviceHandler       *ServiceHandler
+	fileManagerHandler   *FileManagerHandler
+	monitoringHandler    *MonitoringHandler
+	logHandler           *LogHandler
+	notificationHandler  *NotificationHandler
+	auditHandler         *AuditHandler
+	clusterHandler       *ClusterHandler
+	phpHandler           *PHPHandler
+	dnsHandler           *DNSHandler
+	securityHandler      *SecurityHandler
+	nodeAppHandler       *NodeAppHandler
+	reverseProxyHandler  *ReverseProxyHandler
 	gitDeploymentHandler *GitDeploymentHandler
-	wordpressHandler *WordPressHandler
-	wsHandler         *WebSocketHandler
-	jobHandler        *JobHandler
-	configHandler     *ConfigHandler
-	jwtManager        *auth.JWTManager
-	logger            *zap.Logger
+	wordpressHandler     *WordPressHandler
+	wsHandler            *WebSocketHandler
+	jobHandler           *JobHandler
+	configHandler        *ConfigHandler
+	dockerHandler        *DockerHandler
+	apiKeyHandler        *APIKeyHandler
+	jwtManager           *auth.JWTManager
+	logger               *zap.Logger
 }
 
 func NewRouter(
@@ -71,43 +73,47 @@ func NewRouter(
 	wsHandler *WebSocketHandler,
 	jobHandler *JobHandler,
 	configHandler *ConfigHandler,
+	dockerHandler *DockerHandler,
+	apiKeyHandler *APIKeyHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
 	engine := gin.New()
 
 	return &Router{
-		engine:             engine,
-		authHandler:        authHandler,
-		serverHandler:      serverHandler,
-		tenantHandler:      tenantHandler,
-		userHandler:        userHandler,
-		healthHandler:      healthHandler,
-		websiteHandler:     websiteHandler,
-		sslHandler:         sslHandler,
-		databaseHandler:    databaseHandler,
-		cronHandler:        cronHandler,
-		firewallHandler:    firewallHandler,
-		backupHandler:      backupHandler,
-		serviceHandler:     serviceHandler,
-		fileManagerHandler: fileManagerHandler,
-		monitoringHandler:  monitoringHandler,
-		logHandler:         logHandler,
-		notificationHandler: notificationHandler,
-		auditHandler:       auditHandler,
-		clusterHandler:     clusterHandler,
-		phpHandler:         phpHandler,
-		dnsHandler:         dnsHandler,
-		securityHandler:    securityHandler,
-		nodeAppHandler:     nodeAppHandler,
-		reverseProxyHandler: reverseProxyHandler,
+		engine:               engine,
+		authHandler:          authHandler,
+		serverHandler:        serverHandler,
+		tenantHandler:        tenantHandler,
+		userHandler:          userHandler,
+		healthHandler:        healthHandler,
+		websiteHandler:       websiteHandler,
+		sslHandler:           sslHandler,
+		databaseHandler:      databaseHandler,
+		cronHandler:          cronHandler,
+		firewallHandler:      firewallHandler,
+		backupHandler:        backupHandler,
+		serviceHandler:       serviceHandler,
+		fileManagerHandler:   fileManagerHandler,
+		monitoringHandler:    monitoringHandler,
+		logHandler:           logHandler,
+		notificationHandler:  notificationHandler,
+		auditHandler:         auditHandler,
+		clusterHandler:       clusterHandler,
+		phpHandler:           phpHandler,
+		dnsHandler:           dnsHandler,
+		securityHandler:      securityHandler,
+		nodeAppHandler:       nodeAppHandler,
+		reverseProxyHandler:  reverseProxyHandler,
 		gitDeploymentHandler: gitDeploymentHandler,
-		wordpressHandler:   wordpressHandler,
-		wsHandler:          wsHandler,
-		jobHandler:         jobHandler,
-		configHandler:      configHandler,
-		jwtManager:         jwtManager,
-		logger:             logger,
+		wordpressHandler:     wordpressHandler,
+		wsHandler:            wsHandler,
+		jobHandler:           jobHandler,
+		configHandler:        configHandler,
+		dockerHandler:        dockerHandler,
+		apiKeyHandler:        apiKeyHandler,
+		jwtManager:           jwtManager,
+		logger:               logger,
 	}
 }
 
@@ -234,7 +240,33 @@ func (r *Router) Setup() *gin.Engine {
 		}
 
 		// Docker
-		// TODO: Add Docker routes
+		docker := protected.Group("/docker")
+		{
+			docker.GET("/summary", r.dockerHandler.GetSummary)
+
+			docker.GET("/containers", r.dockerHandler.ListContainers)
+			docker.GET("/containers/:id", r.dockerHandler.GetContainer)
+			docker.POST("/containers/:id/start", r.dockerHandler.StartContainer)
+			docker.POST("/containers/:id/stop", r.dockerHandler.StopContainer)
+			docker.POST("/containers/:id/restart", r.dockerHandler.RestartContainer)
+			docker.DELETE("/containers/:id", r.dockerHandler.DeleteContainer)
+
+			docker.GET("/images", r.dockerHandler.ListImages)
+			docker.POST("/images/pull", r.dockerHandler.PullImage)
+			docker.DELETE("/images/:id", r.dockerHandler.DeleteImage)
+
+			docker.GET("/networks", r.dockerHandler.ListNetworks)
+			docker.POST("/networks", r.dockerHandler.CreateNetwork)
+			docker.DELETE("/networks/:id", r.dockerHandler.DeleteNetwork)
+
+			docker.GET("/volumes", r.dockerHandler.ListVolumes)
+			docker.POST("/volumes", r.dockerHandler.CreateVolume)
+			docker.DELETE("/volumes/:id", r.dockerHandler.DeleteVolume)
+
+			docker.GET("/compose", r.dockerHandler.ListComposeStacks)
+			docker.POST("/compose/deploy", r.dockerHandler.DeployCompose)
+			docker.POST("/compose/stop", r.dockerHandler.StopCompose)
+		}
 
 		// Security
 		security := protected.Group("/security")
@@ -569,6 +601,16 @@ func (r *Router) Setup() *gin.Engine {
 			jobs.POST("/ssl", r.jobHandler.EnqueueSSL)
 			jobs.POST("/cleanup", r.jobHandler.EnqueueCleanup)
 			jobs.POST("/cleanup-old", r.jobHandler.CleanupOldJobs)
+		}
+
+		// API Keys
+		apiKeys := protected.Group("/api-keys")
+		{
+			apiKeys.POST("", r.apiKeyHandler.Create)
+			apiKeys.GET("", r.apiKeyHandler.List)
+			apiKeys.GET("/:id", r.apiKeyHandler.Get)
+			apiKeys.PUT("/:id", r.apiKeyHandler.Update)
+			apiKeys.DELETE("/:id", r.apiKeyHandler.Delete)
 		}
 
 		// Config

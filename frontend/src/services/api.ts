@@ -135,11 +135,18 @@ export const backupApi = {
 
 // DNS API
 export const dnsApi = {
-  list: () => api.get('/api/v1/dns'),
-  get: (id: string) => api.get(`/api/v1/dns/${id}`),
-  create: (data: any) => api.post('/api/v1/dns', data),
-  update: (id: string, data: any) => api.put(`/api/v1/dns/${id}`, data),
-  delete: (id: string) => api.delete(`/api/v1/dns/${id}`),
+  // Zones
+  listZones: () => api.get('/api/v1/dns/zones'),
+  getZone: (id: string) => api.get(`/api/v1/dns/zones/${id}`),
+  createZone: (data: any) => api.post('/api/v1/dns/zones', data),
+  updateZone: (id: string, data: any) => api.put(`/api/v1/dns/zones/${id}`, data),
+  deleteZone: (id: string) => api.delete(`/api/v1/dns/zones/${id}`),
+  // Records
+  listRecords: (zoneId: string) => api.get(`/api/v1/dns/zones/${zoneId}/records`),
+  getRecord: (id: string) => api.get(`/api/v1/dns/records/${id}`),
+  createRecord: (zoneId: string, data: any) => api.post(`/api/v1/dns/zones/${zoneId}/records`, data),
+  updateRecord: (id: string, data: any) => api.put(`/api/v1/dns/records/${id}`, data),
+  deleteRecord: (id: string) => api.delete(`/api/v1/dns/records/${id}`),
 };
 
 // Monitoring API
@@ -194,6 +201,29 @@ export const notificationApi = {
   updatePreferences: (data: any) => api.put('/api/v1/notifications/preferences', data),
 };
 
+// Security API
+export const securityApi = {
+  // Scans
+  listScans: (params?: any) => api.get('/api/v1/security/scans', { params }),
+  getScan: (id: string) => api.get(`/api/v1/security/scans/${id}`),
+  createScan: (data: any) => api.post('/api/v1/security/scans', data),
+  deleteScan: (id: string) => api.delete(`/api/v1/security/scans/${id}`),
+  // Vulnerabilities
+  listVulnerabilities: (params?: any) => api.get('/api/v1/security/vulnerabilities', { params }),
+  listVulnerabilitiesByScan: (scanId: string) => api.get(`/api/v1/security/scans/${scanId}/vulnerabilities`),
+  getVulnerability: (id: string) => api.get(`/api/v1/security/vulnerabilities/${id}`),
+  updateVulnerability: (id: string, data: any) => api.put(`/api/v1/security/vulnerabilities/${id}`, data),
+  deleteVulnerability: (id: string) => api.delete(`/api/v1/security/vulnerabilities/${id}`),
+  // Checks
+  listChecksByScan: (scanId: string) => api.get(`/api/v1/security/scans/${scanId}/checks`),
+  // Policies
+  listPolicies: () => api.get('/api/v1/security/policies'),
+  getPolicy: (id: string) => api.get(`/api/v1/security/policies/${id}`),
+  createPolicy: (data: any) => api.post('/api/v1/security/policies', data),
+  updatePolicy: (id: string, data: any) => api.put(`/api/v1/security/policies/${id}`, data),
+  deletePolicy: (id: string) => api.delete(`/api/v1/security/policies/${id}`),
+};
+
 // Audit API
 export const auditApi = {
   get: (id: string) => api.get(`/api/v1/audit/${id}`),
@@ -246,6 +276,23 @@ export const jobApi = {
     api.post('/api/v1/jobs/cleanup-old', null, { params: { retention_days: retentionDays } }),
 };
 
+// Git Deployment API
+export const deploymentApi = {
+  list: (params?: { limit?: number; offset?: number }) =>
+    api.get('/api/v1/git-deployments', { params }),
+  get: (id: string) => api.get(`/api/v1/git-deployments/${id}`),
+  create: (data: any) => api.post('/api/v1/git-deployments', data),
+  update: (id: string, data: any) => api.put(`/api/v1/git-deployments/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/git-deployments/${id}`),
+  deploy: (id: string, data?: { commit_hash?: string; force?: boolean }) =>
+    api.post(`/api/v1/git-deployments/${id}/deploy`, data || {}),
+  listLogs: (id: string, params?: { limit?: number; offset?: number }) =>
+    api.get(`/api/v1/git-deployments/${id}/logs`, { params }),
+  clearLogs: (id: string) => api.delete(`/api/v1/git-deployments/${id}/logs`),
+  listByServer: (serverId: string) =>
+    api.get(`/api/v1/git-deployments/server/${serverId}`),
+};
+
 // Config API
 export const configApi = {
   listSnapshots: (params?: any) => api.get('/api/v1/config/snapshots', { params }),
@@ -264,4 +311,47 @@ export const configApi = {
   createTemplate: (data: any) => api.post('/api/v1/config/templates', data),
   updateTemplate: (id: string, data: any) => api.put(`/api/v1/config/templates/${id}`, data),
   deleteTemplate: (id: string) => api.delete(`/api/v1/config/templates/${id}`),
+};
+
+// Docker API
+export const dockerApi = {
+  // Summary
+  getSummary: () => api.get('/api/v1/docker/summary'),
+  // Containers
+  listContainers: () => api.get('/api/v1/docker/containers'),
+  getContainer: (id: string) => api.get(`/api/v1/docker/containers/${id}`),
+  startContainer: (id: string) => api.post(`/api/v1/docker/containers/${id}/start`),
+  stopContainer: (id: string) => api.post(`/api/v1/docker/containers/${id}/stop`),
+  restartContainer: (id: string) => api.post(`/api/v1/docker/containers/${id}/restart`),
+  deleteContainer: (id: string) => api.delete(`/api/v1/docker/containers/${id}`),
+  // Images
+  listImages: () => api.get('/api/v1/docker/images'),
+  pullImage: (data: { repository: string; tag?: string }) =>
+    api.post('/api/v1/docker/images/pull', data),
+  deleteImage: (id: string) => api.delete(`/api/v1/docker/images/${id}`),
+  // Networks
+  listNetworks: () => api.get('/api/v1/docker/networks'),
+  createNetwork: (data: { name: string; driver?: string }) =>
+    api.post('/api/v1/docker/networks', data),
+  deleteNetwork: (id: string) => api.delete(`/api/v1/docker/networks/${id}`),
+  // Volumes
+  listVolumes: () => api.get('/api/v1/docker/volumes'),
+  createVolume: (data: { name: string; driver?: string }) =>
+    api.post('/api/v1/docker/volumes', data),
+  deleteVolume: (id: string) => api.delete(`/api/v1/docker/volumes/${id}`),
+  // Compose
+  listComposeStacks: () => api.get('/api/v1/docker/compose'),
+  deployCompose: (data: { name: string; content: string }) =>
+    api.post('/api/v1/docker/compose/deploy', data),
+  stopCompose: (data: { name: string }) =>
+    api.post('/api/v1/docker/compose/stop', data),
+};
+
+// API Keys API
+export const apiKeyApi = {
+  list: () => api.get('/api/v1/api-keys'),
+  get: (id: string) => api.get(`/api/v1/api-keys/${id}`),
+  create: (data: any) => api.post('/api/v1/api-keys', data),
+  update: (id: string, data: any) => api.put(`/api/v1/api-keys/${id}`, data),
+  delete: (id: string) => api.delete(`/api/v1/api-keys/${id}`),
 };

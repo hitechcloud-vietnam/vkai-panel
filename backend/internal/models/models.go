@@ -108,28 +108,28 @@ type RolePermission struct {
 // ============================================================
 
 type Server struct {
-	ID          uuid.UUID  `json:"id" db:"id"`
-	TenantID    uuid.UUID  `json:"tenant_id" db:"tenant_id"`
-	Hostname    string     `json:"hostname" db:"hostname"`
-	IPAddress   string     `json:"ip_address" db:"ip_address"`
-	IPv6Address string     `json:"ipv6_address" db:"ipv6_address"`
-	SSHPort     int        `json:"ssh_port" db:"ssh_port"`
-	AgentStatus string     `json:"agent_status" db:"agent_status"`
-	AgentToken  string     `json:"-" db:"agent_token"`
-	OS          string     `json:"os" db:"os"`
-	Kernel      string     `json:"kernel" db:"kernel"`
-	CPUCores    int        `json:"cpu_cores" db:"cpu_cores"`
-	RAMTotal    int64      `json:"ram_total" db:"ram_total"`
-	DiskTotal   int64      `json:"disk_total" db:"disk_total"`
-	Location    string     `json:"location" db:"location"`
-	Tags        []string   `json:"tags" db:"tags"`
+	ID            uuid.UUID  `json:"id" db:"id"`
+	TenantID      uuid.UUID  `json:"tenant_id" db:"tenant_id"`
+	Hostname      string     `json:"hostname" db:"hostname"`
+	IPAddress     string     `json:"ip_address" db:"ip_address"`
+	IPv6Address   string     `json:"ipv6_address" db:"ipv6_address"`
+	SSHPort       int        `json:"ssh_port" db:"ssh_port"`
+	AgentStatus   string     `json:"agent_status" db:"agent_status"`
+	AgentToken    string     `json:"-" db:"agent_token"`
+	OS            string     `json:"os" db:"os"`
+	Kernel        string     `json:"kernel" db:"kernel"`
+	CPUCores      int        `json:"cpu_cores" db:"cpu_cores"`
+	RAMTotal      int64      `json:"ram_total" db:"ram_total"`
+	DiskTotal     int64      `json:"disk_total" db:"disk_total"`
+	Location      string     `json:"location" db:"location"`
+	Tags          []string   `json:"tags" db:"tags"`
 	Role          string     `json:"role" db:"role"`
 	WebServerType string     `json:"web_server_type" db:"web_server_type"`
 	Status        string     `json:"status" db:"status"`
-	LastSeenAt  *time.Time `json:"last_seen_at" db:"last_seen_at"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
-	DeletedAt   *time.Time `json:"-" db:"deleted_at"`
+	LastSeenAt    *time.Time `json:"last_seen_at" db:"last_seen_at"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
+	DeletedAt     *time.Time `json:"-" db:"deleted_at"`
 }
 
 type ServerMetric struct {
@@ -184,21 +184,21 @@ type Domain struct {
 // ============================================================
 
 type SSLCertificate struct {
-	ID            uuid.UUID  `json:"id" db:"id"`
-	TenantID      uuid.UUID  `json:"tenant_id" db:"tenant_id"`
-	WebsiteID     *uuid.UUID `json:"website_id" db:"website_id"`
-	Domain        string     `json:"domain" db:"domain"`
-	Issuer        string     `json:"issuer" db:"issuer"`
-	Certificate   string     `json:"-" db:"certificate"`
-	PrivateKey    string     `json:"-" db:"private_key"`
-	ChainCert     string     `json:"-" db:"chain_cert"`
-	NotBefore     time.Time  `json:"not_before" db:"not_before"`
-	NotAfter      time.Time  `json:"not_after" db:"not_after"`
-	Status        string     `json:"status" db:"status"`
-	AutoRenew     bool       `json:"auto_renew" db:"auto_renew"`
-	Source        string     `json:"source" db:"source"` // letsencrypt, custom
-	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
+	ID          uuid.UUID  `json:"id" db:"id"`
+	TenantID    uuid.UUID  `json:"tenant_id" db:"tenant_id"`
+	WebsiteID   *uuid.UUID `json:"website_id" db:"website_id"`
+	Domain      string     `json:"domain" db:"domain"`
+	Issuer      string     `json:"issuer" db:"issuer"`
+	Certificate string     `json:"-" db:"certificate"`
+	PrivateKey  string     `json:"-" db:"private_key"`
+	ChainCert   string     `json:"-" db:"chain_cert"`
+	NotBefore   time.Time  `json:"not_before" db:"not_before"`
+	NotAfter    time.Time  `json:"not_after" db:"not_after"`
+	Status      string     `json:"status" db:"status"`
+	AutoRenew   bool       `json:"auto_renew" db:"auto_renew"`
+	Source      string     `json:"source" db:"source"` // letsencrypt, custom
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // ============================================================
@@ -273,16 +273,16 @@ type DockerHost struct {
 }
 
 type DockerContainer struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	HostID      uuid.UUID `json:"host_id" db:"host_id"`
-	TenantID    uuid.UUID `json:"tenant_id" db:"tenant_id"`
-	Name        string    `json:"name" db:"name"`
-	Image       string    `json:"image" db:"image"`
-	Status      string    `json:"status" db:"status"`
-	Ports       string    `json:"ports" db:"ports"`
-	State       string    `json:"state" db:"state"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	HostID    uuid.UUID `json:"host_id" db:"host_id"`
+	TenantID  uuid.UUID `json:"tenant_id" db:"tenant_id"`
+	Name      string    `json:"name" db:"name"`
+	Image     string    `json:"image" db:"image"`
+	Status    string    `json:"status" db:"status"`
+	Ports     string    `json:"ports" db:"ports"`
+	State     string    `json:"state" db:"state"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ============================================================
@@ -315,7 +315,7 @@ type FirewallRule struct {
 	Protocol  string    `json:"protocol" db:"protocol"`
 	Port      string    `json:"port" db:"port"`
 	Source    string    `json:"source" db:"source"`
-	Action    string    `json:"action" db:"action"` // allow, deny
+	Action    string    `json:"action" db:"action"`       // allow, deny
 	Direction string    `json:"direction" db:"direction"` // in, out
 	Status    string    `json:"status" db:"status"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
@@ -439,12 +439,12 @@ type CreateTenantRequest struct {
 }
 
 type CreateUserRequest struct {
-	TenantID  uuid.UUID `json:"tenant_id" binding:"required"`
-	Username  string    `json:"username" binding:"required"`
-	Email     string    `json:"email" binding:"required,email"`
-	Password  string    `json:"password" binding:"required,min=8"`
-	FirstName string    `json:"first_name"`
-	LastName  string    `json:"last_name"`
+	TenantID  uuid.UUID   `json:"tenant_id" binding:"required"`
+	Username  string      `json:"username" binding:"required"`
+	Email     string      `json:"email" binding:"required,email"`
+	Password  string      `json:"password" binding:"required,min=8"`
+	FirstName string      `json:"first_name"`
+	LastName  string      `json:"last_name"`
 	RoleIDs   []uuid.UUID `json:"role_ids"`
 }
 
@@ -458,12 +458,12 @@ type CreateServerRequest struct {
 }
 
 type CreateWebsiteRequest struct {
-	Domain        string `json:"domain" binding:"required"`
+	Domain        string    `json:"domain" binding:"required"`
 	ServerID      uuid.UUID `json:"server_id" binding:"required"`
-	RootDir       string `json:"root_dir"`
-	WebServerType string `json:"web_server_type" binding:"required"`
-	PHPVersion    string `json:"php_version"`
-	SiteType      string `json:"site_type"`
+	RootDir       string    `json:"root_dir"`
+	WebServerType string    `json:"web_server_type" binding:"required"`
+	PHPVersion    string    `json:"php_version"`
+	SiteType      string    `json:"site_type"`
 }
 
 type PaginationParams struct {
@@ -546,4 +546,17 @@ type CreateBackupJobRequest struct {
 	Schedule    string    `json:"schedule"`
 	Retention   int       `json:"retention"`
 	Encrypted   bool      `json:"encrypted"`
+}
+
+type CreateAPIKeyRequest struct {
+	Name      string     `json:"name" binding:"required"`
+	Scopes    []string   `json:"scopes"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+type UpdateAPIKeyRequest struct {
+	Name      string     `json:"name"`
+	Scopes    []string   `json:"scopes"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expires_at"`
 }
