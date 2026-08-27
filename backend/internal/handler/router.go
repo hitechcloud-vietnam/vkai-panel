@@ -41,6 +41,7 @@ type Router struct {
 	dockerHandler        *DockerHandler
 	apiKeyHandler        *APIKeyHandler
 	wafHandler           *WAFHandler
+	websiteStatsHandler  *WebsiteStatsHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -77,6 +78,7 @@ func NewRouter(
 	dockerHandler *DockerHandler,
 	apiKeyHandler *APIKeyHandler,
 	wafHandler *WAFHandler,
+	websiteStatsHandler *WebsiteStatsHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -115,6 +117,7 @@ func NewRouter(
 		dockerHandler:        dockerHandler,
 		apiKeyHandler:        apiKeyHandler,
 		wafHandler:           wafHandler,
+		websiteStatsHandler:  websiteStatsHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -639,6 +642,14 @@ func (r *Router) Setup() *gin.Engine {
 
 			// Stats
 			waf.GET("/stats", r.wafHandler.GetStats)
+		}
+
+		// Website Statistics Pro
+		websiteStats := protected.Group("/website-stats")
+		{
+			websiteStats.GET("/overview", r.websiteStatsHandler.GetOverview)
+			websiteStats.GET("/visitors", r.websiteStatsHandler.ListVisitorLogs)
+			websiteStats.POST("/visitors", r.websiteStatsHandler.RecordVisitorLog)
 		}
 
 		// Config

@@ -198,6 +198,11 @@ func main() {
 	wafService := service.NewWAFService(wafRepo)
 	wafHandler := handler.NewWAFHandler(wafService, logger)
 
+	// Initialize Website Statistics Pro
+	websiteStatsRepo := repository.NewWebsiteStatsRepository(db.DB)
+	websiteStatsService := service.NewWebsiteStatsService(websiteStatsRepo, logger)
+	websiteStatsHandler := handler.NewWebsiteStatsHandler(websiteStatsService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -231,6 +236,7 @@ func main() {
 		dockerHandler,
 		apiKeyHandler,
 		wafHandler,
+		websiteStatsHandler,
 		jwtManager,
 		logger,
 	)
