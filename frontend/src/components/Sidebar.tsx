@@ -142,6 +142,11 @@ const menuItems: MenuItem[] = [
     href: '/daily-reports',
   },
   {
+    label: 'Scheduled Tasks',
+    icon: <Clock size={18} />,
+    href: '/scheduled-tasks',
+  },
+  {
     label: 'Backups',
     icon: <HardDrive size={18} />,
     href: '/backups',

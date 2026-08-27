@@ -47,6 +47,7 @@ type Router struct {
 	fileProtectionHandler *FileProtectionHandler
 	multiUserHandler     *MultiUserHandler
 	dailyReportHandler   *DailyReportHandler
+	scheduledTaskHandler *ScheduledTaskHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -89,6 +90,7 @@ func NewRouter(
 	fileProtectionHandler *FileProtectionHandler,
 	multiUserHandler *MultiUserHandler,
 	dailyReportHandler *DailyReportHandler,
+	scheduledTaskHandler *ScheduledTaskHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -133,6 +135,7 @@ func NewRouter(
 		fileProtectionHandler: fileProtectionHandler,
 		multiUserHandler:     multiUserHandler,
 		dailyReportHandler:   dailyReportHandler,
+		scheduledTaskHandler: scheduledTaskHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -786,6 +789,37 @@ func (r *Router) Setup() *gin.Engine {
 
 			// Activity log
 			multiUser.GET("/activities", r.multiUserHandler.ListActivities)
+		}
+
+		// Scheduled Tasks Pro
+		scheduledTasks := protected.Group("/scheduled-tasks")
+		{
+			scheduledTasks.GET("/stats", r.scheduledTaskHandler.GetStats)
+
+			// Tasks
+			scheduledTasks.GET("", r.scheduledTaskHandler.ListTasks)
+			scheduledTasks.POST("", r.scheduledTaskHandler.CreateTask)
+			scheduledTasks.GET("/recent-executions", r.scheduledTaskHandler.ListRecentExecutions)
+			scheduledTasks.GET("/:id", r.scheduledTaskHandler.GetTask)
+			scheduledTasks.PUT("/:id", r.scheduledTaskHandler.UpdateTask)
+			scheduledTasks.DELETE("/:id", r.scheduledTaskHandler.DeleteTask)
+			scheduledTasks.POST("/:id/toggle", r.scheduledTaskHandler.ToggleTask)
+			scheduledTasks.POST("/:id/run", r.scheduledTaskHandler.RunTask)
+			scheduledTasks.GET("/:id/executions", r.scheduledTaskHandler.ListExecutions)
+
+			// Executions
+			scheduledTasks.GET("/executions/:id", r.scheduledTaskHandler.GetExecution)
+			scheduledTasks.POST("/executions/cleanup", r.scheduledTaskHandler.CleanupExecutions)
+
+			// Templates
+			scheduledTasks.GET("/templates", r.scheduledTaskHandler.ListTemplates)
+			scheduledTasks.POST("/templates", r.scheduledTaskHandler.CreateTemplate)
+			scheduledTasks.DELETE("/templates/:id", r.scheduledTaskHandler.DeleteTemplate)
+
+			// Groups
+			scheduledTasks.GET("/groups", r.scheduledTaskHandler.ListGroups)
+			scheduledTasks.POST("/groups", r.scheduledTaskHandler.CreateGroup)
+			scheduledTasks.DELETE("/groups/:id", r.scheduledTaskHandler.DeleteGroup)
 		}
 
 		// Daily Reports

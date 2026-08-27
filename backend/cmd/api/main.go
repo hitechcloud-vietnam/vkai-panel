@@ -228,6 +228,11 @@ func main() {
 	dailyReportService := service.NewDailyReportService(dailyReportRepo, logger)
 	dailyReportHandler := handler.NewDailyReportHandler(dailyReportService, logger)
 
+	// Initialize Scheduled Tasks Pro
+	scheduledTaskRepo := repository.NewScheduledTaskRepository(db.DB, logger)
+	scheduledTaskService := service.NewScheduledTaskService(scheduledTaskRepo, logger)
+	scheduledTaskHandler := handler.NewScheduledTaskHandler(scheduledTaskService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -267,6 +272,7 @@ func main() {
 		fileProtectionHandler,
 		multiUserHandler,
 		dailyReportHandler,
+		scheduledTaskHandler,
 		jwtManager,
 		logger,
 	)
