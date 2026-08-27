@@ -244,6 +244,17 @@ func (m *FileManager) Upload(ctx context.Context, destPath string, reader io.Rea
 	return err
 }
 
+// ParseFileMode parses a string file mode (e.g., "0755", "644")
+func ParseFileMode(modeStr string) (os.FileMode, error) {
+	var mode uint32
+	_, err := fmt.Sscanf(modeStr, "%o", &mode)
+	if err != nil {
+		// Try without leading zero
+		_, err = fmt.Sscanf("0"+modeStr, "%o", &mode)
+	}
+	return os.FileMode(mode), err
+}
+
 // sanitizePath prevents path traversal attacks
 func (m *FileManager) sanitizePath(path string) string {
 	// Clean the path

@@ -120,6 +120,26 @@ const menuItems: MenuItem[] = [
     href: '/logs',
   },
   {
+    label: 'Monitoring',
+    icon: <Activity size={18} />,
+    href: '/monitoring',
+  },
+  {
+    label: 'Notifications',
+    icon: <Activity size={18} />,
+    href: '/notifications',
+  },
+  {
+    label: 'Audit',
+    icon: <Activity size={18} />,
+    href: '/audit',
+  },
+  {
+    label: 'Clusters & HA',
+    icon: <Activity size={18} />,
+    href: '/clusters',
+  },
+  {
     label: 'Deployments',
     icon: <GitBranch size={18} />,
     href: '/deployments',

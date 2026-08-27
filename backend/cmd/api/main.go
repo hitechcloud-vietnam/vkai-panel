@@ -19,6 +19,7 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/handler"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/webserver"
 )
 
 func main() {
@@ -64,12 +65,37 @@ func main() {
 	tenantRepo := repository.NewTenantRepository(db.DB)
 	userRepo := repository.NewUserRepository(db.DB)
 	serverRepo := repository.NewServerRepository(db.DB)
+	websiteRepo := repository.NewWebsiteRepository(db.DB)
+	sslRepo := repository.NewSSLRepository(db.DB)
+	dbRepo := repository.NewDatabaseRepository(db.DB)
+	cronRepo := repository.NewCronRepository(db.DB)
+	firewallRepo := repository.NewFirewallRepository(db.DB)
+	backupRepo := repository.NewBackupRepository(db.DB)
+	phpRepo := repository.NewPHPRepository(db.DB)
+	dnsRepo := repository.NewDNSRepository(db.DB)
+	securityRepo := repository.NewSecurityRepository(db.DB)
+	nodeAppRepo := repository.NewNodeAppRepository(db.DB)
+
+	// Initialize webserver registry
+	webserverRegistry := webserver.NewRegistry()
 
 	// Initialize services
 	tenantService := service.NewTenantService(tenantRepo, logger)
 	userService := service.NewUserService(userRepo, tenantRepo, logger)
 	authService := service.NewAuthService(userRepo, tenantRepo, jwtManager, logger)
 	serverService := service.NewServerService(serverRepo, logger)
+	websiteService := service.NewWebsiteService(websiteRepo, serverRepo, webserverRegistry)
+	sslService := service.NewSSLService(sslRepo, websiteRepo)
+	dbService := service.NewDatabaseService(dbRepo, serverRepo)
+	cronService := service.NewCronService(cronRepo, serverRepo)
+	firewallService := service.NewFirewallService(firewallRepo, serverRepo)
+	backupService := service.NewBackupService(backupRepo)
+	serviceManager := service.NewServiceManager()
+	fileManager := service.NewFileManager("/")
+	phpService := service.NewPHPService(phpRepo, logger)
+	dnsService := service.NewDNSService(dnsRepo, logger)
+	securityService := service.NewSecurityService(securityRepo, logger)
+	nodeAppService := service.NewNodeAppService(nodeAppRepo, logger)
 
 	// Initialize handlers
 	healthHandler := handler.NewHealthHandler(logger)
@@ -77,6 +103,59 @@ func main() {
 	tenantHandler := handler.NewTenantHandler(tenantService, logger)
 	userHandler := handler.NewUserHandler(userService, logger)
 	serverHandler := handler.NewServerHandler(serverService, logger)
+	websiteHandler := handler.NewWebsiteHandler(websiteService)
+	sslHandler := handler.NewSSLHandler(sslService)
+	databaseHandler := handler.NewDatabaseHandler(dbService)
+	cronHandler := handler.NewCronHandler(cronService)
+	firewallHandler := handler.NewFirewallHandler(firewallService)
+	backupHandler := handler.NewBackupHandler(backupService)
+	serviceHandler := handler.NewServiceHandler(serviceManager)
+	fileManagerHandler := handler.NewFileManagerHandler(fileManager)
+
+	// Initialize monitoring
+	monitoringRepo := repository.NewMonitoringRepository(db)
+	monitoringService := service.NewMonitoringService(monitoringRepo, logger)
+	monitoringHandler := handler.NewMonitoringHandler(monitoringService, logger)
+
+	phpHandler := handler.NewPHPHandler(phpService, logger)
+	dnsHandler := handler.NewDNSHandler(dnsService, logger)
+	securityHandler := handler.NewSecurityHandler(securityService, logger)
+	nodeAppHandler := handler.NewNodeAppHandler(nodeAppService, logger)
+
+	// Initialize reverse proxy
+	reverseProxyRepo := repository.NewReverseProxyRepository(db)
+	reverseProxyService := service.NewReverseProxyService(reverseProxyRepo, logger)
+	reverseProxyHandler := handler.NewReverseProxyHandler(reverseProxyService)
+
+	// Initialize git deployment
+	gitDeploymentRepo := repository.NewGitDeploymentRepository(db)
+	gitDeploymentService := service.NewGitDeploymentService(gitDeploymentRepo, logger)
+	gitDeploymentHandler := handler.NewGitDeploymentHandler(gitDeploymentService)
+
+	// Initialize WordPress
+	wordpressRepo := repository.NewWordPressRepository(db)
+	wordpressService := service.NewWordPressService(wordpressRepo, logger)
+	wordpressHandler := handler.NewWordPressHandler(wordpressService)
+
+	// Initialize log management
+	logRepo := repository.NewLogRepository(db)
+	logService := service.NewLogService(logRepo, logger)
+	logHandler := handler.NewLogHandler(logService, logger)
+
+	// Initialize notifications
+	notificationRepo := repository.NewNotificationRepository(db)
+	notificationService := service.NewNotificationService(notificationRepo, logger)
+	notificationHandler := handler.NewNotificationHandler(notificationService, logger)
+
+	// Initialize audit logging
+	auditRepo := repository.NewAuditRepository(db)
+	auditService := service.NewAuditService(auditRepo, logger)
+	auditHandler := handler.NewAuditHandler(auditService, logger)
+
+	// Initialize cluster management
+	clusterRepo := repository.NewClusterRepository(db)
+	clusterService := service.NewClusterService(clusterRepo, logger)
+	clusterHandler := handler.NewClusterHandler(clusterService, logger)
 
 	// Setup router
 	router := handler.NewRouter(
@@ -85,6 +164,26 @@ func main() {
 		tenantHandler,
 		userHandler,
 		healthHandler,
+		websiteHandler,
+		sslHandler,
+		databaseHandler,
+		cronHandler,
+		firewallHandler,
+		backupHandler,
+		serviceHandler,
+		fileManagerHandler,
+		monitoringHandler,
+		logHandler,
+		notificationHandler,
+		auditHandler,
+		clusterHandler,
+		phpHandler,
+		dnsHandler,
+		securityHandler,
+		nodeAppHandler,
+		reverseProxyHandler,
+		gitDeploymentHandler,
+		wordpressHandler,
 		jwtManager,
 		logger,
 	)

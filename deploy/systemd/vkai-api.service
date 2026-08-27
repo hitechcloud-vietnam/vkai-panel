@@ -1,0 +1,32 @@
+[Unit]
+Description=vKAI Panel API Server
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=vkai
+Group=vkai
+WorkingDirectory=/opt/vkai-panel/backend
+ExecStart=/opt/vkai-panel/backend/bin/vkai-api
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-api
+
+# Environment
+EnvironmentFile=/opt/vkai-panel/.env
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/vkai /var/www /etc/nginx /etc/apache2 /etc/letsencrypt /etc/ssl/vkai
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

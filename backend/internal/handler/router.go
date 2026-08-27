@@ -10,14 +10,34 @@ import (
 )
 
 type Router struct {
-	engine         *gin.Engine
-	authHandler    *AuthHandler
-	serverHandler  *ServerHandler
-	tenantHandler  *TenantHandler
-	userHandler    *UserHandler
-	healthHandler  *HealthHandler
-	jwtManager     *auth.JWTManager
-	logger         *zap.Logger
+	engine            *gin.Engine
+	authHandler       *AuthHandler
+	serverHandler     *ServerHandler
+	tenantHandler     *TenantHandler
+	userHandler       *UserHandler
+	healthHandler     *HealthHandler
+	websiteHandler    *WebsiteHandler
+	sslHandler        *SSLHandler
+	databaseHandler   *DatabaseHandler
+	cronHandler       *CronHandler
+	firewallHandler   *FirewallHandler
+	backupHandler     *BackupHandler
+	serviceHandler    *ServiceHandler
+	fileManagerHandler *FileManagerHandler
+	monitoringHandler *MonitoringHandler
+	logHandler        *LogHandler
+	notificationHandler *NotificationHandler
+	auditHandler      *AuditHandler
+	clusterHandler    *ClusterHandler
+	phpHandler        *PHPHandler
+	dnsHandler        *DNSHandler
+	securityHandler   *SecurityHandler
+	nodeAppHandler    *NodeAppHandler
+	reverseProxyHandler *ReverseProxyHandler
+	gitDeploymentHandler *GitDeploymentHandler
+	wordpressHandler *WordPressHandler
+	jwtManager        *auth.JWTManager
+	logger            *zap.Logger
 }
 
 func NewRouter(
@@ -26,20 +46,60 @@ func NewRouter(
 	tenantHandler *TenantHandler,
 	userHandler *UserHandler,
 	healthHandler *HealthHandler,
+	websiteHandler *WebsiteHandler,
+	sslHandler *SSLHandler,
+	databaseHandler *DatabaseHandler,
+	cronHandler *CronHandler,
+	firewallHandler *FirewallHandler,
+	backupHandler *BackupHandler,
+	serviceHandler *ServiceHandler,
+	fileManagerHandler *FileManagerHandler,
+	monitoringHandler *MonitoringHandler,
+	logHandler *LogHandler,
+	notificationHandler *NotificationHandler,
+	auditHandler *AuditHandler,
+	clusterHandler *ClusterHandler,
+	phpHandler *PHPHandler,
+	dnsHandler *DNSHandler,
+	securityHandler *SecurityHandler,
+	nodeAppHandler *NodeAppHandler,
+	reverseProxyHandler *ReverseProxyHandler,
+	gitDeploymentHandler *GitDeploymentHandler,
+	wordpressHandler *WordPressHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
 	engine := gin.New()
 
 	return &Router{
-		engine:        engine,
-		authHandler:   authHandler,
-		serverHandler: serverHandler,
-		tenantHandler: tenantHandler,
-		userHandler:   userHandler,
-		healthHandler: healthHandler,
-		jwtManager:    jwtManager,
-		logger:        logger,
+		engine:             engine,
+		authHandler:        authHandler,
+		serverHandler:      serverHandler,
+		tenantHandler:      tenantHandler,
+		userHandler:        userHandler,
+		healthHandler:      healthHandler,
+		websiteHandler:     websiteHandler,
+		sslHandler:         sslHandler,
+		databaseHandler:    databaseHandler,
+		cronHandler:        cronHandler,
+		firewallHandler:    firewallHandler,
+		backupHandler:      backupHandler,
+		serviceHandler:     serviceHandler,
+		fileManagerHandler: fileManagerHandler,
+		monitoringHandler:  monitoringHandler,
+		logHandler:         logHandler,
+		notificationHandler: notificationHandler,
+		auditHandler:       auditHandler,
+		clusterHandler:     clusterHandler,
+		phpHandler:         phpHandler,
+		dnsHandler:         dnsHandler,
+		securityHandler:    securityHandler,
+		nodeAppHandler:     nodeAppHandler,
+		reverseProxyHandler: reverseProxyHandler,
+		gitDeploymentHandler: gitDeploymentHandler,
+		wordpressHandler:   wordpressHandler,
+		jwtManager:         jwtManager,
+		logger:             logger,
 	}
 }
 
@@ -54,6 +114,11 @@ func (r *Router) Setup() *gin.Engine {
 	// Health endpoints (no auth)
 	r.engine.GET("/health", r.healthHandler.Health)
 	r.engine.GET("/ready", r.healthHandler.Ready)
+	r.engine.GET("/live", r.healthHandler.Live)
+
+	// Monitoring endpoints (no auth)
+	r.engine.GET("/system", r.monitoringHandler.GetSystemInfo)
+	r.engine.GET("/metrics", r.monitoringHandler.GetMetrics)
 
 	// API v1
 	v1 := r.engine.Group("/api/v1")
@@ -106,40 +171,369 @@ func (r *Router) Setup() *gin.Engine {
 		}
 
 		// Websites
-		// TODO: Add website routes
+		websites := protected.Group("/websites")
+		{
+			websites.POST("", r.websiteHandler.Create)
+			websites.GET("", r.websiteHandler.List)
+			websites.GET("/:id", r.websiteHandler.Get)
+			websites.PUT("/:id", r.websiteHandler.Update)
+			websites.DELETE("/:id", r.websiteHandler.Delete)
+			websites.POST("/:id/ssl", r.websiteHandler.EnableSSL)
+			websites.POST("/:id/domains", r.websiteHandler.AddDomain)
+			websites.GET("/:id/domains", r.websiteHandler.ListDomains)
+			websites.DELETE("/:id/domains/:domainId", r.websiteHandler.DeleteDomain)
+		}
 
 		// Databases
-		// TODO: Add database routes
+		databases := protected.Group("/databases")
+		{
+			databases.POST("/servers", r.databaseHandler.CreateServer)
+			databases.GET("/servers", r.databaseHandler.ListServers)
+			databases.GET("/servers/:id", r.databaseHandler.GetServer)
+			databases.DELETE("/servers/:id", r.databaseHandler.DeleteServer)
+			databases.POST("", r.databaseHandler.CreateDatabase)
+			databases.GET("", r.databaseHandler.ListDatabases)
+			databases.DELETE("/:id", r.databaseHandler.DeleteDatabase)
+			databases.POST("/:id/change-password", r.databaseHandler.ChangePassword)
+		}
 
 		// DNS
-		// TODO: Add DNS routes
+		dns := protected.Group("/dns")
+		{
+			dns.POST("/zones", r.dnsHandler.CreateZone)
+			dns.GET("/zones", r.dnsHandler.ListZones)
+			dns.GET("/zones/:id", r.dnsHandler.GetZone)
+			dns.PUT("/zones/:id", r.dnsHandler.UpdateZone)
+			dns.DELETE("/zones/:id", r.dnsHandler.DeleteZone)
+
+			dns.POST("/zones/:zoneId/records", r.dnsHandler.CreateRecord)
+			dns.GET("/zones/:zoneId/records", r.dnsHandler.ListRecords)
+			dns.GET("/records/:id", r.dnsHandler.GetRecord)
+			dns.PUT("/records/:id", r.dnsHandler.UpdateRecord)
+			dns.DELETE("/records/:id", r.dnsHandler.DeleteRecord)
+		}
 
 		// SSL
-		// TODO: Add SSL routes
+		ssl := protected.Group("/ssl")
+		{
+			ssl.POST("/letsencrypt", r.sslHandler.IssueLetsEncrypt)
+			ssl.POST("/custom", r.sslHandler.UploadCustom)
+			ssl.GET("", r.sslHandler.List)
+			ssl.GET("/expiring", r.sslHandler.GetExpiringSoon)
+			ssl.GET("/:id", r.sslHandler.Get)
+			ssl.DELETE("/:id", r.sslHandler.Delete)
+			ssl.POST("/renew", r.sslHandler.RenewAll)
+		}
 
 		// Docker
 		// TODO: Add Docker routes
 
+		// Security
+		security := protected.Group("/security")
+		{
+			security.POST("/scans", r.securityHandler.CreateScan)
+			security.GET("/scans", r.securityHandler.ListScans)
+			security.GET("/scans/:id", r.securityHandler.GetScan)
+			security.DELETE("/scans/:id", r.securityHandler.DeleteScan)
+
+			security.GET("/scans/:scanId/vulnerabilities", r.securityHandler.ListVulnerabilitiesByScan)
+			security.GET("/vulnerabilities", r.securityHandler.ListVulnerabilitiesByTenant)
+			security.GET("/vulnerabilities/:id", r.securityHandler.GetVulnerability)
+			security.PUT("/vulnerabilities/:id", r.securityHandler.UpdateVulnerability)
+			security.DELETE("/vulnerabilities/:id", r.securityHandler.DeleteVulnerability)
+
+			security.GET("/scans/:scanId/checks", r.securityHandler.ListChecksByScan)
+
+			security.POST("/policies", r.securityHandler.CreatePolicy)
+			security.GET("/policies", r.securityHandler.ListPolicies)
+			security.GET("/policies/:id", r.securityHandler.GetPolicy)
+			security.PUT("/policies/:id", r.securityHandler.UpdatePolicy)
+			security.DELETE("/policies/:id", r.securityHandler.DeletePolicy)
+		}
+
 		// Files
-		// TODO: Add file manager routes
+		files := protected.Group("/files")
+		{
+			files.GET("/list", r.fileManagerHandler.ListFiles)
+			files.GET("/read", r.fileManagerHandler.ReadFile)
+			files.POST("/write", r.fileManagerHandler.WriteFile)
+			files.POST("/mkdir", r.fileManagerHandler.CreateDirectory)
+			files.POST("/delete", r.fileManagerHandler.Delete)
+			files.POST("/rename", r.fileManagerHandler.Rename)
+			files.POST("/copy", r.fileManagerHandler.Copy)
+			files.POST("/chmod", r.fileManagerHandler.ChangePermissions)
+			files.POST("/upload", r.fileManagerHandler.Upload)
+			files.GET("/download", r.fileManagerHandler.Download)
+			files.GET("/search", r.fileManagerHandler.Search)
+			files.GET("/disk-usage", r.fileManagerHandler.GetDiskUsage)
+		}
 
 		// Cron
-		// TODO: Add cron routes
+		cron := protected.Group("/cron")
+		{
+			cron.POST("", r.cronHandler.Create)
+			cron.GET("", r.cronHandler.List)
+			cron.GET("/:id", r.cronHandler.Get)
+			cron.PUT("/:id", r.cronHandler.Update)
+			cron.DELETE("/:id", r.cronHandler.Delete)
+			cron.POST("/:id/toggle", r.cronHandler.ToggleStatus)
+			cron.POST("/:id/run", r.cronHandler.RunNow)
+		}
 
 		// Firewall
-		// TODO: Add firewall routes
+		firewall := protected.Group("/firewall")
+		{
+			firewall.POST("", r.firewallHandler.Create)
+			firewall.GET("", r.firewallHandler.List)
+			firewall.GET("/active", r.firewallHandler.GetActiveRules)
+			firewall.GET("/:id", r.firewallHandler.Get)
+			firewall.PUT("/:id", r.firewallHandler.Update)
+			firewall.DELETE("/:id", r.firewallHandler.Delete)
+			firewall.POST("/save", r.firewallHandler.SaveRules)
+		}
 
 		// Backups
-		// TODO: Add backup routes
+		backups := protected.Group("/backups")
+		{
+			backups.POST("/jobs", r.backupHandler.CreateJob)
+			backups.GET("/jobs", r.backupHandler.ListJobs)
+			backups.GET("/jobs/:id", r.backupHandler.GetJob)
+			backups.PUT("/jobs/:id", r.backupHandler.UpdateJob)
+			backups.DELETE("/jobs/:id", r.backupHandler.DeleteJob)
+			backups.POST("/jobs/:id/run", r.backupHandler.RunBackup)
+			backups.GET("/records", r.backupHandler.ListRecords)
+			backups.DELETE("/records/:id", r.backupHandler.DeleteRecord)
+		}
+
+		// Services (systemd)
+		services := protected.Group("/services")
+		{
+			services.GET("", r.serviceHandler.List)
+			services.POST("", r.serviceHandler.Create)
+			services.GET("/:name", r.serviceHandler.GetStatus)
+			services.DELETE("/:name", r.serviceHandler.Delete)
+			services.POST("/:name/start", r.serviceHandler.Start)
+			services.POST("/:name/stop", r.serviceHandler.Stop)
+			services.POST("/:name/restart", r.serviceHandler.Restart)
+			services.POST("/:name/enable", r.serviceHandler.Enable)
+			services.POST("/:name/disable", r.serviceHandler.Disable)
+			services.GET("/:name/logs", r.serviceHandler.GetLogs)
+		}
+
+		// PHP
+		php := protected.Group("/php")
+		{
+			php.POST("/versions", r.phpHandler.CreatePHPVersion)
+			php.GET("/versions", r.phpHandler.ListPHPVersions)
+			php.GET("/versions/:id", r.phpHandler.GetPHPVersion)
+			php.PUT("/versions/:id", r.phpHandler.UpdatePHPVersion)
+			php.DELETE("/versions/:id", r.phpHandler.DeletePHPVersion)
+
+			php.POST("/pools", r.phpHandler.CreatePHPPool)
+			php.GET("/pools", r.phpHandler.ListPHPPools)
+			php.GET("/pools/:id", r.phpHandler.GetPHPPool)
+			php.PUT("/pools/:id", r.phpHandler.UpdatePHPPool)
+			php.DELETE("/pools/:id", r.phpHandler.DeletePHPPool)
+
+			php.POST("/extensions", r.phpHandler.InstallPHPExtension)
+			php.GET("/versions/:phpVersionId/extensions", r.phpHandler.ListPHPExtensions)
+			php.PUT("/extensions/:id", r.phpHandler.UpdatePHPExtension)
+			php.DELETE("/extensions/:id", r.phpHandler.DeletePHPExtension)
+
+			php.GET("/versions/:phpVersionId/config", r.phpHandler.GetPHPConfig)
+			php.PUT("/versions/:phpVersionId/config", r.phpHandler.UpdatePHPConfig)
+			php.DELETE("/config/:id", r.phpHandler.DeletePHPConfig)
+		}
 
 		// Monitoring
-		// TODO: Add monitoring routes
+		monitoring := protected.Group("/monitoring")
+		{
+			monitoring.POST("/servers/:server_id/metrics", r.monitoringHandler.RecordMetric)
+			monitoring.GET("/servers/:server_id/metrics", r.monitoringHandler.GetServerMetrics)
+			monitoring.GET("/servers/:server_id/metrics/latest", r.monitoringHandler.GetLatestMetric)
+
+			monitoring.POST("/alerts", r.monitoringHandler.CreateAlert)
+			monitoring.GET("/alerts", r.monitoringHandler.ListAlerts)
+			monitoring.GET("/alerts/:id", r.monitoringHandler.GetAlert)
+			monitoring.PUT("/alerts/:id", r.monitoringHandler.UpdateAlert)
+			monitoring.DELETE("/alerts/:id", r.monitoringHandler.DeleteAlert)
+			monitoring.GET("/alerts/:id/logs", r.monitoringHandler.ListAlertLogs)
+
+			monitoring.POST("/dashboards", r.monitoringHandler.CreateDashboard)
+			monitoring.GET("/dashboards", r.monitoringHandler.ListDashboards)
+			monitoring.GET("/dashboards/:id", r.monitoringHandler.GetDashboard)
+			monitoring.PUT("/dashboards/:id", r.monitoringHandler.UpdateDashboard)
+			monitoring.DELETE("/dashboards/:id", r.monitoringHandler.DeleteDashboard)
+		}
 
 		// Logs
-		// TODO: Add log routes
+		logs := protected.Group("/logs")
+		{
+			logs.POST("/search", r.logHandler.SearchEntries)
+			logs.POST("/servers/:server_id/entries", r.logHandler.RecordEntry)
+			logs.POST("/cleanup", r.logHandler.CleanupOldEntries)
+
+			logs.POST("/sources", r.logHandler.CreateSource)
+			logs.GET("/sources", r.logHandler.ListSources)
+			logs.GET("/sources/:id", r.logHandler.GetSource)
+			logs.PUT("/sources/:id", r.logHandler.UpdateSource)
+			logs.DELETE("/sources/:id", r.logHandler.DeleteSource)
+
+			logs.POST("/rotations", r.logHandler.CreateRotation)
+			logs.GET("/rotations", r.logHandler.ListRotations)
+			logs.GET("/rotations/:id", r.logHandler.GetRotation)
+			logs.PUT("/rotations/:id", r.logHandler.UpdateRotation)
+			logs.DELETE("/rotations/:id", r.logHandler.DeleteRotation)
+		}
 
 		// Deployments
 		// TODO: Add deployment routes
+
+		// Node.js Apps
+		nodeApps := protected.Group("/node-apps")
+		{
+			nodeApps.POST("", r.nodeAppHandler.Create)
+			nodeApps.GET("", r.nodeAppHandler.List)
+			nodeApps.GET("/:id", r.nodeAppHandler.Get)
+			nodeApps.PUT("/:id", r.nodeAppHandler.Update)
+			nodeApps.DELETE("/:id", r.nodeAppHandler.Delete)
+			nodeApps.POST("/:id/start", r.nodeAppHandler.Start)
+			nodeApps.POST("/:id/stop", r.nodeAppHandler.Stop)
+			nodeApps.POST("/:id/restart", r.nodeAppHandler.Restart)
+			nodeApps.GET("/:id/status", r.nodeAppHandler.GetStatus)
+			nodeApps.GET("/:id/logs", r.nodeAppHandler.GetLogs)
+
+			nodeApps.POST("/:id/dependencies", r.nodeAppHandler.CreateDependency)
+			nodeApps.GET("/:id/dependencies", r.nodeAppHandler.ListDependencies)
+			nodeApps.PUT("/:id/dependencies/:depId", r.nodeAppHandler.UpdateDependency)
+			nodeApps.DELETE("/:id/dependencies/:depId", r.nodeAppHandler.DeleteDependency)
+
+			nodeApps.POST("/:id/environments", r.nodeAppHandler.CreateEnvironment)
+			nodeApps.GET("/:id/environments", r.nodeAppHandler.ListEnvironments)
+			nodeApps.PUT("/:id/environments/:envId", r.nodeAppHandler.UpdateEnvironment)
+			nodeApps.DELETE("/:id/environments/:envId", r.nodeAppHandler.DeleteEnvironment)
+		}
+
+		// Reverse Proxy
+		reverseProxy := protected.Group("/reverse-proxy")
+		{
+			reverseProxy.POST("", r.reverseProxyHandler.Create)
+			reverseProxy.GET("", r.reverseProxyHandler.List)
+			reverseProxy.GET("/:id", r.reverseProxyHandler.Get)
+			reverseProxy.PUT("/:id", r.reverseProxyHandler.Update)
+			reverseProxy.DELETE("/:id", r.reverseProxyHandler.Delete)
+			reverseProxy.GET("/server/:server_id", r.reverseProxyHandler.ListByServer)
+			reverseProxy.GET("/:id/access-logs", r.reverseProxyHandler.ListAccessLogs)
+			reverseProxy.DELETE("/:id/access-logs", r.reverseProxyHandler.ClearAccessLogs)
+		}
+
+		// Git Deployments
+		gitDeployments := protected.Group("/git-deployments")
+		{
+			gitDeployments.POST("", r.gitDeploymentHandler.Create)
+			gitDeployments.GET("", r.gitDeploymentHandler.List)
+			gitDeployments.GET("/:id", r.gitDeploymentHandler.Get)
+			gitDeployments.PUT("/:id", r.gitDeploymentHandler.Update)
+			gitDeployments.DELETE("/:id", r.gitDeploymentHandler.Delete)
+			gitDeployments.GET("/server/:server_id", r.gitDeploymentHandler.ListByServer)
+			gitDeployments.POST("/:id/deploy", r.gitDeploymentHandler.Deploy)
+			gitDeployments.GET("/:id/logs", r.gitDeploymentHandler.ListDeploymentLogs)
+			gitDeployments.DELETE("/:id/logs", r.gitDeploymentHandler.ClearDeploymentLogs)
+		}
+
+		// WordPress
+		wordpress := protected.Group("/wordpress")
+		{
+			wordpress.POST("", r.wordpressHandler.Create)
+			wordpress.GET("", r.wordpressHandler.List)
+			wordpress.GET("/:id", r.wordpressHandler.Get)
+			wordpress.PUT("/:id", r.wordpressHandler.Update)
+			wordpress.DELETE("/:id", r.wordpressHandler.Delete)
+			wordpress.GET("/server/:server_id", r.wordpressHandler.ListByServer)
+
+			wordpress.POST("/:id/plugins", r.wordpressHandler.InstallPlugin)
+			wordpress.GET("/:id/plugins", r.wordpressHandler.ListPlugins)
+			wordpress.PUT("/:id/plugins/:pluginId", r.wordpressHandler.UpdatePlugin)
+			wordpress.DELETE("/:id/plugins/:pluginId", r.wordpressHandler.DeletePlugin)
+
+			wordpress.POST("/:id/themes", r.wordpressHandler.InstallTheme)
+			wordpress.GET("/:id/themes", r.wordpressHandler.ListThemes)
+			wordpress.PUT("/:id/themes/:themeId", r.wordpressHandler.UpdateTheme)
+			wordpress.DELETE("/:id/themes/:themeId", r.wordpressHandler.DeleteTheme)
+		}
+
+		// Notifications
+		notifications := protected.Group("/notifications")
+		{
+			notifications.POST("", r.notificationHandler.Create)
+			notifications.GET("", r.notificationHandler.List)
+			notifications.GET("/:id", r.notificationHandler.Get)
+			notifications.PUT("/:id/read", r.notificationHandler.MarkAsRead)
+			notifications.PUT("/read-all", r.notificationHandler.MarkAllAsRead)
+			notifications.DELETE("/:id", r.notificationHandler.Delete)
+			notifications.POST("/cleanup", r.notificationHandler.CleanupOld)
+
+			notifications.POST("/templates", r.notificationHandler.CreateTemplate)
+			notifications.GET("/templates", r.notificationHandler.ListTemplates)
+			notifications.GET("/templates/:id", r.notificationHandler.GetTemplate)
+			notifications.PUT("/templates/:id", r.notificationHandler.UpdateTemplate)
+			notifications.DELETE("/templates/:id", r.notificationHandler.DeleteTemplate)
+
+			notifications.POST("/channels", r.notificationHandler.CreateChannel)
+			notifications.GET("/channels", r.notificationHandler.ListChannels)
+			notifications.GET("/channels/:id", r.notificationHandler.GetChannel)
+			notifications.PUT("/channels/:id", r.notificationHandler.UpdateChannel)
+			notifications.DELETE("/channels/:id", r.notificationHandler.DeleteChannel)
+
+			notifications.GET("/preferences", r.notificationHandler.GetPreferences)
+			notifications.PUT("/preferences", r.notificationHandler.SetPreference)
+		}
+
+		// Audit Logs
+		audit := protected.Group("/audit")
+		{
+			audit.GET("/search", r.auditHandler.Search)
+			audit.GET("/stats", r.auditHandler.GetStats)
+			audit.GET("/:id", r.auditHandler.Get)
+			audit.POST("/cleanup", r.auditHandler.CleanupOld)
+		}
+
+		// Clusters
+		clusters := protected.Group("/clusters")
+		{
+			clusters.POST("", r.clusterHandler.Create)
+			clusters.GET("", r.clusterHandler.List)
+			clusters.GET("/:id", r.clusterHandler.Get)
+			clusters.PUT("/:id", r.clusterHandler.Update)
+			clusters.DELETE("/:id", r.clusterHandler.Delete)
+
+			clusters.POST("/:id/nodes", r.clusterHandler.AddNode)
+			clusters.GET("/:id/nodes", r.clusterHandler.ListNodes)
+			clusters.PUT("/:id/nodes/:nodeId", r.clusterHandler.UpdateNode)
+			clusters.DELETE("/:id/nodes/:nodeId", r.clusterHandler.RemoveNode)
+			clusters.POST("/:id/nodes/:nodeId/heartbeat", r.clusterHandler.NodeHeartbeat)
+		}
+
+		// Load Balancers
+		loadBalancers := protected.Group("/load-balancers")
+		{
+			loadBalancers.POST("", r.clusterHandler.CreateLoadBalancer)
+			loadBalancers.GET("", r.clusterHandler.ListLoadBalancers)
+			loadBalancers.GET("/:id", r.clusterHandler.GetLoadBalancer)
+			loadBalancers.PUT("/:id", r.clusterHandler.UpdateLoadBalancer)
+			loadBalancers.DELETE("/:id", r.clusterHandler.DeleteLoadBalancer)
+		}
+
+		// HA Pairs
+		haPairs := protected.Group("/ha-pairs")
+		{
+			haPairs.POST("", r.clusterHandler.CreateHAPair)
+			haPairs.GET("", r.clusterHandler.ListHAPairs)
+			haPairs.GET("/:id", r.clusterHandler.GetHAPair)
+			haPairs.PUT("/:id", r.clusterHandler.UpdateHAPair)
+			haPairs.POST("/:id/failover", r.clusterHandler.TriggerFailover)
+			haPairs.DELETE("/:id", r.clusterHandler.DeleteHAPair)
+		}
 	}
 
 	// Agent endpoints (agent auth required)

@@ -1,0 +1,29 @@
+[Unit]
+Description=vKAI Panel Frontend (Next.js)
+After=network.target vkai-api.service
+Wants=vkai-api.service
+
+[Service]
+Type=simple
+User=vkai
+Group=vkai
+WorkingDirectory=/opt/vkai-panel/frontend
+ExecStart=/usr/bin/node /opt/vkai-panel/frontend/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-frontend
+
+# Environment
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/opt/vkai-panel/.env
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

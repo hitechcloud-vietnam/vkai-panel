@@ -35,61 +35,101 @@ vKAI Panel is a comprehensive server management platform designed for hosting pr
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Frontend      │     │   Backend API   │     │   vKAI Agent    │
-│   (Next.js)     │────▶│   (Golang)      │────▶│   (Golang)      │
-│   Port: 3000    │     │   Port: 30110   │     │   Port: 30111   │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                              │                         │
-                              ▼                         ▼
-                        ┌──────────┐            ┌──────────────┐
-                        │PostgreSQL│            │  Managed     │
-                        │  Redis   │            │  Servers     │
-                        └──────────┘            └──────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      Nginx (Reverse Proxy)                  │
+│                    Port 80/443 (HTTP/HTTPS)                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+┌─────────────────────────┐     ┌─────────────────────────┐
+│   Frontend (Next.js)    │     │    API Server (Go)      │
+│      Port 3000          │     │     Port 30110          │
+└─────────────────────────┘     └─────────────────────────┘
+                                          │
+                        ┌─────────────────┼─────────────────┐
+                        │                 │                 │
+                        ▼                 ▼                 ▼
+              ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+              │ PostgreSQL  │   │    Redis    │   │   Agent     │
+              │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
+              └─────────────┘   └─────────────┘   └─────────────┘
 ```
+
+### Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Backend | Go 1.22, Gin, JWT, pgx, go-redis |
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| Database | PostgreSQL 16, Redis 7 |
+| Agent | Go binary (vkaid) |
+| Reverse Proxy | Nginx |
+| Services | systemd (No Docker required)
 
 ## Quick Start
 
-### Prerequisites
-- Go 1.22+
-- Node.js 20+
-- PostgreSQL 16+
-- Redis 7+
+### Production Installation (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/hitechcloud-vietnam/vkai-panel.git
+cd vkai-panel
+
+# Run installation script (installs as systemd services)
+chmod +x deploy/install.sh
+sudo ./deploy/install.sh
+```
 
 ### Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/hitechcloud/vkai-panel.git
+git clone https://github.com/hitechcloud-vietnam/vkai-panel.git
 cd vkai-panel
 
-# Run setup script
-chmod +x scripts/setup.sh
-./scripts/setup.sh
+# Run development setup (uses Docker only for databases)
+chmod +x setup-dev.sh
+./setup-dev.sh
 
-# Start with Docker
-docker-compose up -d
-
-# Or start manually:
-# Terminal 1: Backend
+# Start backend (Terminal 1)
 cd backend
 go run cmd/api/main.go
 
-# Terminal 2: Frontend
+# Start frontend (Terminal 2)
 cd frontend
 npm run dev
-
-# Terminal 3: Agent (optional)
-cd agent
-VKAI_PANEL_URL=http://localhost:30110 VKAI_AGENT_TOKEN=your-token go run cmd/main.go
 ```
 
 ### Default Credentials
-- **URL**: http://localhost:3000
+- **URL**: http://localhost:3000 (development) or http://your-server-ip (production)
 - **Username**: admin
 - **Password**: admin123
 
 ⚠️ **Change the default password immediately in production!**
+
+### Management Commands
+
+```bash
+# Service management
+vkai start          # Start all services
+vkai stop           # Stop all services
+vkai restart        # Restart all services
+vkai status         # Show service status
+
+# Logs
+vkai logs api       # View API logs
+vkai logs frontend  # View frontend logs
+
+# Database
+vkai db backup      # Backup database
+vkai db restore     # Restore database
+
+# SSL
+vkai ssl issue      # Issue SSL certificate
+vkai ssl renew      # Renew certificates
+```
 
 ## Project Structure
 
@@ -210,6 +250,16 @@ Copyright © 2024 HiTechCloud. All rights reserved.
 
 ## Support
 
-- Documentation: https://docs.vkai.cloud
-- Issues: https://github.com/hitechcloud/vkai-panel/issues
-- Email: support@hitechcloud.vn
+- **Documentation**: https://docs.vkai.vn
+- **API Documentation**: [docs/API.md](docs/API.md)
+- **User Guide**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- **Developer Guide**: [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
+- **Configuration Guide**: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+- **Deployment Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- **Testing Guide**: [docs/TESTING.md](docs/TESTING.md)
+- **Security Guide**: [docs/SECURITY.md](docs/SECURITY.md)
+- **Contributing Guide**: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+- **Issues**: https://github.com/hitechcloud-vietnam/vkai-panel/issues
+- **Discussions**: https://github.com/hitechcloud-vietnam/vkai-panel/discussions
+- **Email**: support@hitechcloud.vn

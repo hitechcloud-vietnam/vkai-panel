@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -491,4 +492,65 @@ func (p *PaginationParams) Normalize() {
 
 func (p *PaginationParams) Offset() int {
 	return (p.Page - 1) * p.PerPage
+}
+
+func NewPaginationParams(c interface{ Query(string) string }) *PaginationParams {
+	params := &PaginationParams{}
+	page := c.Query("page")
+	perPage := c.Query("per_page")
+	if page != "" {
+		fmt.Sscanf(page, "%d", &params.Page)
+	}
+	if perPage != "" {
+		fmt.Sscanf(perPage, "%d", &params.PerPage)
+	}
+	params.Normalize()
+	return params
+}
+
+// ============================================================
+// ADDITIONAL REQUEST DTOs
+// ============================================================
+
+type CreateDBServerRequest struct {
+	ServerID uuid.UUID `json:"server_id" binding:"required"`
+	Type     string    `json:"type" binding:"required"` // mysql, postgresql, redis
+	Version  string    `json:"version"`
+	Port     int       `json:"port"`
+}
+
+type CreateDBEntryRequest struct {
+	DatabaseServerID uuid.UUID `json:"database_server_id" binding:"required"`
+	Name             string    `json:"name" binding:"required"`
+	Username         string    `json:"username" binding:"required"`
+	Password         string    `json:"password" binding:"required"`
+	Charset          string    `json:"charset"`
+	Collation        string    `json:"collation"`
+}
+
+type CreateCronJobRequest struct {
+	ServerID uuid.UUID `json:"server_id" binding:"required"`
+	Name     string    `json:"name" binding:"required"`
+	Command  string    `json:"command" binding:"required"`
+	Schedule string    `json:"schedule" binding:"required"`
+	Type     string    `json:"type"`
+}
+
+type CreateFirewallRuleRequest struct {
+	ServerID  uuid.UUID `json:"server_id" binding:"required"`
+	Protocol  string    `json:"protocol" binding:"required"`
+	Port      string    `json:"port"`
+	Source    string    `json:"source"`
+	Action    string    `json:"action" binding:"required"`
+	Direction string    `json:"direction"`
+}
+
+type CreateBackupJobRequest struct {
+	Name        string    `json:"name" binding:"required"`
+	Type        string    `json:"type" binding:"required"`
+	ResourceID  uuid.UUID `json:"resource_id" binding:"required"`
+	Destination string    `json:"destination"`
+	Schedule    string    `json:"schedule"`
+	Retention   int       `json:"retention"`
+	Encrypted   bool      `json:"encrypted"`
 }

@@ -1,35 +1,131 @@
-# vKAI Panel
-*.log
-*.tmp
+# vKAI Panel .gitignore
+
+# Environment
 .env
 .env.local
-.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
 
-# Backend
+# Logs
+*.log
+logs/
+log/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Backend (Go)
+backend/bin/
 backend/vendor/
 backend/tmp/
 backend/logs/
 backend/config.yaml
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
 
-# Frontend
+# Frontend (Next.js)
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/build/
 frontend/.env.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
 
 # Agent
 agent/vendor/
 agent/tmp/
+agent/bin/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
 # Docker
 docker/data/
+docker-compose.override.yml
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Test coverage
+coverage/
+*.cover
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Build artifacts
+dist/
+build/
+output/
+
+# Cache
+.cache/
+*.cache
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+*.app
+*.deb
+*.rpm
+*.msi
+*.dmg
+
+# Compiled
+*.class
+*.pyc
+*.pyo
+__pycache__/

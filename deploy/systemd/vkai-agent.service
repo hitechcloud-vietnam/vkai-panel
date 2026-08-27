@@ -1,0 +1,26 @@
+[Unit]
+Description=vKAI Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vkai-agent
+ExecStart=/opt/vkai-agent/vkaid
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-agent
+
+# Environment
+EnvironmentFile=/opt/vkai-agent/.env
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/proc /sys
+
+[Install]
+WantedBy=multi-user.target

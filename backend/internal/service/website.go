@@ -74,8 +74,8 @@ func (s *WebsiteService) Create(ctx context.Context, req *models.CreateWebsiteRe
 	}
 
 	// Generate web server config
-	adapter, err := s.registry.Get(server.WebServerType)
-	if err == nil {
+	adapter, ok := s.registry.Get(server.WebServerType)
+	if ok {
 		siteConfig := &webserver.SiteConfig{
 			Domain:     req.Domain,
 			RootDir:    rootDir,
@@ -83,11 +83,11 @@ func (s *WebsiteService) Create(ctx context.Context, req *models.CreateWebsiteRe
 			PHPVersion: req.PHPVersion,
 		}
 
-		if err := adapter.CreateSite(siteConfig); err != nil {
+		if err := adapter.CreateSite(ctx, siteConfig); err != nil {
 			fmt.Printf("Warning: failed to create site config: %v\n", err)
 		} else {
-			_ = adapter.EnableSite(req.Domain)
-			_ = adapter.Reload()
+			_ = adapter.EnableSite(ctx, req.Domain)
+			_ = adapter.Reload(ctx)
 			website.Status = "active"
 			_ = s.websiteRepo.UpdateStatus(ctx, website.ID, "active")
 		}
@@ -117,11 +117,11 @@ func (s *WebsiteService) Delete(ctx context.Context, id uuid.UUID) error {
 	// Disable site in web server
 	server, err := s.serverRepo.GetByID(ctx, website.ServerID)
 	if err == nil {
-		adapter, err := s.registry.Get(server.WebServerType)
-		if err == nil {
-			_ = adapter.DisableSite(website.Domain)
-			_ = adapter.DeleteSite(website.Domain)
-			_ = adapter.Reload()
+		adapter, ok := s.registry.Get(server.WebServerType)
+		if ok {
+			_ = adapter.DisableSite(ctx, website.Domain)
+			_ = adapter.DeleteSite(ctx, website.Domain)
+			_ = adapter.Reload(ctx)
 		}
 	}
 
@@ -139,9 +139,9 @@ func (s *WebsiteService) EnableSSL(ctx context.Context, id uuid.UUID, cert, key,
 		return err
 	}
 
-	adapter, err := s.registry.Get(server.WebServerType)
-	if err != nil {
-		return err
+	adapter, ok := s.registry.Get(server.WebServerType)
+	if !ok {
+		return fmt.Errorf("web server adapter not found: %s", server.WebServerType)
 	}
 
 	// Save certificates
@@ -163,17 +163,16 @@ func (s *WebsiteService) EnableSSL(ctx context.Context, id uuid.UUID, cert, key,
 		Domain:     website.Domain,
 		RootDir:    website.RootDir,
 		SSLEnabled: true,
-		SSLCert:    certPath,
-		SSLKey:     keyPath,
-		SSLChain:   chainPath,
+		CertPath:   certPath,
+		KeyPath:    keyPath,
 		PHPVersion: website.PHPVersion,
 	}
 
-	if err := adapter.CreateSite(siteConfig); err != nil {
+	if err := adapter.CreateSite(ctx, siteConfig); err != nil {
 		return fmt.Errorf("failed to update site config: %w", err)
 	}
 
-	_ = adapter.Reload()
+	_ = adapter.Reload(ctx)
 
 	website.SSLEnabled = true
 	return s.websiteRepo.Update(ctx, website)
