@@ -41,6 +41,7 @@ readonly WWW_DEFAULT_DIR="${WWW_DIR}/default"
 # to be readable over plain HTTP on port 80, from this exact directory.
 readonly ACME_WEBROOT="${WWW_DEFAULT_DIR}"
 readonly ACME_CHALLENGE_DIR="${WWW_DEFAULT_DIR}/.well-known/acme-challenge"
+readonly BIN_DIR="${PANEL_ROOT}/bin"
 readonly ETC_DIR="${PANEL_ROOT}/etc"
 readonly LOG_DIR="${PANEL_ROOT}/logs"
 readonly LOG_SITES_DIR="${LOG_DIR}/sites"
@@ -123,6 +124,8 @@ OPT_QUIET="false"
 OPT_UNINSTALL="false"
 OPT_PURGE="false"
 OPT_FORCE_OS="false"
+OPT_CI_USER=""
+OPT_CI_PUBKEY=""
 OPT_SKIP_CHECKSUM="false"
 OPT_ADMIN_USER="admin"
 OPT_API_URL=""
@@ -310,6 +313,9 @@ Additional options:
   --source-url <url>     Tarball to install from when the script runs on its own.
   --skip-checksum        Skip Go/Node download checksum verification.
   --force-os             Install on an OS release outside the tested matrix.
+  --ci-deploy-user <n>   Create an unprivileged account for CI deployments. It may run
+                         only ${BIN_DIR}/vkai-deploy, nothing else.
+  --ci-deploy-key <key>  Public SSH key authorised for that account.
   -h, --help             Show this help.
   -v, --version          Show the version.
 
@@ -361,6 +367,10 @@ parse_args() {
             --skip-deps)     OPT_SKIP_DEPS="true"; shift ;;
             --skip-checksum) OPT_SKIP_CHECKSUM="true"; shift ;;
             --force-os)      OPT_FORCE_OS="true"; shift ;;
+            --ci-deploy-user)   [[ $# -ge 2 ]] || die "--ci-deploy-user needs a value"; OPT_CI_USER="$2"; shift 2 ;;
+            --ci-deploy-user=*) OPT_CI_USER="${1#*=}"; shift ;;
+            --ci-deploy-key)    [[ $# -ge 2 ]] || die "--ci-deploy-key needs a value"; OPT_CI_PUBKEY="$2"; shift 2 ;;
+            --ci-deploy-key=*)  OPT_CI_PUBKEY="${1#*=}"; shift ;;
             -y|--yes)        OPT_ASSUME_YES="true"; shift ;;
             -q|--quiet)      OPT_QUIET="true"; shift ;;
             --uninstall)     OPT_UNINSTALL="true"; shift ;;
@@ -663,16 +673,38 @@ pkg_installed() {
 # pkg_enable_service <name> - enable and start, tolerating the different unit
 # names between families (redis-server vs redis vs redis6).
 pkg_enable_service() {
-    local svc="$1"
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${svc}\.service"; then
-        log_warn "Unit '${svc}.service' not found, skipped."
-        return 1
-    fi
+    local svc="$1" i
+
+    # A unit file the package manager wrote seconds ago is not visible to
+    # systemctl until systemd reloads. Checking without reloading makes the
+    # installer announce that a service does not exist on the very machine where
+    # it has just been installed successfully - which is what happened with
+    # postgresql.service on Ubuntu 24.04.
+    systemctl daemon-reload 2>/dev/null || true
+
+    for i in 1 2 3 4 5; do
+        if systemctl list-unit-files "${svc}.service" --no-legend 2>/dev/null | grep -q .; then
+            break
+        fi
+        if (( i == 5 )); then
+            log_warn "Unit '${svc}.service' not found, skipped."
+            return 1
+        fi
+        sleep 1
+        systemctl daemon-reload 2>/dev/null || true
+    done
+
     systemctl enable "$svc" >/dev/null 2>&1 || log_warn "Could not enable ${svc}"
-    systemctl restart "$svc" || {
-        log_error "Could not start ${svc}. Inspect: journalctl -u ${svc} -n 50"
-        return 1
-    }
+
+    # Restarting a service whose dependencies are still settling can lose a race
+    # that a second attempt wins. Only the second failure is a real failure.
+    if ! systemctl restart "$svc" 2>/dev/null; then
+        sleep 3
+        if ! systemctl restart "$svc"; then
+            log_error "Could not start ${svc}. Inspect: journalctl -u ${svc} -n 50"
+            return 1
+        fi
+    fi
     return 0
 }
 
@@ -1657,7 +1689,16 @@ setup_database() {
 
     detect_pg_service
     pg_initdb_if_needed
-    pkg_enable_service "$PG_SERVICE" || die "PostgreSQL did not start. Inspect: journalctl -u ${PG_SERVICE} -n 50"
+    # pg_isready is the authority on whether the database is usable. A failed
+    # enable on a host where PostgreSQL is already serving is not a reason to
+    # abort an installation.
+    if ! pkg_enable_service "$PG_SERVICE"; then
+        if command -v pg_isready >/dev/null 2>&1 && pg_isready -q 2>/dev/null; then
+            log_warn "Could not manage ${PG_SERVICE} through systemd, but PostgreSQL is answering; continuing."
+        else
+            die "PostgreSQL did not start. Inspect: journalctl -u ${PG_SERVICE} -n 50"
+        fi
+    fi
 
     # Wait for the server to accept connections.
     local i
@@ -2485,6 +2526,57 @@ install_vkai_cli() {
 }
 
 # =============================================================================
+# 18b. Deployment entry point for CI
+# =============================================================================
+# The CI deploy user must be able to publish a release without holding general
+# root. Granting "sudo bash <script from the uploaded package>" would be exactly
+# general root wearing a narrower label, because that user controls the file.
+#
+# Instead the release script is installed here, owned by root in a directory the
+# deploy user cannot write, and sudo is granted for that one path only.
+install_deploy_entrypoint() {
+    local src="${SRC_DIR}/deploy/scripts/deploy.sh"
+    [[ -f "$src" ]] || { log_warn "${src} not found; skipping the CI deploy entry point."; return 0; }
+
+    install -d -o root -g root -m 0755 "$BIN_DIR"
+    install -o root -g root -m 0755 "$src" "${BIN_DIR}/vkai-deploy"
+    log_info "Deployment entry point: ${BIN_DIR}/vkai-deploy (root owned)"
+}
+
+# setup_ci_deploy_user creates the unprivileged account GitHub Actions logs in as.
+# Only runs when --ci-deploy-user was given.
+setup_ci_deploy_user() {
+    [[ -n "${OPT_CI_USER:-}" ]] || return 0
+    local user="$OPT_CI_USER"
+
+    id "$user" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash "$user"
+    usermod -aG "$VKAI_GROUP" "$user"
+
+    if [[ -n "${OPT_CI_PUBKEY:-}" ]]; then
+        local ssh_dir="/home/${user}/.ssh"
+        install -d -o "$user" -g "$user" -m 0700 "$ssh_dir"
+        touch "${ssh_dir}/authorized_keys"
+        grep -qxF "$OPT_CI_PUBKEY" "${ssh_dir}/authorized_keys" 2>/dev/null \
+            || printf '%s\n' "$OPT_CI_PUBKEY" >>"${ssh_dir}/authorized_keys"
+        chown "$user:$user" "${ssh_dir}/authorized_keys"
+        chmod 0600 "${ssh_dir}/authorized_keys"
+    fi
+
+    # One command, one fixed path, one argument shape. The glob cannot match a
+    # slash, so it cannot be walked out of /tmp.
+    cat >"/etc/sudoers.d/${user}" <<SUDOERS
+# ${BRAND_NAME}: CI deployment. This account may publish a release and nothing else.
+${user} ALL=(root) NOPASSWD: ${BIN_DIR}/vkai-deploy deploy /tmp/vkai-panel-*.tar.gz
+${user} ALL=(root) NOPASSWD: ${BIN_DIR}/vkai-deploy rollback
+${user} ALL=(root) NOPASSWD: ${BIN_DIR}/vkai-deploy status
+SUDOERS
+    chmod 0440 "/etc/sudoers.d/${user}"
+    visudo -c -f "/etc/sudoers.d/${user}" >/dev/null || die "Generated sudoers file for ${user} is invalid"
+
+    log_info "CI deploy user: ${user} (may run ${BIN_DIR}/vkai-deploy only)"
+}
+
+# =============================================================================
 # 19. Final access table
 # =============================================================================
 print_summary() {
@@ -2712,6 +2804,8 @@ main() {
 
     setup_admin_account
     install_vkai_cli     # the renewal unit calls /usr/local/bin/vkai
+    install_deploy_entrypoint
+    setup_ci_deploy_user
     install_systemd_units
     setup_nginx
     setup_logrotate
