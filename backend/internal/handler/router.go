@@ -48,6 +48,7 @@ type Router struct {
 	multiUserHandler     *MultiUserHandler
 	dailyReportHandler   *DailyReportHandler
 	scheduledTaskHandler *ScheduledTaskHandler
+	tamperProofHandler   *TamperProofHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -91,6 +92,7 @@ func NewRouter(
 	multiUserHandler *MultiUserHandler,
 	dailyReportHandler *DailyReportHandler,
 	scheduledTaskHandler *ScheduledTaskHandler,
+	tamperProofHandler *TamperProofHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -136,6 +138,7 @@ func NewRouter(
 		multiUserHandler:     multiUserHandler,
 		dailyReportHandler:   dailyReportHandler,
 		scheduledTaskHandler: scheduledTaskHandler,
+		tamperProofHandler:   tamperProofHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -820,6 +823,41 @@ func (r *Router) Setup() *gin.Engine {
 			scheduledTasks.GET("/groups", r.scheduledTaskHandler.ListGroups)
 			scheduledTasks.POST("/groups", r.scheduledTaskHandler.CreateGroup)
 			scheduledTasks.DELETE("/groups/:id", r.scheduledTaskHandler.DeleteGroup)
+		}
+
+		// Tamper Proof for Enterprise Pro
+		tamperProof := protected.Group("/tamper-proof")
+		{
+			tamperProof.GET("/stats", r.tamperProofHandler.GetStats)
+
+			// Protected Paths
+			tamperProof.GET("/paths", r.tamperProofHandler.ListProtectedPaths)
+			tamperProof.POST("/paths", r.tamperProofHandler.CreateProtectedPath)
+			tamperProof.GET("/paths/:id", r.tamperProofHandler.GetProtectedPath)
+			tamperProof.PUT("/paths/:id", r.tamperProofHandler.UpdateProtectedPath)
+			tamperProof.DELETE("/paths/:id", r.tamperProofHandler.DeleteProtectedPath)
+
+			// Scanning
+			tamperProof.POST("/paths/:id/scan", r.tamperProofHandler.Scan)
+			tamperProof.POST("/scan-all", r.tamperProofHandler.ScanAll)
+
+			// Baselines
+			tamperProof.GET("/paths/:id/baselines", r.tamperProofHandler.GetBaselines)
+			tamperProof.POST("/paths/:id/baselines/refresh", r.tamperProofHandler.RefreshBaseline)
+
+			// Alerts
+			tamperProof.GET("/alerts", r.tamperProofHandler.ListAlerts)
+			tamperProof.GET("/alerts/:id", r.tamperProofHandler.GetAlert)
+			tamperProof.POST("/alerts/:id/resolve", r.tamperProofHandler.ResolveAlert)
+
+			// Scan Results
+			tamperProof.GET("/scan-results", r.tamperProofHandler.ListScanResults)
+
+			// Audit Logs
+			tamperProof.GET("/audit-logs", r.tamperProofHandler.ListAuditLogs)
+
+			// Cleanup
+			tamperProof.POST("/cleanup", r.tamperProofHandler.Cleanup)
 		}
 
 		// Daily Reports

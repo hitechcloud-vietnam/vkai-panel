@@ -233,6 +233,11 @@ func main() {
 	scheduledTaskService := service.NewScheduledTaskService(scheduledTaskRepo, logger)
 	scheduledTaskHandler := handler.NewScheduledTaskHandler(scheduledTaskService, logger)
 
+	// Initialize Tamper Proof for Enterprise Pro
+	tamperProofRepo := repository.NewTamperProofRepository(db.DB, logger)
+	tamperProofService := service.NewTamperProofService(tamperProofRepo, logger)
+	tamperProofHandler := handler.NewTamperProofHandler(tamperProofService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -273,6 +278,7 @@ func main() {
 		multiUserHandler,
 		dailyReportHandler,
 		scheduledTaskHandler,
+		tamperProofHandler,
 		jwtManager,
 		logger,
 	)

@@ -147,6 +147,11 @@ const menuItems: MenuItem[] = [
     href: '/scheduled-tasks',
   },
   {
+    label: 'Tamper Proof',
+    icon: <Shield size={18} />,
+    href: '/tamper-proof',
+  },
+  {
     label: 'Backups',
     icon: <HardDrive size={18} />,
     href: '/backups',
