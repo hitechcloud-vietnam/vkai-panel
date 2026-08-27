@@ -1,2 +1,5 @@
-# Chung chi TLS RIENG cua panel (panel.crt / panel.key).
-# Khong dung chung voi chung chi cua website khach.
+# The panel's OWN TLS certificate (panel.crt / panel.key).
+# Never shared with the customer website certificates.
+#
+# The installed panel keeps its certificate in /vkai-panel/ssl/, not here.
+# This directory only exists so a manual nginx setup has a place to put one.

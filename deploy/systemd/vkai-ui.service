@@ -1,11 +1,14 @@
 # =============================================================================
-# VKAI Panel - giao dien Next.js  |  HiTechCloud (hitechcloud.vn)
-# Cai dat: /etc/systemd/system/vkai-ui.service
+# VKAI Panel - Next.js UI  |  HiTechCloud (hitechcloud.vn)
+# Installed as: /etc/systemd/system/vkai-ui.service
 #
-# Chay ban build "standalone". Buoc build BAT BUOC phai copy .next/static va
-# public/ vao .next/standalone (npm run build da lam qua postbuild:standalone).
-# Thieu buoc do, trang tra ve HTML nhung moi /_next/static/*.js deu 404 va
-# trinh duyet hien "Application error: a client-side exception has occurred".
+# Runs the "standalone" build under a native node, NOT a container.
+# The build MUST copy .next/static and public/ into .next/standalone
+# (npm run build does it through postbuild:standalone). Without that copy the
+# page returns HTML while every /_next/static/*.js returns 404 and the browser
+# shows "Application error: a client-side exception has occurred".
+#
+# Every path goes through the symlink /vkai-panel/current -> running release.
 # =============================================================================
 [Unit]
 Description=VKAI Panel UI (Next.js standalone)
@@ -17,8 +20,8 @@ Wants=network-online.target vkai-api.service
 Type=simple
 User=vkai
 Group=vkai
-WorkingDirectory=/vkai-panel/panel
-ExecStart=/usr/bin/node /vkai-panel/panel/.next/standalone/server.js
+WorkingDirectory=/vkai-panel/current/panel
+ExecStart=/usr/bin/node /vkai-panel/current/panel/.next/standalone/server.js
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -26,13 +29,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vkai-ui
 
-# Mac dinh; .env ghi de duoc vi duoc nap sau.
+# Defaults; .env is loaded afterwards and therefore wins.
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=HOSTNAME=127.0.0.1
 EnvironmentFile=/vkai-panel/etc/.env
 
-# --- Gia co bao mat ----------------------------------------------------------
+# --- Hardening ---------------------------------------------------------------
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -42,8 +45,10 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-# Next.js ghi cache va nhat ky; ma nguon UI thi chi doc.
-ReadWritePaths=/vkai-panel/panel/.next/cache
+# Next.js writes a cache and logs; the UI sources are read only. The leading
+# "-": a fresh release has no .next/cache yet, and a missing path must not stop
+# the service from starting.
+ReadWritePaths=-/vkai-panel/current/panel/.next/cache
 ReadWritePaths=/vkai-panel/logs
 ReadWritePaths=/vkai-panel/tmp
 

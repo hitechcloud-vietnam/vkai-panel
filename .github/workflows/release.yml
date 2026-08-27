@@ -96,6 +96,11 @@ jobs:
             name=$(basename "$d")
             tar -czf "release/${name}.tar.gz" -C "$d" .
           done
+          # SHA256SUMS duoc tao trong thu muc release/ de dong tong kiem tra chi
+          # chua ten tep tran ("vkai-linux-amd64.tar.gz"), dung dinh dang ma
+          # `sha256sum -c SHA256SUMS` doc duoc sau khi nguoi dung tai ve.
+          ( cd release && sha256sum ./*.tar.gz | sed 's#\./##' > SHA256SUMS )
+          cat release/SHA256SUMS
           ls -l release
 
       # Replaces actions/create-release@v1 + 12x actions/upload-release-asset@v1.
@@ -110,7 +115,9 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
-          files: release/*.tar.gz
+          files: |
+            release/*.tar.gz
+            release/SHA256SUMS
           body: |
             ## Installation
 
@@ -122,13 +129,14 @@ jobs:
             ### Manual Installation
             See the [Deployment Guide](https://github.com/hitechcloud-vietnam/vkai-panel/blob/main/docs/DEPLOYMENT.md).
 
-            ## Docker
-
+            ### Verify the download
             ```bash
-            docker pull ghcr.io/hitechcloud-vietnam/vkai-panel-core:latest
-            docker pull ghcr.io/hitechcloud-vietnam/vkai-panel-ui:latest
-            docker pull ghcr.io/hitechcloud-vietnam/vkai-panel-agent:latest
+            sha256sum -c SHA256SUMS
             ```
+
+            VKAI Panel chay TRAN tren Linux (binary Go + Next.js standalone +
+            systemd). Khong con image Docker cho ban than panel; Docker trong
+            panel la tinh nang de quan ly container cua ban.
 
             ## Documentation
 

@@ -25,8 +25,13 @@
 - Node.js 20+
 - PostgreSQL 16+
 - Redis 7+
-- Docker (optional, for databases only)
 - Git
+
+The panel is built and run bare-metal: a Go binary plus a Next.js standalone
+build. No container runtime takes part in building, running or testing it.
+Docker Engine is only relevant if you are developing the panel's Docker
+*feature* -- the Docker screen and `/api/v1/docker/*`, which are unchanged and
+fully supported.
 
 ### Quick Setup
 
@@ -44,18 +49,21 @@ chmod +x setup-dev.sh
 
 #### 1. Start Databases
 
+`setup-dev.sh` already does this. To do it by hand:
+
 ```bash
-# Using Docker (recommended for development)
-docker-compose -f docker-compose.dev.yml up -d
+# Debian / Ubuntu
+sudo apt install postgresql postgresql-contrib redis-server
+sudo systemctl enable --now postgresql redis-server
 
-# Or install locally
-# PostgreSQL
-sudo apt install postgresql postgresql-contrib
-sudo systemctl start postgresql
+# RHEL / Rocky / AlmaLinux
+sudo dnf install postgresql-server postgresql-contrib redis
+sudo postgresql-setup --initdb
+sudo systemctl enable --now postgresql redis
 
-# Redis
-sudo apt install redis-server
-sudo systemctl start redis-server
+# Create the role and database
+sudo -u postgres createuser -P vkai
+sudo -u postgres createdb -O vkai vkai_panel
 ```
 
 #### 2. Setup the API (`core/`)
@@ -150,8 +158,7 @@ vkai-panel/
 │   ├── install.sh           # Installation script
 │   └── vkai.sh              # Management script
 ├── docs/                      # Documentation
-├── docker-compose.dev.yml     # Development databases
-├── setup-dev.sh              # Development setup
+├── setup-dev.sh              # Development setup (native PostgreSQL + Redis)
 └── README.md
 ```
 

@@ -68,14 +68,22 @@ git remote add upstream https://github.com/hitechcloud-vietnam/vkai-panel.git
 
 ### Setup Development Environment
 
+`setup-dev.sh` installs PostgreSQL and Redis natively through your package
+manager, fetches Go and npm dependencies and writes the dev `.env` files. No
+container runtime is involved -- the panel is built and run bare-metal.
+
 ```bash
 # Run development setup script
 chmod +x setup-dev.sh
 ./setup-dev.sh
 
 # Or manually:
-# Start databases with Docker
-docker-compose -f docker-compose.dev.yml up -d
+# Install the databases natively
+sudo apt install postgresql postgresql-contrib redis-server   # Debian / Ubuntu
+sudo systemctl enable --now postgresql redis-server
+
+sudo -u postgres createuser -P vkai
+sudo -u postgres createdb -O vkai vkai_panel
 
 # Setup the API (core/)
 cd core
@@ -87,6 +95,10 @@ make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 cd panel
 npm install
 ```
+
+> Docker is not used to build, run or test the panel. It remains a **feature**
+> the panel offers its users (the Docker screen and `/api/v1/docker/*`), so you
+> only need Docker Engine locally if you are working on that feature itself.
 
 ---
 

@@ -442,3 +442,16 @@ export const apiKeyApi = {
   update: (id: string, data: any) => api.put(`/api/v1/api-keys/${id}`, data),
   delete: (id: string) => api.delete(`/api/v1/api-keys/${id}`),
 };
+
+// Panel Access Settings API (administrator only).
+// These endpoints change the port, the security entrance, the IP allow list and
+// the panel's own TLS certificate. A change that would move or restrict the
+// panel answers 409 with a confirmation payload; repeat the call with
+// `confirm: true` once the operator has been shown the new URL.
+export const panelSettingsApi = {
+  get: () => api.get('/api/v1/panel/settings'),
+  update: (data: Record<string, unknown>) => api.put('/api/v1/panel/settings', data),
+  regenerateEntrance: (confirm: boolean) =>
+    api.post('/api/v1/panel/settings/entrance/regenerate', { confirm }),
+  reissueCertificate: () => api.post('/api/v1/panel/settings/tls/reissue'),
+};

@@ -20,6 +20,7 @@ package config
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -28,6 +29,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -66,6 +68,11 @@ func DefaultPanelStateFile() string { return PanelStateFile() }
 // nginx configuration and in shell snippets in the documentation.
 var entrancePattern = regexp.MustCompile(`^/[A-Za-z0-9][A-Za-z0-9_.\-/]{2,63}$`)
 
+// acmeProfilePattern matches an ACME profile name. The list of profiles is the
+// CA's to change, so the name is not validated against a fixed set - only
+// against the shape, which keeps a typo out of the order payload.
+var acmeProfilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
 // reservedPanelPorts are ports the panel refuses to take over. 80/443 belong to
 // the hosted websites; the rest are the panel's own supporting services.
 var reservedPanelPorts = map[int]string{
@@ -78,12 +85,128 @@ var reservedPanelPorts = map[int]string{
 	6379: "Redis",
 }
 
+// Panel TLS modes. The mode decides where the certificate on the panel port
+// comes from; nothing else about the listener changes with it.
+//
+//	self-signed  generated here, carries the machine IP in its SAN list, warns
+//	             in browsers, works before any DNS record or CA exists
+//	letsencrypt  issued by an ACME CA over HTTP-01 and renewed in the
+//	             background, for an installation that is reachable from the
+//	             internet on port 80
+//	custom       a file pair supplied by the operator, never rewritten by us
+const (
+	TLSModeSelfSigned  = "self-signed"
+	TLSModeLetsEncrypt = "letsencrypt"
+	TLSModeCustom      = "custom"
+)
+
+// ACME identifier types, spelled the way ACME itself spells them.
+const (
+	ACMEIdentifierDNS = "dns"
+	ACMEIdentifierIP  = "ip"
+)
+
+// Certificate profiles published in the Let's Encrypt directory's
+// meta.profiles. A certificate for a bare IP address is only issued under
+// "shortlived", which lasts about six days - so nothing downstream may assume
+// the ninety day lifetime of a classic certificate.
+const (
+	ACMEProfileShortLived = "shortlived"
+	ACMEProfileTLSServer  = "tlsserver"
+	ACMEProfileClassic    = "classic"
+)
+
+// PanelACMEConfig holds the settings used by the "letsencrypt" TLS mode.
+type PanelACMEConfig struct {
+	// Email is the ACME account contact. Issuance works without it, but it is
+	// the only channel a CA has to warn that a certificate stopped renewing,
+	// and a panel whose certificate silently expires locks its operator out of
+	// the thing they would use to fix it.
+	Email string `json:"email"`
+
+	// UseStaging points issuance at the CA's staging environment, and defaults
+	// to true. Production rate limits are per-account and per-identifier, and a
+	// misconfigured install can burn a week of them in a few minutes of retry
+	// loops; the operator opts into production once a staging run has proven
+	// that the challenge is actually answerable from the internet.
+	UseStaging bool `json:"use_staging"`
+
+	// Profile is the ACME certificate profile. Empty means "derive it from the
+	// identifier", which is the only correct default: an IP identifier exists
+	// under the short-lived profile and nowhere else.
+	Profile string `json:"profile"`
+
+	// LastIssuedAt and LastError are display state, written after every
+	// issuance attempt so the UI and the CLI can explain why the panel is
+	// serving a self-signed certificate instead of the requested one.
+	LastIssuedAt time.Time `json:"last_issued_at,omitempty"`
+	LastError    string    `json:"last_error,omitempty"`
+}
+
 // PanelTLSConfig describes the certificate the panel serves on its own port.
 type PanelTLSConfig struct {
-	Enabled    bool   `json:"enabled"`
-	CertFile   string `json:"cert_file"`
-	KeyFile    string `json:"key_file"`
-	SelfSigned bool   `json:"self_signed"`
+	Enabled  bool   `json:"enabled"`
+	Mode     string `json:"mode"`
+	CertFile string `json:"cert_file"`
+	KeyFile  string `json:"key_file"`
+
+	// SelfSigned predates Mode. It is still read (so a state file written by an
+	// older build selects the right mode) and still written (so a rollback to
+	// an older build keeps working), but it is kept in sync with Mode rather
+	// than consulted directly: read EffectiveMode, not this field.
+	SelfSigned bool `json:"self_signed"`
+
+	ACME PanelACMEConfig `json:"acme"`
+}
+
+// EffectiveMode resolves the mode of a possibly zero-valued or legacy struct.
+// An empty Mode is what every state file written before modes existed contains,
+// so it falls back to what SelfSigned said.
+func (t PanelTLSConfig) EffectiveMode() string {
+	if mode := normalizeTLSMode(t.Mode); mode != "" {
+		return mode
+	}
+	if t.SelfSigned {
+		return TLSModeSelfSigned
+	}
+	return TLSModeCustom
+}
+
+// normalizeTLSMode maps the spellings operators actually type onto the three
+// canonical modes, and returns "" for anything else.
+func normalizeTLSMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "self-signed", "selfsigned", "self_signed", "self":
+		return TLSModeSelfSigned
+	case "letsencrypt", "lets-encrypt", "lets_encrypt", "acme", "le":
+		return TLSModeLetsEncrypt
+	case "custom", "file", "manual", "byo":
+		return TLSModeCustom
+	}
+	return ""
+}
+
+// ParsePanelTLSMode validates operator input for VKAI_PANEL_TLS_MODE.
+func ParsePanelTLSMode(raw string) (string, error) {
+	if mode := normalizeTLSMode(raw); mode != "" {
+		return mode, nil
+	}
+	return "", fmt.Errorf("panel access: VKAI_PANEL_TLS_MODE=%q is not one of %s, %s, %s",
+		raw, TLSModeSelfSigned, TLSModeLetsEncrypt, TLSModeCustom)
+}
+
+// PanelIdentifier is the single ACME identifier the panel certificate covers.
+type PanelIdentifier struct {
+	Type  string
+	Value string
+}
+
+// String renders the identifier the way ACME logs it, e.g. "ip:116.118.2.44".
+func (i PanelIdentifier) String() string {
+	if i.Type == "" && i.Value == "" {
+		return ""
+	}
+	return i.Type + ":" + i.Value
 }
 
 // PanelAccessConfig is the complete access gate configuration.
@@ -118,6 +241,14 @@ type PanelAccessConfig struct {
 	// EnvOverrides lists settings whose value came from the environment. Those
 	// cannot be changed by the CLI: the environment wins on the next start.
 	EnvOverrides []string `json:"-"`
+
+	// CertSource describes what actually produced the certificate currently on
+	// the wire ("self-signed", "letsencrypt production", "custom file", ...).
+	// The TLS manager sets it at startup, because the configured mode and the
+	// served certificate can legitimately disagree: a CA that was unreachable
+	// leaves the panel on the self-signed fallback, and the banner has to say
+	// so rather than repeat what was requested.
+	CertSource string `json:"-"`
 }
 
 // DefaultPanelAccess returns the configuration used when neither a state file
@@ -133,6 +264,31 @@ func DefaultPanelAccess() *PanelAccessConfig {
 		AllowedIPs:        []string{},
 		TrustedProxies:    []string{},
 		StateFile:         PanelStateFilePath(),
+		// HTTPS is on by default, self-signed. A panel that logs an operator in
+		// as root over plain HTTP leaks the session cookie to anyone on the path,
+		// and waiting for a domain to exist before enabling TLS means the most
+		// exposed period - first install, default credentials - is the unencrypted
+		// one. The generated certificate carries the machine's IP in its SAN list,
+		// so it works before any DNS record exists. Browsers will warn: that is
+		// what the fingerprint printed in the startup banner is for.
+		// Mode is deliberately left empty here rather than set to
+		// TLSModeSelfSigned: a state file written before modes existed carries
+		// self_signed without a mode, and a non-empty default would win over it
+		// and silently re-enable self-signed for an operator who had configured
+		// their own certificate. EffectiveMode derives "self-signed" from the
+		// SelfSigned flag below, and fillGenerated writes the resolved mode
+		// back so that a loaded config always carries a concrete one.
+		TLS: PanelTLSConfig{
+			Enabled:    true,
+			SelfSigned: true,
+			ACME: PanelACMEConfig{
+				// Staging until an operator opts into production. See the field
+				// comment: the cost of guessing wrong here is a week-long
+				// rate-limit lockout, and the cost of guessing wrong the other
+				// way is one extra environment variable.
+				UseStaging: true,
+			},
+		},
 	}
 }
 
@@ -281,18 +437,34 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.Domain = strings.ToLower(strings.TrimSpace(v))
 		p.markEnv("domain")
 	}
+	// VKAI_PANEL_TLS_MODE is read here but applied last: it is the explicit
+	// statement of intent, so none of the older single-purpose variables below
+	// may end up contradicting it.
+	modeEnv := envString("PANEL_TLS_MODE", "PANEL_SSL_MODE")
+
 	if v := envString("PANEL_TLS_CERT", "PANEL_TLS_CERT_FILE"); v != "" {
 		p.TLS.CertFile = v
 		p.TLS.Enabled = true
+		p.adoptCustomModeFromFiles(modeEnv)
 		p.markEnv("tls_cert")
 	}
 	if v := envString("PANEL_TLS_KEY", "PANEL_TLS_KEY_FILE"); v != "" {
 		p.TLS.KeyFile = v
 		p.TLS.Enabled = true
+		p.adoptCustomModeFromFiles(modeEnv)
 		p.markEnv("tls_key")
 	}
 	if v, ok := envBoolOK("PANEL_TLS_SELF_SIGNED"); ok {
 		p.TLS.SelfSigned = v
+		if modeEnv == "" {
+			// The legacy flag still moves the mode, so an existing deployment
+			// that sets it keeps behaving exactly as it did.
+			if v {
+				p.TLS.Mode = TLSModeSelfSigned
+			} else if p.TLSMode() == TLSModeSelfSigned {
+				p.TLS.Mode = TLSModeCustom
+			}
+		}
 		if v {
 			p.TLS.Enabled = true
 		}
@@ -303,7 +475,49 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.markEnv("tls_enabled")
 	}
 
+	if modeEnv != "" {
+		mode, err := ParsePanelTLSMode(modeEnv)
+		if err != nil {
+			return err
+		}
+		p.TLS.Mode = mode
+		p.TLS.SelfSigned = mode == TLSModeSelfSigned
+		// Naming a mode means asking for TLS, unless TLS was switched off in
+		// the same environment - in which case that wins, it is the more
+		// specific instruction.
+		if !p.hasEnv("tls_enabled") {
+			p.TLS.Enabled = true
+		}
+		p.markEnv("tls_mode")
+	}
+
+	if v := envString("PANEL_ACME_EMAIL", "PANEL_LETSENCRYPT_EMAIL", "PANEL_LE_EMAIL"); v != "" {
+		p.TLS.ACME.Email = strings.TrimSpace(v)
+		p.markEnv("acme_email")
+	}
+	if v, ok := envBoolOK("PANEL_ACME_STAGING", "PANEL_LETSENCRYPT_STAGING"); ok {
+		p.TLS.ACME.UseStaging = v
+		p.markEnv("acme_staging")
+	}
+	if v := envString("PANEL_ACME_PROFILE", "PANEL_LETSENCRYPT_PROFILE"); v != "" {
+		p.TLS.ACME.Profile = strings.ToLower(strings.TrimSpace(v))
+		p.markEnv("acme_profile")
+	}
+
 	return nil
+}
+
+// adoptCustomModeFromFiles switches an untouched default (self-signed) over to
+// "custom" when the operator points at a certificate file pair. Without it the
+// self-signed generator would overwrite the file they just configured.
+func (p *PanelAccessConfig) adoptCustomModeFromFiles(modeEnv string) {
+	if modeEnv != "" {
+		return
+	}
+	if p.TLSMode() == TLSModeSelfSigned {
+		p.TLS.Mode = TLSModeCustom
+		p.TLS.SelfSigned = false
+	}
 }
 
 // fillGenerated invents the values nobody supplied: a random port when
@@ -333,7 +547,16 @@ func (p *PanelAccessConfig) fillGenerated() error {
 		p.Generated = append(p.Generated, "entrance")
 	}
 
-	if p.TLS.Enabled && p.TLS.SelfSigned {
+	// Resolve the mode once, here, so every later reader sees a concrete value
+	// and the state file we write back is unambiguous for the next build.
+	p.TLS.Mode = p.TLS.EffectiveMode()
+	p.TLS.SelfSigned = p.TLS.Mode == TLSModeSelfSigned
+
+	// Both locally generated and CA-issued certificates land on the same pair
+	// of paths: whatever produced it, this is the certificate the panel serves,
+	// and keeping one location means a mode change never leaves a stale file
+	// behind that a later mode change would pick back up.
+	if p.TLS.Enabled && p.TLS.Mode != TLSModeCustom {
 		if strings.TrimSpace(p.TLS.CertFile) == "" {
 			p.TLS.CertFile = filepath.Join(PanelSSLDir(), "panel.crt")
 		}
@@ -408,9 +631,38 @@ func (p *PanelAccessConfig) Validate() error {
 		}
 	}
 
-	if p.TLS.Enabled && !p.TLS.SelfSigned {
+	if p.TLS.Enabled {
+		if err := p.validateTLS(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateTLS rejects a TLS configuration that could not possibly produce a
+// certificate, before the listener is built rather than after.
+func (p *PanelAccessConfig) validateTLS() error {
+	if normalizeTLSMode(p.TLS.Mode) == "" && strings.TrimSpace(p.TLS.Mode) != "" {
+		return fmt.Errorf("panel access: TLS mode %q is not one of %s, %s, %s",
+			p.TLS.Mode, TLSModeSelfSigned, TLSModeLetsEncrypt, TLSModeCustom)
+	}
+
+	if p.TLSMode() == TLSModeCustom {
 		if strings.TrimSpace(p.TLS.CertFile) == "" || strings.TrimSpace(p.TLS.KeyFile) == "" {
 			return fmt.Errorf("panel access: bat TLS thi phai dat ca VKAI_PANEL_TLS_CERT va VKAI_PANEL_TLS_KEY (hoac VKAI_PANEL_TLS_SELF_SIGNED=true)")
+		}
+	}
+
+	if email := strings.TrimSpace(p.TLS.ACME.Email); email != "" {
+		if _, err := mail.ParseAddress(email); err != nil {
+			return fmt.Errorf("panel access: VKAI_PANEL_ACME_EMAIL=%q is not a valid address", p.TLS.ACME.Email)
+		}
+	}
+
+	if profile := strings.TrimSpace(p.TLS.ACME.Profile); profile != "" {
+		if !acmeProfilePattern.MatchString(profile) {
+			return fmt.Errorf("panel access: VKAI_PANEL_ACME_PROFILE=%q is not a profile name (letters, digits and '-' only)", p.TLS.ACME.Profile)
 		}
 	}
 
@@ -469,6 +721,124 @@ func (p *PanelAccessConfig) ListenAddr() string {
 	return net.JoinHostPort(p.Bind, strconv.Itoa(p.Port))
 }
 
+// TLSMode is the resolved certificate mode: self-signed, letsencrypt or custom.
+func (p *PanelAccessConfig) TLSMode() string { return p.TLS.EffectiveMode() }
+
+// UsesACME reports whether the panel certificate is expected to come from a CA.
+func (p *PanelAccessConfig) UsesACME() bool {
+	return p.TLS.Enabled && p.TLSMode() == TLSModeLetsEncrypt
+}
+
+// ACMEIdentifier is the single identifier the panel certificate is requested
+// for: the pinned domain when there is one, otherwise this machine's own IPv4.
+//
+// It returns an error rather than a best guess whenever the address cannot be
+// validated from the internet. Ordering an unvalidatable identifier does not
+// merely fail - it consumes the "failed validation" rate limit, which is per
+// account and per hour, so a retry loop over a private address locks the
+// installation out of issuing anything at all.
+func (p *PanelAccessConfig) ACMEIdentifier() (PanelIdentifier, error) {
+	if d := strings.ToLower(strings.TrimSpace(p.Domain)); d != "" {
+		return PanelIdentifier{Type: ACMEIdentifierDNS, Value: d}, nil
+	}
+
+	raw := primaryIPv4()
+	if raw == "" {
+		return PanelIdentifier{}, fmt.Errorf(
+			"panel tls: this host has no non-loopback IPv4 address and VKAI_PANEL_DOMAIN is unset, so there is no identifier to request a certificate for")
+	}
+
+	ip := net.ParseIP(raw)
+	if reason := unroutableIPv4Reason(ip); reason != "" {
+		return PanelIdentifier{}, fmt.Errorf(
+			"panel tls: %s is %s, which a public CA cannot reach or validate; set VKAI_PANEL_DOMAIN to a public name that resolves here, or keep VKAI_PANEL_TLS_MODE=%s",
+			raw, reason, TLSModeSelfSigned)
+	}
+
+	return PanelIdentifier{Type: ACMEIdentifierIP, Value: ip.To4().String()}, nil
+}
+
+// ACMEProfileFor is the profile an order should carry: whatever the operator
+// pinned, otherwise the only profile that can serve this identifier type.
+func (p *PanelAccessConfig) ACMEProfileFor(identifierType string) string {
+	if v := strings.TrimSpace(p.TLS.ACME.Profile); v != "" {
+		return strings.ToLower(v)
+	}
+	return DefaultACMEProfile(identifierType)
+}
+
+// DefaultACMEProfile maps an identifier type onto a Let's Encrypt profile.
+// Certificates for a bare IP address are only issued under "shortlived"; a DNS
+// identifier gets the ordinary TLS server profile.
+func DefaultACMEProfile(identifierType string) string {
+	if strings.EqualFold(strings.TrimSpace(identifierType), ACMEIdentifierIP) {
+		return ACMEProfileShortLived
+	}
+	return ACMEProfileTLSServer
+}
+
+// RecordACMEResult stores the outcome of an issuance attempt for display. It
+// only mutates the in-memory config; persisting it is the caller's decision,
+// because a state file write failing must never turn into a failed renewal.
+func (p *PanelAccessConfig) RecordACMEResult(at time.Time, err error) {
+	if err != nil {
+		p.TLS.ACME.LastError = err.Error()
+		return
+	}
+	p.TLS.ACME.LastIssuedAt = at.UTC()
+	p.TLS.ACME.LastError = ""
+}
+
+// unroutableIPv4Reason names why an address cannot be used as an ACME
+// identifier, or returns "" when it is a public unicast IPv4 address.
+//
+// The blocks below are exactly the ones a hosting panel actually meets: a NAT
+// lab (RFC1918), a container bridge (RFC1918), a machine behind a carrier NAT
+// (RFC6598 100.64/10, common on cheap VPS and on mobile uplinks), a cloud
+// metadata or auto-configured interface (169.254/16) and localhost (127/8).
+func unroutableIPv4Reason(ip net.IP) string {
+	if ip == nil {
+		return "not a valid IP address"
+	}
+	v4 := ip.To4()
+	if v4 == nil {
+		// Only IPv4 is handled here: the panel advertises an A record, and an
+		// AAAA-only install needs a domain anyway.
+		return "not an IPv4 address"
+	}
+
+	switch {
+	case v4[0] == 0:
+		return "in the unspecified block 0.0.0.0/8"
+	case v4.IsLoopback():
+		return "a loopback address (127.0.0.0/8)"
+	case v4.IsLinkLocalUnicast() || v4.IsLinkLocalMulticast():
+		return "a link-local address (169.254.0.0/16)"
+	case v4[0] == 10,
+		v4[0] == 172 && v4[1]&0xf0 == 16,
+		v4[0] == 192 && v4[1] == 168:
+		return "a private address (RFC1918)"
+	case v4[0] == 100 && v4[1]&0xc0 == 64:
+		return "inside the carrier-grade NAT block (RFC6598 100.64.0.0/10)"
+	case v4[0] == 192 && v4[1] == 0 && v4[2] == 2,
+		v4[0] == 198 && v4[1] == 51 && v4[2] == 100,
+		v4[0] == 203 && v4[1] == 0 && v4[2] == 113:
+		return "a documentation address (RFC5737)"
+	case v4[0] == 198 && v4[1]&0xfe == 18:
+		return "a benchmarking address (RFC2544)"
+	case v4.IsMulticast():
+		return "a multicast address (224.0.0.0/4)"
+	case v4[0] >= 240:
+		return "in the reserved block 240.0.0.0/4"
+	}
+
+	return ""
+}
+
+// IsPubliclyRoutableIPv4 reports whether an address can be used as an ACME "ip"
+// identifier at all.
+func IsPubliclyRoutableIPv4(ip net.IP) bool { return unroutableIPv4Reason(ip) == "" }
+
 // Scheme is https as soon as the panel serves its own certificate.
 func (p *PanelAccessConfig) Scheme() string {
 	if p.TLS.Enabled {
@@ -522,7 +892,13 @@ func (p *PanelAccessConfig) AccessHost() string {
 
 // AccessURL is the full URL including the security entrance.
 func (p *PanelAccessConfig) AccessURL() string {
-	url := fmt.Sprintf("%s://%s:%d", p.EffectiveScheme(), p.AccessHost(), p.EffectivePort())
+	scheme, port := p.EffectiveScheme(), p.EffectivePort()
+	// Omit the port when it is the scheme default: "https://panel.example.com:443/"
+	// is valid but reads as a misconfiguration to an operator pasting it around.
+	url := fmt.Sprintf("%s://%s", scheme, p.AccessHost())
+	if !((scheme == "http" && port == 80) || (scheme == "https" && port == 443)) {
+		url = fmt.Sprintf("%s:%d", url, port)
+	}
 	if p.EntranceEnabled && p.Entrance != "" {
 		url += p.Entrance
 	}
@@ -546,11 +922,30 @@ func (p *PanelAccessConfig) Banner() string {
 		domain = "(khong rang buoc)"
 	}
 
-	tls := "tat (HTTP)"
+	// The banner reports the certificate the panel is actually serving, not the
+	// one that was requested: an operator who asked for Let's Encrypt and got
+	// the self-signed fallback because port 80 was busy needs to see that here,
+	// not discover it from a browser warning an hour later.
+	tls := "off (HTTP)"
+	fingerprint := ""
 	if p.TLS.Enabled {
-		tls = "bat (HTTPS)"
-		if p.TLS.SelfSigned {
-			tls += " - chung chi tu ky"
+		source := strings.TrimSpace(p.CertSource)
+		if source == "" {
+			source = p.TLSMode()
+			if source == TLSModeLetsEncrypt && p.TLS.ACME.UseStaging {
+				source += " (staging)"
+			}
+		}
+		tls = "on (HTTPS) - " + source
+		if strings.Contains(source, TLSModeSelfSigned) {
+			// Only a self-signed certificate needs the fingerprint: a CA-issued
+			// one is verified by the browser without the operator doing
+			// anything, and printing a fingerprint they never check trains them
+			// to click through the one that matters.
+			fingerprint = CertFingerprint(p.TLS.CertFile)
+		}
+		if p.TLSMode() == TLSModeLetsEncrypt && p.TLS.ACME.LastError != "" {
+			tls += " [last ACME error: " + p.TLS.ACME.LastError + "]"
 		}
 	}
 
@@ -573,6 +968,12 @@ func (p *PanelAccessConfig) Banner() string {
 		{"Nhat ky", LogRoot()},
 		{"File cau hinh", p.StateFile},
 	}...)
+	if fingerprint != "" {
+		// Printed so the operator can compare it with what the browser shows.
+		// Clicking through a certificate warning without checking anything is
+		// how an interception goes unnoticed.
+		rows = append(rows, [2]string{"Van tay chung chi", fingerprint})
+	}
 
 	var b strings.Builder
 	const width = 78
@@ -644,9 +1045,15 @@ func ValidateEntrance(entrance string) error {
 	return nil
 }
 
-// RandomEntrance produces an aaPanel-style secret path, e.g. /vkai_a1b2c3d4.
+// RandomEntrance produces an aaPanel-style secret path, e.g. /vkai_a1b2c3d4e5f60718.
+//
+// aaPanel ships 8 hex characters (32 bits). That is small enough that a patient
+// scanner sweeping one host can walk the whole space, and the entrance is the
+// only thing standing between the internet and a login form running as root.
+// 8 random bytes (64 bits) costs nothing to type once and removes the class of
+// attack entirely.
 func RandomEntrance() (string, error) {
-	buf := make([]byte, 4)
+	buf := make([]byte, 8)
 	if _, err := rand.Read(buf); err != nil {
 		return "", fmt.Errorf("panel access: khong sinh duoc loi vao ngau nhien: %w", err)
 	}
@@ -713,16 +1120,34 @@ func (p *PanelAccessConfig) EnsureTLSMaterial() (certFile, keyFile string, err e
 		return "", "", fmt.Errorf("panel access: thieu duong dan chung chi TLS cho panel")
 	}
 
-	certExists := fileExists(certFile)
-	keyExists := fileExists(keyFile)
-	if certExists && keyExists {
-		return certFile, keyFile, nil
+	mode := p.TLSMode()
+
+	if fileExists(certFile) && fileExists(keyFile) {
+		if mode != TLSModeSelfSigned {
+			// A custom pair belongs to the operator and a CA-issued pair
+			// belongs to the TLS manager's renewal loop. Neither is ever
+			// regenerated from here.
+			return certFile, keyFile, nil
+		}
+		// A self-signed certificate pins the hosts it was issued for. When the
+		// machine changes address or a domain is pinned later, the old file stops
+		// matching what operators now type and every visit turns into a warning
+		// they are trained to click through. Reissue instead.
+		if certCovers(certFile, p.certHosts()) {
+			return certFile, keyFile, nil
+		}
+		_ = os.Remove(certFile)
+		_ = os.Remove(keyFile)
 	}
 
-	if !p.TLS.SelfSigned {
+	if mode == TLSModeCustom {
 		return "", "", fmt.Errorf("panel access: khong tim thay chung chi %s hoac khoa %s", certFile, keyFile)
 	}
 
+	// The letsencrypt mode bootstraps from a self-signed pair too. The panel has
+	// to answer HTTPS on its very first request, long before an ACME order can
+	// finish, and a listener that waits for a CA is a listener that never comes
+	// up on the day the CA is unreachable.
 	if err := generateSelfSignedCert(certFile, keyFile, p.certHosts()); err != nil {
 		return "", "", err
 	}
@@ -744,6 +1169,53 @@ func (p *PanelAccessConfig) certHosts() []string {
 		hosts = append(hosts, ip)
 	}
 	return hosts
+}
+
+// certCovers reports whether the certificate on disk still lists every host the
+// panel is reachable as.
+func certCovers(certFile string, hosts []string) bool {
+	raw, err := os.ReadFile(certFile)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	if time.Now().After(cert.NotAfter) {
+		return false
+	}
+	for _, h := range hosts {
+		if cert.VerifyHostname(h) != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// CertFingerprint returns the SHA-256 fingerprint an operator can compare
+// against what the browser shows before accepting a self-signed certificate.
+// Without this, "click through the warning" is the only option on offer, which
+// is indistinguishable from accepting an interception.
+func CertFingerprint(certFile string) string {
+	raw, err := os.ReadFile(certFile)
+	if err != nil {
+		return ""
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return ""
+	}
+	sum := sha256.Sum256(block.Bytes)
+	parts := make([]string, 0, len(sum))
+	for _, b := range sum {
+		parts = append(parts, fmt.Sprintf("%02X", b))
+	}
+	return "SHA256:" + strings.Join(parts, ":")
 }
 
 func generateSelfSignedCert(certFile, keyFile string, hosts []string) error {

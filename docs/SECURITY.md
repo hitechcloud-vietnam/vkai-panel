@@ -642,35 +642,66 @@ sudo usermod -aG www-data vkai
 sudo chage -M 90 -m 7 -W 14 vkai
 ```
 
-### Container Security
+### Service Sandboxing (systemd)
 
-#### Docker Security (if used)
+The panel runs as native systemd services, not in containers, so process
+isolation is enforced by systemd directives rather than by a container runtime.
+The shipped units in `deploy/systemd/` already carry these settings; keep them if
+you edit the units locally.
 
-```dockerfile
-# Use non-root user
-FROM golang:1.22-alpine AS builder
-RUN adduser -D -g '' appuser
+```ini
+# Excerpt from deploy/systemd/vkai-api.service
+[Service]
+User=vkai
+Group=vkai
 
-FROM alpine:3.18
-COPY --from=builder /etc/passwd /etc/passwd
-USER appuser
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# The whole filesystem is read-only except these paths.
+ReadWritePaths=/vkai-panel/etc
+ReadWritePaths=/vkai-panel/www
+ReadWritePaths=/vkai-panel/logs
+ReadWritePaths=/vkai-panel/ssl
+ReadWritePaths=/vkai-panel/tmp
+# The panel manages the customer web server and certificates.
+ReadWritePaths=-/etc/nginx
+ReadWritePaths=-/etc/letsencrypt
+
+LimitNOFILE=65536
+LimitNPROC=4096
 ```
 
-#### Docker Compose Security
+Rules to keep:
 
-```yaml
-services:
-  api:
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
+- `vkai-api` and `vkai-ui` run as the unprivileged `vkai` user, never as root.
+- `vkai-agent` needs root for host-level operations. It is **optional** -- do not
+  enable it on a single-server install that does not manage remote nodes.
+- Never widen `ReadWritePaths` beyond the directory a change actually needs.
+- The panel binds a dedicated port, so no service needs `NET_BIND_SERVICE` or any
+  other capability to bind a privileged port.
+
+Audit the effective sandbox of a running unit:
+
+```bash
+systemd-analyze security vkai-api
+systemd-analyze security vkai-ui
 ```
+
+### Customer Container Security
+
+Separately from the above: the panel offers customers a Docker management
+feature (the Docker screen, `/api/v1/docker/*`). That feature drives the Docker
+Engine on the host on the customer's behalf. Access to it is gated by the
+`docker:*` RBAC permissions -- grant them only to roles that are meant to control
+containers, because the Docker socket is effectively root-equivalent on the host.
 
 ---
 

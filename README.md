@@ -12,6 +12,7 @@ riêng cho website của khách hàng**.
 ## Mục lục
 
 - [Điểm khác biệt](#điểm-khác-biệt)
+- [Docker trong VKAI Panel: hai vai trò khác nhau](#docker-trong-vkai-panel-hai-vai-trò-khác-nhau)
 - [Tính năng](#tính-năng)
 - [Ma trận hệ điều hành hỗ trợ](#ma-trận-hệ-điều-hành-hỗ-trợ)
 - [Cài đặt một dòng lệnh](#cài-đặt-một-dòng-lệnh)
@@ -21,6 +22,8 @@ riêng cho website của khách hàng**.
 - [Cấu trúc mã nguồn](#cấu-trúc-mã-nguồn)
 - [Đường dẫn chuẩn trên máy chủ](#đường-dẫn-chuẩn-trên-máy-chủ)
 - [Dịch vụ systemd](#dịch-vụ-systemd)
+- [Triển khai bản phát hành](#triển-khai-bản-phát-hành)
+- [Vận hành hằng ngày](#vận-hành-hằng-ngày)
 - [Lệnh quản trị `vkai`](#lệnh-quản-trị-vkai)
 - [Cấu hình](#cấu-hình)
 - [Môi trường phát triển](#môi-trường-phát-triển)
@@ -38,8 +41,35 @@ riêng cho website của khách hàng**.
 | Lối vào | Đường dẫn bí mật dạng `/vkai_a1b2c3d4`, sai đường dẫn trả về 404 trung tính |
 | Chặn theo IP / tên miền | Có, kiểm tra trước cả lối vào |
 | Website khách | Toàn quyền dùng 80/443, tách hoàn toàn khỏi panel |
-| Triển khai | systemd thuần (`vkai-api`, `vkai-ui`, `vkai-agent`), không bắt buộc Docker |
+| Triển khai | systemd thuần (`vkai-api`, `vkai-ui`, `vkai-agent`) — binary Go + Next.js standalone, **không dùng Docker** |
 | Đa máy chủ | Một panel điều khiển nhiều node qua `vkai-agent` |
+
+## Docker trong VKAI Panel: hai vai trò khác nhau
+
+Đây là chỗ dễ hiểu nhầm nhất, nên nói rõ ngay từ đầu. Chữ "Docker" trong dự án này
+mang **hai nghĩa hoàn toàn tách biệt**.
+
+**1. Docker như hạ tầng để dựng chính panel — đã bỏ hẳn.**
+Core API, giao diện và agent đều build và chạy **trần** trên Linux: binary Go,
+bản build Next.js standalone, quản lý bằng systemd. Kho mã không còn `Dockerfile`,
+`docker-compose.yml`, `.dockerignore` hay bất kỳ hướng dẫn `docker compose up` nào
+để dựng panel. PostgreSQL và Redis được cài **trực tiếp lên máy** bởi
+`deploy/install.sh`. Máy chủ chạy panel **không cần** cài Docker Engine.
+
+**2. Docker như tính năng dành cho khách hàng — giữ nguyên, đầy đủ.**
+Khách dùng panel để quản lý container, image, volume, network và compose stack
+**của chính họ**. Màn hình Docker trong giao diện, nhóm API `/api/v1/docker/*` và
+các quyền `docker:*` trong RBAC đều **không thay đổi**. Tính năng này hoàn toàn
+không bị cắt bỏ.
+
+| | Docker để dựng panel | Docker như tính năng cho khách |
+|---|---|---|
+| Trạng thái | **Đã bỏ** | **Giữ nguyên, hỗ trợ đầy đủ** |
+| Thể hiện trong mã | `Dockerfile`, `docker-compose.yml` (đã xoá) | Màn hình Docker, `/api/v1/docker/*`, quyền `docker:*` |
+| Thay thế bằng | `deploy/install.sh` + systemd | Không thay thế — vẫn là tính năng chính thức |
+| Cần Docker Engine trên máy chủ? | Không | Có, chỉ khi khách muốn dùng tính năng này |
+
+Nói ngắn gọn: **panel không chạy trong Docker, nhưng panel quản lý Docker.**
 
 ## Tính năng
 
@@ -214,7 +244,7 @@ Cổng `30110` (API) và `3000` (UI) chỉ lắng nghe nội bộ; mọi truy c�
 | Cơ sở dữ liệu | PostgreSQL 16, Redis 7 |
 | Agent (`agent/`) | Binary Go (`vkaid`) |
 | Web server | Nginx (mặc định), Apache, OpenLiteSpeed, LiteSpeed, Caddy, Traefik |
-| Chạy dịch vụ | systemd (Docker tuỳ chọn) |
+| Chạy dịch vụ | systemd — binary Go + `next start` bản standalone, không dùng Docker |
 
 ## Cấu trúc mã nguồn
 
@@ -249,13 +279,19 @@ vkai-panel/
 │   └── package.json
 ├── agent/                      # VKAI Agent chạy trên từng node
 │   └── cmd/main.go
-├── deploy/                     # install.sh, unit systemd, cấu hình nginx
-├── docker/                     # Cấu hình Docker
+├── deploy/                     # install.sh, deploy.sh, unit systemd, cấu hình nginx
+│   ├── install.sh              # Bộ cài đa hệ điều hành (cài trần lên máy)
+│   ├── systemd/                # vkai-api.service, vkai-ui.service, vkai-agent.service
+│   ├── nginx/                  # vhost cho cổng panel
+│   └── scripts/deploy.sh       # Triển khai gói .tar.gz + rollback
 ├── scripts/                    # Script tiện ích
 ├── docs/                       # Tài liệu
-├── Dockerfile
-└── docker-compose.yml
+├── setup-dev.sh                # Dựng môi trường phát triển
+└── Makefile                    # build / test / lint / package
 ```
+
+Không có `Dockerfile` hay `docker-compose.yml` trong kho mã: panel được build và
+chạy trần. Xem [Docker trong VKAI Panel: hai vai trò khác nhau](#docker-trong-vkai-panel-hai-vai-trò-khác-nhau).
 
 > Đường dẫn import Go **không đổi**: module vẫn là
 > `github.com/hitechcloud-vietnam/vkai-panel` (và `.../agent`). Chỉ tên thư mục
@@ -296,7 +332,78 @@ sudo systemctl status vkai-api vkai-ui vkai-agent
 sudo journalctl -u vkai-api -f
 ```
 
-Panel chạy dưới người dùng hệ thống **`vkai`**, không chạy bằng `root`.
+Panel chạy dưới người dùng hệ thống **`vkai`**, không chạy bằng `root`. Riêng
+`vkai-agent` chạy bằng `root` vì phải thao tác ở mức hệ thống, và là dịch vụ
+**tuỳ chọn**. Cả ba unit đều đã bật gia cố systemd: `NoNewPrivileges`,
+`ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, và `ReadWritePaths` chỉ mở
+đúng các thư mục cần ghi.
+
+## Triển khai bản phát hành
+
+Bản phát hành được đóng thành gói `.tar.gz` rồi đẩy xuống máy chủ. Mỗi lần triển
+khai giải nén vào **một thư mục riêng theo phiên bản** và trỏ symlink `current`
+sang đó, nên quay lui chỉ là trỏ lại symlink.
+
+```
+/vkai-panel/releases/20250315_101500/    # bản cũ, vẫn giữ để quay lui
+/vkai-panel/releases/20250316_143000/    # bản vừa triển khai
+/vkai-panel/current -> /vkai-panel/releases/20250316_143000
+```
+
+`etc/`, `logs/`, `www/`, `ssl/` nằm **ngoài** release: triển khai không ghi đè,
+quay lui không đưa chúng về cũ.
+
+Gói phải có đúng cấu trúc sau (CI đóng gói tự động; đóng tay thì theo mẫu này):
+
+```
+core/bin/vkai-api                    # binary API
+core/migrations/*.sql                # migration
+panel/.next/standalone/server.js     # bản build UI
+panel/.next/standalone/.next/static  # BẮT BUỘC, thiếu là UI lỗi client-side
+agent/bin/vkai-agent                 # tuỳ chọn
+```
+
+```bash
+# Trên máy build
+make build                   # binary Go + bản build Next.js standalone
+tar -czf vkai-panel-1.2.0.tar.gz -C dist .
+
+# Trên máy chủ
+sudo bash deploy/scripts/deploy.sh deploy /tmp/vkai-panel-1.2.0.tar.gz
+sudo bash deploy/scripts/deploy.sh list         # các bản đang giữ
+sudo bash deploy/scripts/deploy.sh status
+sudo bash deploy/scripts/deploy.sh rollback     # quay về bản trước
+```
+
+Lệnh `deploy` kiểm tra gói hợp lệ **trước khi** động vào hệ thống đang chạy, sao
+lưu CSDL, chạy migration từ bản mới **trước khi** đổi symlink, rồi mới trỏ
+`current` sang bản mới và khởi động lại dịch vụ. Health check bao gồm **cả API
+lẫn giao diện**; **hỏng thì tự động quay lui** về bản trước. Hệ thống giữ bản
+đang chạy cộng 5 bản cũ gần nhất.
+
+> Rollback chỉ quay lui **mã nguồn**, **không** quay lui migration cơ sở dữ liệu.
+
+Chi tiết: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Vận hành hằng ngày
+
+```bash
+# Xem nhật ký
+sudo journalctl -u vkai-api -f                 # API, theo dõi trực tiếp
+sudo journalctl -u vkai-ui -n 200 --no-pager   # 200 dòng cuối của giao diện
+sudo journalctl -u vkai-agent --since "1 hour ago"
+sudo journalctl -u vkai-api -p err --since today   # chỉ lỗi trong hôm nay
+
+# Kiểm tra sức khoẻ
+curl -fsS http://127.0.0.1:30110/health        # API còn sống
+curl -fsS http://127.0.0.1:30110/ready         # sẵn sàng (đã nối CSDL/Redis)
+curl -fsS http://127.0.0.1:3000/ -o /dev/null  # giao diện phản hồi
+systemctl is-active vkai-api vkai-ui
+
+# Quay lui bản phát hành
+sudo bash deploy/scripts/deploy.sh rollback
+readlink -f /vkai-panel/current                # bản đang chạy
+```
 
 ## Lệnh quản trị `vkai`
 
@@ -401,7 +508,7 @@ bản phát hành lớn sau này. Tên có tiền tố `VKAI_` luôn được ư
 git clone https://github.com/hitechcloud-vietnam/vkai-panel.git
 cd vkai-panel
 
-# PostgreSQL + Redis cho môi trường dev (Docker chỉ dùng cho CSDL)
+# Cài PostgreSQL + Redis trực tiếp lên máy, cài phụ thuộc, sinh .env dev
 bash setup-dev.sh
 
 # Cửa sổ 1 - API

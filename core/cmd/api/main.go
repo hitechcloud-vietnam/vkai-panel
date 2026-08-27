@@ -23,6 +23,7 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/tlsmanager"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/webserver"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/websocket"
 )
@@ -53,6 +54,7 @@ func main() {
 		zap.String("panel_bind", panelCfg.Bind),
 		zap.Bool("entrance_enabled", panelCfg.EntranceEnabled),
 		zap.Bool("tls", panelCfg.TLS.Enabled),
+		zap.String("tls_mode", panelCfg.TLSMode()),
 	)
 
 	// Connect to database
@@ -309,9 +311,39 @@ func main() {
 	}
 
 	// Panel TLS is optional and independent of the customer vhosts' certificates.
-	certFile, keyFile, err := panelCfg.EnsureTLSMaterial()
+	//
+	// The manager owns the certificate for the whole life of the process: it
+	// serves it through tls.Config.GetCertificate, so a renewal is a pointer
+	// swap rather than a restart. That is what makes Let's Encrypt usable here
+	// at all - a certificate issued for a bare IP address comes from the
+	// "shortlived" profile and expires in about six days.
+	tlsCtx, cancelTLS := context.WithCancel(context.Background())
+	defer cancelTLS()
+
+	tlsManager, err := tlsmanager.New(tlsmanager.Options{
+		Config: panelCfg,
+		Logger: logger,
+	})
 	if err != nil {
-		logger.Fatal("Failed to prepare panel TLS material", zap.Error(err))
+		logger.Fatal("Failed to prepare panel TLS", zap.Error(err))
+	}
+	if err := tlsManager.Start(tlsCtx); err != nil {
+		logger.Fatal("Failed to prepare panel TLS", zap.Error(err))
+	}
+	defer tlsManager.Stop()
+
+	if panelCfg.TLS.Enabled {
+		info := tlsManager.Info()
+		logger.Info("Panel TLS ready",
+			zap.String("mode", info.Mode),
+			zap.String("certificate_source", info.Source),
+			zap.String("identifier_type", info.IdentifierType),
+			zap.String("identifier", info.Identifier),
+			zap.String("profile", info.Profile),
+			zap.Bool("acme_staging", info.Staging),
+			zap.Time("not_after", info.NotAfter),
+			zap.String("last_error", info.LastError),
+		)
 	}
 
 	// The listen address comes from the panel access config; the legacy
@@ -329,6 +361,9 @@ func main() {
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
+	if panelCfg.TLS.Enabled {
+		srv.TLSConfig = tlsManager.TLSConfig()
+	}
 
 	// Print the access table once, the way aaPanel does, so an operator can copy
 	// the URL out of the console before closing the session.
@@ -341,11 +376,14 @@ func main() {
 		logger.Info("Panel server starting",
 			zap.String("addr", srv.Addr),
 			zap.String("scheme", panelCfg.Scheme()),
+			zap.String("certificate_source", tlsManager.Source()),
 		)
 
 		var err error
 		if panelCfg.TLS.Enabled {
-			err = srv.ListenAndServeTLS(certFile, keyFile)
+			// Empty file names: the certificate comes from srv.TLSConfig's
+			// GetCertificate, so a renewal never has to reload a path.
+			err = srv.ListenAndServeTLS("", "")
 		} else {
 			err = srv.ListenAndServe()
 		}

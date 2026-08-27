@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-# vkai - lenh quan tri VKAI Panel
+# vkai - the VKAI Panel administration command
 # HiTechCloud (hitechcloud.vn)
 #
-# Cai dat: install -m 0755 deploy/vkai.sh /usr/local/bin/vkai
+# Installed by: install -m 0755 deploy/vkai.sh /usr/local/bin/vkai
 # =============================================================================
 
 set -Eeuo pipefail
@@ -18,14 +18,23 @@ readonly AGENT_DIR="${PANEL_ROOT}/agent"
 readonly WWW_DIR="${PANEL_ROOT}/www"
 readonly WWW_DOMAINS_DIR="${WWW_DIR}/domains"
 readonly WWW_BACKUP_DIR="${WWW_DIR}/backup"
+readonly WWW_DEFAULT_DIR="${WWW_DIR}/default"
+readonly ACME_CHALLENGE_DIR="${WWW_DEFAULT_DIR}/.well-known/acme-challenge"
+# The systemd units run through this symlink (see deploy/systemd/*.service).
+readonly RELEASES_DIR="${PANEL_ROOT}/releases"
+readonly CURRENT_LINK="${PANEL_ROOT}/current"
 readonly ETC_DIR="${PANEL_ROOT}/etc"
 readonly LOG_DIR="${PANEL_ROOT}/logs"
+readonly SSL_DIR="${PANEL_ROOT}/ssl"
 readonly ENV_FILE="${ETC_DIR}/.env"
 readonly SUMMARY_FILE="${ETC_DIR}/install-summary.txt"
+readonly PANEL_CERT="${SSL_DIR}/panel.crt"
+readonly PANEL_KEY="${SSL_DIR}/panel.key"
 
 readonly SVC_API="vkai-api"
 readonly SVC_UI="vkai-ui"
 readonly SVC_AGENT="vkai-agent"
+readonly SVC_CERT_TIMER="vkai-cert-renew.timer"
 
 readonly VKAI_USER="vkai"
 readonly VKAI_GROUP="vkai"
@@ -37,15 +46,17 @@ else
     C_RED=""; C_GREEN=""; C_YELLOW=""; C_BLUE=""; C_BOLD=""; C_OFF=""
 fi
 
-info()  { printf '%s[INFO]%s %s\n' "$C_GREEN"  "$C_OFF" "$*"; }
-warn()  { printf '%s[CANH]%s %s\n' "$C_YELLOW" "$C_OFF" "$*" >&2; }
-err()   { printf '%s[LOI ]%s %s\n' "$C_RED"    "$C_OFF" "$*" >&2; }
+QUIET="false"
+
+info()  { [[ "$QUIET" == "true" ]] || printf '%s[INFO]%s %s\n' "$C_GREEN"  "$C_OFF" "$*"; }
+warn()  { printf '%s[WARN]%s %s\n' "$C_YELLOW" "$C_OFF" "$*" >&2; }
+err()   { printf '%s[ERR ]%s %s\n' "$C_RED"    "$C_OFF" "$*" >&2; }
 die()   { err "$*"; exit 1; }
 
 has()   { command -v "$1" >/dev/null 2>&1; }
 
 need_root() {
-    [[ "${EUID}" -eq 0 ]] || die "Lenh nay can quyen root: sudo vkai $*"
+    [[ "${EUID}" -eq 0 ]] || die "This command needs root: sudo vkai $*"
 }
 
 env_get() {
@@ -56,53 +67,113 @@ env_get() {
     printf '%s' "${line#*=}"
 }
 
+# Write one key back into .env, keeping mode 600.
+env_set() {
+    local key="$1" value="$2"
+    [[ -f "$ENV_FILE" ]] || die "${ENV_FILE} not found"
+    local tmp
+    tmp="$(mktemp "${ETC_DIR}/.env.XXXXXX")"
+    chmod 600 "$tmp"
+    if grep -qE "^${key}=" "$ENV_FILE"; then
+        sed -E "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" >"$tmp"
+    else
+        cat "$ENV_FILE" >"$tmp"
+        printf '%s=%s\n' "$key" "$value" >>"$tmp"
+    fi
+    chown "$VKAI_USER:$VKAI_GROUP" "$tmp"
+    mv "$tmp" "$ENV_FILE"
+}
+
+# Which release is being served. "in place" = built inside /vkai-panel by the
+# installer; anything else is a directory under /vkai-panel/releases.
+current_release() {
+    local target
+    if [[ ! -L "$CURRENT_LINK" ]]; then
+        printf '(no %s yet)' "$CURRENT_LINK"
+        return 0
+    fi
+    target="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+    if [[ -z "$target" ]]; then
+        printf '(broken symlink)'
+    elif [[ "$target" == "$PANEL_ROOT" ]]; then
+        printf 'in place (%s)' "$PANEL_ROOT"
+    else
+        printf '%s' "$(basename "$target")"
+    fi
+}
+
+# A UI build needs BOTH server.js AND .next/static. Without .next/static the
+# page returns HTML while every /_next/static/*.js returns 404 and the browser
+# shows "Application error: a client-side exception has occurred".
+verify_ui_build() {
+    local sa="${1}/.next/standalone"
+    [[ -d "$sa" ]] ||
+        die "UI BUILD VERIFICATION FAILED: ${sa} is missing (next.config.js must set output: 'standalone')."
+    [[ -s "${sa}/server.js" ]] ||
+        die "UI BUILD VERIFICATION FAILED: ${sa}/server.js is missing or empty - vkai-ui cannot start."
+    [[ -d "${sa}/.next/static" ]] ||
+        die "UI BUILD VERIFICATION FAILED: ${sa}/.next/static is missing.
+The panel would show 'Application error: a client-side exception has occurred'.
+Fix: cd ${1} && npm run build"
+    [[ -n "$(find "${sa}/.next/static" -mindepth 1 -maxdepth 2 -print -quit 2>/dev/null)" ]] ||
+        die "UI BUILD VERIFICATION FAILED: ${sa}/.next/static is empty. Rebuild the UI."
+    info "UI build verified."
+}
+
 usage() {
     cat <<USAGE
-${C_BOLD}${BRAND_NAME}${C_OFF} - lenh quan tri "vkai"
+${C_BOLD}${BRAND_NAME}${C_OFF} - the "vkai" administration command
 ${BRAND_ORG}
 
-Cach dung: vkai <lenh> [tham so]
+Usage: vkai <command> [arguments]
 
-Dich vu
-  start                 Khoi dong ${SVC_API}, ${SVC_UI}, nginx
-  stop                  Dung ${SVC_UI}, ${SVC_API}
-  restart               Khoi dong lai toan bo
-  status                Trang thai dich vu + tai nguyen may
+Services
+  start                 Start ${SVC_API}, ${SVC_UI} and nginx
+  stop                  Stop ${SVC_UI} and ${SVC_API}
+  restart               Restart everything
+  status                Service status and machine resources
   logs <api|ui|agent|nginx|install> [-n N]
-                        Xem nhat ky (mac dinh theo doi realtime)
+                        Follow a log (live by default)
 
-Truy cap panel
-  info                  In URL panel, cong, loi vao va duong dan du lieu
-  port [<so>|random]    Xem hoac doi cong panel (khong chap nhan 80/443)
-  entrance [<duong>|random]
-                        Xem hoac doi loi vao an toan
+Panel access
+  info                  Print the panel URL, port, entrance and data paths
+  port [<number>|random]
+                        Show or change the public panel port (never 80/443)
+  entrance [<path>|random]
+                        Show or change the security entrance
 
-Van hanh
-  backup [ten]          Sao luu CSDL + cau hinh vao ${WWW_BACKUP_DIR}
-  update [duong-dan-ma-nguon]
-                        Keo cau hinh cu, build lai core/ va panel/, khoi dong lai
-  uninstall             Go cai dat (uy quyen cho deploy/install.sh --uninstall)
+Certificate
+  cert info             Show the panel certificate, its fingerprint and expiry
+  cert renew            Renew it if it is close to expiry (used by the timer)
+  cert issue            Order a new certificate now
 
-Nghiep vu (uy quyen cho vkai-cli)
-  site|db|ssl|firewall|server|backup-cli ...
-                        Vi du: vkai site create example.com
+Operations
+  backup [label]        Back up the database and configuration into ${WWW_BACKUP_DIR}
+  update [source-path]  Keep the configuration, rebuild core/ and panel/, restart
+  uninstall [--purge]   Remove the panel (delegates to deploy/install.sh)
 
-Ghi chu
-  Cong 80/443 danh RIENG cho website cua khach. Panel luon nghe tren cong rieng.
+Domain commands (delegated to vkai-cli)
+  site|db|ssl|firewall|server ...
+                        Example: vkai site create example.com
+
+Note
+  Ports 80 and 443 belong to the customer websites. The panel always listens on
+  its own port. Port 80 also answers the ACME HTTP-01 challenge from
+  ${ACME_CHALLENGE_DIR}.
 USAGE
 }
 
 # -----------------------------------------------------------------------------
-# Dich vu
+# Services
 # -----------------------------------------------------------------------------
 svc_state() {
     local svc="$1"
     if ! systemctl list-unit-files 2>/dev/null | grep -q "^${svc}\.service"; then
-        printf '%s- chua cai%s' "$C_YELLOW" "$C_OFF"
+        printf '%s- not installed%s' "$C_YELLOW" "$C_OFF"
     elif systemctl is-active --quiet "$svc"; then
-        printf '%s* dang chay%s' "$C_GREEN" "$C_OFF"
+        printf '%s* running%s' "$C_GREEN" "$C_OFF"
     else
-        printf '%s* da dung%s' "$C_RED" "$C_OFF"
+        printf '%s* stopped%s' "$C_RED" "$C_OFF"
     fi
 }
 
@@ -118,24 +189,24 @@ redis_service() {
 
 cmd_start() {
     need_root start
-    info "Khoi dong ${BRAND_NAME}..."
+    info "Starting ${BRAND_NAME}..."
     systemctl start "$SVC_API"
     systemctl start "$SVC_UI"
-    systemctl reload nginx 2>/dev/null || systemctl start nginx 2>/dev/null || warn "nginx khong khoi dong duoc."
+    systemctl reload nginx 2>/dev/null || systemctl start nginx 2>/dev/null || warn "nginx did not start."
     cmd_status
 }
 
 cmd_stop() {
     need_root stop
-    info "Dung ${BRAND_NAME}..."
+    info "Stopping ${BRAND_NAME}..."
     systemctl stop "$SVC_UI"  || true
     systemctl stop "$SVC_API" || true
-    info "Da dung. nginx van chay de phuc vu website cua khach."
+    info "Stopped. nginx keeps running so the customer websites stay up."
 }
 
 cmd_restart() {
     need_root restart
-    info "Khoi dong lai ${BRAND_NAME}..."
+    info "Restarting ${BRAND_NAME}..."
     systemctl restart "$SVC_API"
     systemctl restart "$SVC_UI"
     systemctl reload nginx 2>/dev/null || true
@@ -146,25 +217,35 @@ cmd_status() {
     local redis_svc
     redis_svc="$(redis_service)"
 
-    printf '\n%sTrang thai dich vu%s\n' "$C_BLUE" "$C_OFF"
+    printf '\n%sServices%s\n' "$C_BLUE" "$C_OFF"
     printf '  %-14s %s\n' "$SVC_API"    "$(svc_state "$SVC_API")"
     printf '  %-14s %s\n' "$SVC_UI"     "$(svc_state "$SVC_UI")"
     printf '  %-14s %s\n' "$SVC_AGENT"  "$(svc_state "$SVC_AGENT")"
     printf '  %-14s %s\n' "nginx"       "$(svc_state nginx)"
     printf '  %-14s %s\n' "postgresql"  "$(svc_state postgresql)"
     printf '  %-14s %s\n' "$redis_svc"  "$(svc_state "$redis_svc")"
+    if systemctl list-unit-files 2>/dev/null | grep -q "^${SVC_CERT_TIMER}"; then
+        if systemctl is-active --quiet "$SVC_CERT_TIMER"; then
+            printf '  %-14s %s* armed%s\n' "cert renew" "$C_GREEN" "$C_OFF"
+        else
+            printf '  %-14s %s* off%s\n' "cert renew" "$C_YELLOW" "$C_OFF"
+        fi
+    fi
 
-    printf '\n%sTai nguyen may%s\n' "$C_BLUE" "$C_OFF"
-    printf '  RAM:  %s\n' "$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}')"
-    printf '  Dia:  %s\n' "$(df -h "$PANEL_ROOT" 2>/dev/null | awk 'NR==2 {print $3 "/" $2 " (" $5 " da dung)"}')"
-    printf '  Tai:  %s\n' "$(awk '{print $1 ", " $2 ", " $3}' /proc/loadavg)"
+    printf '\n%sRunning build%s\n' "$C_BLUE" "$C_OFF"
+    printf '  %-14s %s\n' "current" "$(current_release)"
+
+    printf '\n%sMachine%s\n' "$C_BLUE" "$C_OFF"
+    printf '  RAM:  %s\n' "$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
+    printf '  Disk: %s\n' "$(df -h "$PANEL_ROOT" 2>/dev/null | awk 'NR==2 {print $3 "/" $2 " (" $5 " used)"}' || true)"
+    printf '  Load: %s\n' "$(awk '{print $1 ", " $2 ", " $3}' /proc/loadavg)"
 
     local port entrance
-    port="$(env_get VKAI_PANEL_PUBLIC_PORT || env_get VKAI_PANEL_PORT || true)"
+    port="$(env_get VKAI_PANEL_PUBLIC_PORT || true)"
     entrance="$(env_get VKAI_PANEL_ENTRANCE || true)"
     if [[ -n "$port" ]]; then
-        printf '\n%sPanel%s cong %s, loi vao %s   (xem day du: vkai info)\n' \
-            "$C_BLUE" "$C_OFF" "$port" "${entrance:-(chua dat)}"
+        printf '\n%sPanel%s port %s, entrance %s   (full details: vkai info)\n' \
+            "$C_BLUE" "$C_OFF" "$port" "${entrance:-(not set)}"
     fi
     printf '\n'
 }
@@ -178,20 +259,20 @@ cmd_logs() {
         agent)   journalctl -u "$SVC_AGENT" -f --no-pager ;;
         nginx)   journalctl -u nginx        -f --no-pager ;;
         install)
-            [[ -f "${LOG_DIR}/install.log" ]] || die "Khong thay ${LOG_DIR}/install.log"
+            [[ -f "${LOG_DIR}/install.log" ]] || die "${LOG_DIR}/install.log not found"
             tail -n "${lines:-200}" -f "${LOG_DIR}/install.log"
             ;;
         ""|-h|--help)
-            die "Dung: vkai logs <api|ui|agent|nginx|install>"
+            die "Usage: vkai logs <api|ui|agent|nginx|install>"
             ;;
         *)
-            die "Khong biet nhat ky '${target}'. Chon: api, ui, agent, nginx, install."
+            die "Unknown log '${target}'. Choose: api, ui, agent, nginx, install."
             ;;
     esac
 }
 
 # -----------------------------------------------------------------------------
-# Truy cap panel
+# Panel access
 # -----------------------------------------------------------------------------
 panelctl_bin() {
     if has vkai-panelctl; then
@@ -204,57 +285,45 @@ panelctl_bin() {
 }
 
 cmd_info() {
-    local bin ip port entrance scheme
+    local bin host port entrance scheme
     if bin="$(panelctl_bin)"; then
         "$bin" panel info || true
         printf '\n'
     fi
 
-    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-    port="$(env_get VKAI_PANEL_PUBLIC_PORT || env_get VKAI_PANEL_PORT || echo 8888)"
+    host="$(env_get VKAI_PANEL_DOMAIN || true)"
+    [[ -n "$host" ]] || host="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    port="$(env_get VKAI_PANEL_PUBLIC_PORT || echo 8888)"
     entrance="$(env_get VKAI_PANEL_ENTRANCE || true)"
-    scheme="$(env_get VKAI_PANEL_PUBLIC_SCHEME || echo http)"
+    scheme="$(env_get VKAI_PANEL_PUBLIC_SCHEME || echo https)"
 
-    printf '%s%s - thong tin truy cap%s\n' "$C_BOLD" "$BRAND_NAME" "$C_OFF"
-    printf '  URL       : %s://%s:%s%s/\n' "$scheme" "${ip:-<IP-may-chu>}" "$port" "$entrance"
-    printf '  Cong      : %s   (80/443 danh RIENG cho website cua khach)\n' "$port"
-    printf '  Loi vao   : %s\n' "${entrance:-(tat)}"
-    printf '\n%sDuong dan%s\n' "$C_BLUE" "$C_OFF"
-    printf '  Goc cai dat      : %s\n' "$PANEL_ROOT"
+    printf '%s%s - access details%s\n' "$C_BOLD" "$BRAND_NAME" "$C_OFF"
+    printf '  URL      : %s://%s:%s%s/\n' "$scheme" "${host:-<server-ip>}" "$port" "$entrance"
+    printf '  Port     : %s   (80/443 stay reserved for the customer websites)\n' "$port"
+    printf '  Entrance : %s\n' "${entrance:-(disabled)}"
+    printf '\n%sPaths%s\n' "$C_BLUE" "$C_OFF"
+    printf '  Install root     : %s\n' "$PANEL_ROOT"
+    printf '  Running build    : %s -> %s\n' "$CURRENT_LINK" "$(current_release)"
+    printf '  Releases         : %s\n' "$RELEASES_DIR"
     printf '  API (core)       : %s\n' "$CORE_DIR"
-    printf '  Giao dien (panel): %s\n' "$UI_DIR"
+    printf '  UI (panel)       : %s\n' "$UI_DIR"
     printf '  Agent            : %s\n' "$AGENT_DIR"
-    printf '  Website khach    : %s/<domain>\n' "$WWW_DOMAINS_DIR"
-    printf '  Sao luu          : %s\n' "$WWW_BACKUP_DIR"
-    printf '  Cau hinh         : %s\n' "$ENV_FILE"
-    printf '  Nhat ky          : %s\n' "$LOG_DIR"
+    printf '  Customer sites   : %s/<domain>\n' "$WWW_DOMAINS_DIR"
+    printf '  Backups          : %s\n' "$WWW_BACKUP_DIR"
+    printf '  Configuration    : %s\n' "$ENV_FILE"
+    printf '  Certificates     : %s\n' "$SSL_DIR"
+    printf '  ACME webroot     : %s\n' "$ACME_CHALLENGE_DIR"
+    printf '  Logs             : %s\n' "$LOG_DIR"
     if [[ -f "$SUMMARY_FILE" ]]; then
-        printf '\n  Bang tong ket cai dat: %s\n' "$SUMMARY_FILE"
+        printf '\n  Installation summary: %s\n' "$SUMMARY_FILE"
     fi
     printf '\n'
-}
-
-# Ghi lai mot khoa trong .env (giu nguyen quyen 600).
-env_set() {
-    local key="$1" value="$2"
-    [[ -f "$ENV_FILE" ]] || die "Khong thay ${ENV_FILE}"
-    local tmp
-    tmp="$(mktemp "${ETC_DIR}/.env.XXXXXX")"
-    chmod 600 "$tmp"
-    if grep -qE "^${key}=" "$ENV_FILE"; then
-        sed -E "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" >"$tmp"
-    else
-        cat "$ENV_FILE" >"$tmp"
-        printf '%s=%s\n' "$key" "$value" >>"$tmp"
-    fi
-    chown "$VKAI_USER:$VKAI_GROUP" "$tmp"
-    mv "$tmp" "$ENV_FILE"
 }
 
 cmd_port() {
     local value="${1:-}"
     if [[ -z "$value" ]]; then
-        printf 'Cong panel hien tai: %s\n' "$(env_get VKAI_PANEL_PUBLIC_PORT || env_get VKAI_PANEL_PORT || echo '(chua dat)')"
+        printf 'Current panel port: %s\n' "$(env_get VKAI_PANEL_PUBLIC_PORT || echo '(not set)')"
         return 0
     fi
     need_root "port $value"
@@ -262,28 +331,32 @@ cmd_port() {
     if [[ "$value" == "random" ]]; then
         value="$(( (RANDOM % 50000) + 10000 ))"
     fi
-    [[ "$value" =~ ^[0-9]+$ ]] || die "Cong phai la so: '$value'"
-    (( value >= 1 && value <= 65535 )) || die "Cong ngoai khoang 1-65535: $value"
+    [[ "$value" =~ ^[0-9]+$ ]] || die "The port must be a number: '$value'"
+    (( value >= 1 && value <= 65535 )) || die "Port out of range 1-65535: $value"
     [[ "$value" != "80" && "$value" != "443" ]] ||
-        die "Cong 80/443 danh rieng cho website cua khach. Chon cong khac."
+        die "Ports 80/443 belong to the customer websites. Choose another port."
 
     local old
-    old="$(env_get VKAI_PANEL_PUBLIC_PORT || env_get VKAI_PANEL_PORT || echo 8888)"
+    old="$(env_get VKAI_PANEL_PUBLIC_PORT || echo 8888)"
 
-    env_set VKAI_PANEL_PORT "$value"
+    # Only the PUBLIC port changes. VKAI_PANEL_PORT is the loopback port the API
+    # binds behind nginx and must stay where it is.
     env_set VKAI_PANEL_PUBLIC_PORT "$value"
 
     local conf="/etc/nginx/conf.d/vkai-panel.conf"
     if [[ -f "$conf" ]]; then
+        cp -a "$conf" "${conf}.bak"
         sed -i -E "s/^(\s*listen\s+(\[::\]:)?)${old}(\s|;)/\1${value}\3/" "$conf"
         if nginx -t >/dev/null 2>&1; then
             systemctl reload nginx
+            rm -f "${conf}.bak"
         else
-            warn "nginx -t that bai sau khi doi cong. Kiem tra ${conf}."
+            mv "${conf}.bak" "$conf"
+            die "nginx -t failed after the port change; the previous ${conf} was restored."
         fi
     fi
 
-    # Mo cong moi tren tuong lua, dong cong cu.
+    # Open the new port on the firewall and close the old one.
     if has ufw && ufw status 2>/dev/null | grep -qi '^Status: active'; then
         ufw allow "${value}/tcp" >/dev/null 2>&1 || true
         ufw delete allow "${old}/tcp" >/dev/null 2>&1 || true
@@ -292,7 +365,7 @@ cmd_port() {
         firewall-cmd --permanent --remove-port="${old}/tcp" >/dev/null 2>&1 || true
         firewall-cmd --reload >/dev/null 2>&1 || true
     else
-        warn "Khong tu mo duoc cong. Hay mo ${value}/tcp thu cong."
+        warn "No managed firewall was found. Open ${value}/tcp yourself."
     fi
 
     if has semanage; then
@@ -301,14 +374,14 @@ cmd_port() {
     fi
 
     systemctl restart "$SVC_API"
-    info "Cong panel: ${old} -> ${value}"
+    info "Panel port: ${old} -> ${value}"
     cmd_info
 }
 
 cmd_entrance() {
     local value="${1:-}"
     if [[ -z "$value" ]]; then
-        printf 'Loi vao an toan hien tai: %s\n' "$(env_get VKAI_PANEL_ENTRANCE || echo '(tat)')"
+        printf 'Current security entrance: %s\n' "$(env_get VKAI_PANEL_ENTRANCE || echo '(disabled)')"
         return 0
     fi
     need_root "entrance $value"
@@ -318,17 +391,159 @@ cmd_entrance() {
     fi
     [[ "$value" == /* ]] || value="/${value}"
     [[ "$value" =~ ^/[A-Za-z0-9_-]{4,64}$ ]] ||
-        die "Loi vao chi cho phep chu, so, '-' va '_', dai 4-64 ky tu. Vi du: /vkai_a1b2c3d4"
+        die "The entrance accepts letters, digits, '-' and '_', 4-64 characters. Example: /vkai_a1b2c3d4"
 
     env_set VKAI_PANEL_ENTRANCE "$value"
     env_set VKAI_PANEL_ENTRANCE_ENABLED true
     systemctl restart "$SVC_API"
-    info "Loi vao an toan moi: ${value}"
+    info "New security entrance: ${value}"
     cmd_info
 }
 
 # -----------------------------------------------------------------------------
-# Sao luu
+# Certificate
+#
+# The panel's own certificate, not the customer certificates - those stay with
+# certbot and "vkai ssl". A certificate issued for an IP ADDRESS comes from the
+# Let's Encrypt "shortlived" profile and lives about six days, which is why the
+# renewal timer runs twice a day.
+# -----------------------------------------------------------------------------
+cert_field() {
+    local what="$1"
+    [[ -f "$PANEL_CERT" ]] || { printf '(no certificate)'; return 0; }
+    case "$what" in
+        fingerprint) openssl x509 -in "$PANEL_CERT" -noout -fingerprint -sha256 2>/dev/null | sed 's/^.*Fingerprint=//' ;;
+        expiry)      openssl x509 -in "$PANEL_CERT" -noout -enddate 2>/dev/null | sed 's/^notAfter=//' ;;
+        issuer)      openssl x509 -in "$PANEL_CERT" -noout -issuer 2>/dev/null | sed 's/^issuer=//' ;;
+        subject)     openssl x509 -in "$PANEL_CERT" -noout -subject 2>/dev/null | sed 's/^subject=//' ;;
+        san)         openssl x509 -in "$PANEL_CERT" -noout -ext subjectAltName 2>/dev/null | tail -n +2 | tr -d ' ' ;;
+    esac
+}
+
+cert_days_left() {
+    [[ -f "$PANEL_CERT" ]] || { printf '0'; return 0; }
+    local end_epoch now_epoch
+    end_epoch="$(date -d "$(openssl x509 -in "$PANEL_CERT" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')" +%s 2>/dev/null || echo 0)"
+    now_epoch="$(date +%s)"
+    if (( end_epoch <= now_epoch )); then printf '0'; else printf '%d' $(( (end_epoch - now_epoch) / 86400 )); fi
+}
+
+cmd_cert_info() {
+    local mode identifier
+    mode="$(env_get VKAI_PANEL_TLS_MODE || echo 'unknown')"
+    identifier="$(env_get VKAI_PANEL_ACME_IDENTIFIER || echo '(none)')"
+
+    printf '\n%s%s - panel certificate%s\n' "$C_BOLD" "$BRAND_NAME" "$C_OFF"
+    printf '  Mode        : %s\n' "$mode"
+    printf '  Identifier  : %s\n' "$identifier"
+    printf '  Certificate : %s\n' "$PANEL_CERT"
+    printf '  Key         : %s\n' "$PANEL_KEY"
+    printf '  Subject     : %s\n' "$(cert_field subject)"
+    printf '  Issuer      : %s\n' "$(cert_field issuer)"
+    printf '  SAN         : %s\n' "$(cert_field san)"
+    printf '  Expires     : %s (%s days left)\n' "$(cert_field expiry)" "$(cert_days_left)"
+    printf '  SHA-256     : %s\n' "$(cert_field fingerprint)"
+    printf '  ACME webroot: %s\n' "$ACME_CHALLENGE_DIR"
+    printf '\n'
+}
+
+# cert_call <subcommand> [args...] - hand the work to vkai-panelctl, which owns
+# the ACME client. Returns 2 when this build has no such command.
+cert_call() {
+    local bin
+    bin="$(panelctl_bin)" || return 2
+    "$bin" panel cert --help >/dev/null 2>&1 || return 2
+    "$bin" panel cert "$@"
+}
+
+cmd_cert_renew() {
+    need_root "cert renew"
+    local mode days
+    mode="$(env_get VKAI_PANEL_TLS_MODE || echo 'self-signed')"
+    days="$(cert_days_left)"
+
+    if [[ "$mode" != "letsencrypt" ]]; then
+        info "TLS mode is '${mode}': there is nothing to renew (the certificate is local)."
+        return 0
+    fi
+
+    info "Panel certificate has ${days} day(s) left; asking the ACME client to renew if needed."
+    local rc=0
+    cert_call renew \
+        --identifier "$(env_get VKAI_PANEL_ACME_IDENTIFIER || true)" \
+        --webroot    "$(env_get VKAI_PANEL_ACME_WEBROOT || echo "$WWW_DEFAULT_DIR")" \
+        --directory  "$(env_get VKAI_PANEL_ACME_DIRECTORY || true)" \
+        --profile    "$(env_get VKAI_PANEL_ACME_PROFILE || true)" \
+        --cert "$PANEL_CERT" --key "$PANEL_KEY" || rc=$?
+
+    if (( rc == 2 )); then
+        warn "This build of vkai-panelctl has no 'panel cert' command; renewal was skipped."
+        return 0
+    fi
+    if (( rc != 0 )); then
+        err "Renewal failed (exit ${rc}). The existing certificate is still in place."
+        return "$rc"
+    fi
+
+    chown "$VKAI_USER:$VKAI_GROUP" "$PANEL_CERT" "$PANEL_KEY" 2>/dev/null || true
+    chmod 644 "$PANEL_CERT" 2>/dev/null || true
+    chmod 640 "$PANEL_KEY" 2>/dev/null || true
+    if nginx -t >/dev/null 2>&1; then
+        systemctl reload nginx
+        info "Certificate renewed and nginx reloaded. New expiry: $(cert_field expiry)"
+    else
+        warn "The certificate was renewed but nginx -t failed; nginx was NOT reloaded."
+    fi
+}
+
+cmd_cert_issue() {
+    need_root "cert issue"
+    local rc=0
+    cert_call issue \
+        --identifier "$(env_get VKAI_PANEL_ACME_IDENTIFIER || true)" \
+        --email      "$(env_get VKAI_PANEL_ACME_EMAIL || true)" \
+        --webroot    "$(env_get VKAI_PANEL_ACME_WEBROOT || echo "$WWW_DEFAULT_DIR")" \
+        --directory  "$(env_get VKAI_PANEL_ACME_DIRECTORY || true)" \
+        --profile    "$(env_get VKAI_PANEL_ACME_PROFILE || true)" \
+        --cert "$PANEL_CERT" --key "$PANEL_KEY" --agree-tos || rc=$?
+
+    if (( rc == 2 )); then
+        die "This build of vkai-panelctl has no 'panel cert' command, so no order can be placed.
+Everything an order needs is already prepared: webroot ${ACME_CHALLENGE_DIR}, port 80 open."
+    fi
+    (( rc == 0 )) || die "The certificate order failed (exit ${rc})."
+
+    env_set VKAI_PANEL_TLS_MODE letsencrypt
+    chown "$VKAI_USER:$VKAI_GROUP" "$PANEL_CERT" "$PANEL_KEY" 2>/dev/null || true
+    chmod 644 "$PANEL_CERT"; chmod 640 "$PANEL_KEY"
+    if nginx -t >/dev/null 2>&1; then
+        systemctl reload nginx
+    fi
+    systemctl enable --now "$SVC_CERT_TIMER" >/dev/null 2>&1 || true
+    info "Certificate issued. Expiry: $(cert_field expiry)"
+    cmd_cert_info
+}
+
+cmd_cert() {
+    local sub="${1:-info}"
+    if (( $# > 0 )); then shift; fi
+    # The renewal timer passes --quiet.
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == "--quiet" || "$arg" == "-q" ]]; then
+            QUIET="true"
+        fi
+    done
+    case "$sub" in
+        info)   cmd_cert_info ;;
+        renew)  cmd_cert_renew ;;
+        issue)  cmd_cert_issue ;;
+        *)      die "Unknown certificate command '${sub}'. Choose: info, renew, issue." ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# Backup
 # -----------------------------------------------------------------------------
 cmd_backup() {
     need_root backup
@@ -344,18 +559,18 @@ cmd_backup() {
     db_pass="$(env_get VKAI_DB_PASSWORD || true)"
 
     if has pg_dump; then
-        info "Sao luu CSDL '${db_name}'..."
+        info "Dumping database '${db_name}'..."
         if [[ -n "$db_pass" ]]; then
             PGPASSWORD="$db_pass" pg_dump -h 127.0.0.1 -U "$db_user" "$db_name" | gzip >"${dest}/${db_name}.sql.gz"
         else
             sudo -u postgres pg_dump "$db_name" | gzip >"${dest}/${db_name}.sql.gz"
         fi
     else
-        warn "Khong co pg_dump, bo qua CSDL."
+        warn "pg_dump is not available, the database was skipped."
     fi
 
-    info "Sao luu cau hinh..."
-    tar -czf "${dest}/etc.tar.gz" -C "$PANEL_ROOT" etc 2>/dev/null || warn "Khong nen duoc ${ETC_DIR}"
+    info "Archiving the configuration..."
+    tar -czf "${dest}/etc.tar.gz" -C "$PANEL_ROOT" etc 2>/dev/null || warn "Could not archive ${ETC_DIR}"
 
     if [[ -d /etc/nginx ]]; then
         tar -czf "${dest}/nginx.tar.gz" -C /etc nginx 2>/dev/null || true
@@ -363,13 +578,13 @@ cmd_backup() {
 
     chown -R "$VKAI_USER:$VKAI_GROUP" "$dest"
     chmod -R go-rwx "$dest"
-    info "Ban sao luu: ${dest}"
+    info "Backup written to ${dest}"
     du -sh "$dest" 2>/dev/null || true
-    warn "Ma nguon website (${WWW_DOMAINS_DIR}) KHONG nam trong ban sao luu nay - dung 'vkai site backup' hoac tar rieng."
+    warn "Website documents (${WWW_DOMAINS_DIR}) are NOT in this backup - use 'vkai site backup' or tar them separately."
 }
 
 # -----------------------------------------------------------------------------
-# Cap nhat
+# Update
 # -----------------------------------------------------------------------------
 cmd_update() {
     need_root update
@@ -377,22 +592,22 @@ cmd_update() {
 
     if [[ -z "$src" ]]; then
         src="$PANEL_ROOT"
-        info "Khong chi dinh ma nguon: build lai tai cho tu ${PANEL_ROOT}."
+        info "No source given: rebuilding in place from ${PANEL_ROOT}."
     fi
     [[ -d "${src}/core" && -d "${src}/panel" ]] ||
-        die "'${src}' khong phai thu muc ma nguon hop le (thieu core/ hoac panel/)."
+        die "'${src}' is not a valid source tree (core/ or panel/ is missing)."
 
     cmd_backup pre-update
 
     local go_bin npm_bin
     go_bin="$(command -v go || echo /usr/local/go/bin/go)"
     npm_bin="$(command -v npm || true)"
-    [[ -x "$go_bin" ]] || die "Khong tim thay 'go'."
-    [[ -n "$npm_bin" ]] || die "Khong tim thay 'npm'."
+    [[ -x "$go_bin" ]] || die "'go' not found."
+    [[ -n "$npm_bin" ]] || die "'npm' not found."
 
     if [[ "$(cd "$src" && pwd -P)" != "$(cd "$PANEL_ROOT" && pwd -P)" ]]; then
-        info "Dong bo ma nguon moi vao ${PANEL_ROOT}..."
-        has rsync || die "Can rsync de dong bo ma nguon."
+        info "Copying the new sources into ${PANEL_ROOT}..."
+        has rsync || die "rsync is required to copy the sources."
         rsync -a --delete --exclude '.git' --exclude 'node_modules' --exclude '.next' \
             "${src}/core/"  "${CORE_DIR}/"
         rsync -a --delete --exclude '.git' --exclude 'node_modules' --exclude '.next' \
@@ -403,8 +618,8 @@ cmd_update() {
         chown -R "$VKAI_USER:$VKAI_GROUP" "$CORE_DIR" "$UI_DIR" "$AGENT_DIR"
     fi
 
-    # .env phai co MAT o goc du an Next.js truoc khi build: NEXT_PUBLIC_* duoc
-    # nhung vao bundle luc build, khong doc luc chay.
+    # .env must be present at the Next.js project root BEFORE the build:
+    # NEXT_PUBLIC_* is inlined at build time, never read at runtime.
     ln -sfn "$ENV_FILE" "${UI_DIR}/.env" 2>/dev/null ||
         install -o "$VKAI_USER" -g "$VKAI_GROUP" -m 600 "$ENV_FILE" "${UI_DIR}/.env"
 
@@ -415,7 +630,7 @@ cmd_update() {
     export npm_config_cache="${HOME}/npm"
     mkdir -p "$GOCACHE" "$GOMODCACHE" "$npm_config_cache"
 
-    info "Build lai API..."
+    info "Rebuilding the API..."
     ( cd "$CORE_DIR" && "$go_bin" mod download &&
       "$go_bin" build -trimpath -ldflags "-s -w" -o "${CORE_DIR}/bin/vkai-api" ./cmd/api &&
       "$go_bin" build -trimpath -ldflags "-s -w" -o "${CORE_DIR}/bin/vkai-panelctl" ./cmd/panelctl )
@@ -426,13 +641,13 @@ cmd_update() {
     fi
 
     if [[ -d "$AGENT_DIR" ]]; then
-        info "Build lai agent..."
+        info "Rebuilding the agent..."
         ( cd "$AGENT_DIR" && "$go_bin" mod download &&
           "$go_bin" build -trimpath -ldflags "-s -w" -o "${AGENT_DIR}/bin/vkai-agent" ./cmd ) ||
-            warn "Build agent that bai, bo qua."
+            warn "The agent build failed, skipped."
     fi
 
-    info "Build lai giao dien..."
+    info "Rebuilding the UI..."
     (
         cd "$UI_DIR"
         set -a
@@ -444,18 +659,27 @@ cmd_update() {
         NODE_ENV=production "$npm_bin" run build
     )
 
-    # Bat buoc: standalone khong tu co .next/static va public/.
+    # Mandatory: standalone does not include .next/static and public/ by itself.
     local sa="${UI_DIR}/.next/standalone"
-    [[ -d "$sa" ]] || die "Khong thay ${sa} sau khi build."
+    [[ -d "$sa" ]] || die "${sa} does not exist after the build."
     [[ -d "${sa}/.next/static" ]] || { mkdir -p "${sa}/.next"; cp -a "${UI_DIR}/.next/static" "${sa}/.next/static"; }
     [[ -d "${sa}/public" || ! -d "${UI_DIR}/public" ]] || cp -a "${UI_DIR}/public" "${sa}/public"
-    [[ -f "${sa}/server.js" ]] || die "Khong thay ${sa}/server.js - giao dien se khong chay duoc."
+    verify_ui_build "$UI_DIR"
 
     chown -R "$VKAI_USER:$VKAI_GROUP" "$CORE_DIR" "$UI_DIR" "$AGENT_DIR"
 
+    # This was an in-place rebuild, so the running build has to be /vkai-panel
+    # again rather than a directory under releases/ left by deploy.sh.
+    if [[ -e "$CURRENT_LINK" && ! -L "$CURRENT_LINK" ]]; then
+        die "${CURRENT_LINK} exists but is not a symlink. Move it aside and run again."
+    fi
+    ln -sfn "$PANEL_ROOT" "$CURRENT_LINK"
+    chown -h "$VKAI_USER:$VKAI_GROUP" "$CURRENT_LINK" 2>/dev/null || true
+    info "Running build: ${CURRENT_LINK} -> ${PANEL_ROOT}"
+
     systemctl daemon-reload
     systemctl start "$SVC_API" "$SVC_UI"
-    info "Cap nhat hoan tat."
+    info "Update complete."
     cmd_status
 }
 
@@ -464,14 +688,14 @@ cmd_uninstall() {
     local installer=""
     for installer in "${PANEL_ROOT}/deploy/install.sh" "$(dirname "$(readlink -f "$0")")/install.sh"; do
         if [[ -f "$installer" ]]; then
-            exec bash "$installer" --uninstall
+            exec bash "$installer" --uninstall "$@"
         fi
     done
-    die "Khong tim thay install.sh de go cai dat. Chay: bash <ma-nguon>/deploy/install.sh --uninstall"
+    die "install.sh not found. Run: bash <source>/deploy/install.sh --uninstall"
 }
 
 # -----------------------------------------------------------------------------
-# Uy quyen cac lenh nghiep vu cho vkai-cli (binary Go)
+# Domain commands are delegated to vkai-cli (the Go binary)
 # -----------------------------------------------------------------------------
 delegate_cli() {
     local bin=""
@@ -480,7 +704,7 @@ delegate_cli() {
     elif [[ -x "${CORE_DIR}/bin/vkai-cli" ]]; then
         bin="${CORE_DIR}/bin/vkai-cli"
     else
-        die "Khong tim thay 'vkai-cli'. Build lai: cd ${CORE_DIR} && go build -o bin/vkai-cli ./cmd/cli"
+        die "'vkai-cli' not found. Rebuild it: cd ${CORE_DIR} && go build -o bin/vkai-cli ./cmd/cli"
     fi
     exec "$bin" "$@"
 }
@@ -499,23 +723,25 @@ main() {
         info)       cmd_info ;;
         port)       cmd_port "${1:-}" ;;
         entrance)   cmd_entrance "${1:-}" ;;
+        cert)       cmd_cert "$@" ;;
         backup)     cmd_backup "${1:-}" ;;
         update)     cmd_update "${1:-}" ;;
-        uninstall)  cmd_uninstall ;;
+        uninstall)  cmd_uninstall "$@" ;;
         panel)
-            # Tuong thich nguoc: "vkai panel port 8888" -> "vkai port 8888".
+            # Backwards compatible: "vkai panel port 8888" -> "vkai port 8888".
             local sub="${1:-info}"
             if (( $# > 0 )); then shift; fi
             case "$sub" in
                 info)     cmd_info ;;
                 port)     cmd_port "${1:-}" ;;
                 entrance) cmd_entrance "${1:-}" ;;
+                cert)     cmd_cert "$@" ;;
                 *)        panelctl_bin >/dev/null && exec "$(panelctl_bin)" panel "$sub" "$@" ;;
             esac
             ;;
         backup-cli)
-            # "vkai backup" la sao luu cua panel; "vkai backup-cli" mo lenh
-            # backup cua vkai-cli.
+            # "vkai backup" backs up the panel; "vkai backup-cli" opens the
+            # backup commands of vkai-cli.
             delegate_cli backup "$@"
             ;;
         site|db|ssl|firewall|server|service|version)
@@ -526,7 +752,7 @@ main() {
             ;;
         *)
             usage >&2
-            die "Lenh khong hop le: ${cmd}"
+            die "Unknown command: ${cmd}"
             ;;
     esac
 }

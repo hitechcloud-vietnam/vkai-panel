@@ -7,12 +7,17 @@
 #   agent/  Go node agent
 #
 # Duong dan chuan khi cai dat tren may chu: /vkai-panel/...
+#
+# Panel duoc build va chay TRAN tren Linux: binary Go + Next.js standalone +
+# systemd. KHONG co target Docker nao o day - Docker chi la TINH NANG cho khach
+# hang quan ly container cua ho, khong phai cach dung chinh panel.
+# PostgreSQL va Redis cai tran tren may; bo cai deploy/install.sh lo viec do.
 # ============================================================================
 
-.PHONY: all build build-core build-panel build-agent clean test test-core \
+.PHONY: all build build-core build-panel build-agent package clean test test-core \
         test-panel test-agent test-coverage lint lint-core lint-panel lint-agent \
-        format format-core format-panel dev dev-core dev-panel migrate \
-        deps deps-core deps-panel install hooks docker-up docker-down docker-build \
+        format format-core format-panel run-dev dev dev-core dev-panel migrate \
+        deps deps-core deps-panel install hooks check-services \
         deploy deploy-release deploy-status rollback status restart \
         install-systemd uninstall-systemd setup check watch-core watch-panel \
         db-backup db-restore ssl-issue ssl-renew logs version help
@@ -28,6 +33,7 @@ CORE_DIR  = core
 PANEL_DIR = panel
 AGENT_DIR = agent
 BUILD_DIR = build
+DIST_DIR  = dist
 
 # --- Ten binary ------------------------------------------------------------
 API_BIN      = vkai-api
@@ -44,9 +50,17 @@ SVC_AGENT = vkai-agent
 PANEL_ROOT ?= /vkai-panel
 WEB_ROOT   ?= $(PANEL_ROOT)/www/domains
 
+# --- Goi phat hanh ---------------------------------------------------------
+# Bo cuc goi phai trung voi job "Package" trong .github/workflows/ci.yml va voi
+# thu tu deploy/scripts/deploy.sh kiem tra, neu khong deploy.sh se tu choi goi.
+PKG_NAME ?= vkai-panel-$(VERSION).tar.gz
+
 # Go variables
 GO = go
-GOBUILD = $(GO) build
+# -trimpath: bo duong dan may build khoi binary. -s -w: bo bang ky hieu/DWARF.
+# CGO_ENABLED=0: binary tinh, chay duoc tren may chu khong cung phien ban glibc.
+GO_LDFLAGS = -s -w
+GOBUILD = CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)"
 GOTEST = $(GO) test
 GOVET = $(GO) vet
 GOFMT = gofmt
@@ -70,6 +84,7 @@ help:
 	@echo "  build-core    Build core/ binaries only ($(API_BIN), $(CLI_BIN), $(PANELCTL_BIN))"
 	@echo "  build-panel   Build panel/ (Next.js) only"
 	@echo "  build-agent   Build agent/ binary only ($(AGENT_BIN))"
+	@echo "  package       Dong goi ban phat hanh tran ($(PKG_NAME))"
 	@echo "  clean         Clean build artifacts"
 	@echo "  test          Run all tests"
 	@echo "  test-core     Run core/ tests"
@@ -77,16 +92,13 @@ help:
 	@echo "  test-agent    Run agent/ tests"
 	@echo "  lint          Run all linters"
 	@echo "  format        Format code"
-	@echo "  dev           Start development servers"
+	@echo "  run-dev       Start API + UI development servers (alias: dev)"
 	@echo "  dev-core      Start core/ (API) development server"
 	@echo "  dev-panel     Start panel/ (UI) development server"
 	@echo "  migrate       Run database migrations"
 	@echo "  deps          Install dependencies (core/ + panel/)"
 	@echo "  hooks         Point git at githooks/ (git config core.hooksPath)"
 	@echo "  install       Run the installer (deploy/install.sh) on this host"
-	@echo "  docker-up     Start development Docker containers"
-	@echo "  docker-down   Stop development Docker containers"
-	@echo "  docker-build  Build the production images"
 	@echo "  deploy        Build then run the installer"
 	@echo "  deploy-status Show deployment status via deploy.sh"
 	@echo "  status        Show systemd service status"
@@ -105,10 +117,17 @@ build-core:
 	cd $(CORE_DIR) && $(GOBUILD) -o ../$(BUILD_DIR)/$(PANELCTL_BIN) ./cmd/panelctl
 	@echo "Core built successfully!"
 
-## build-panel: Build the Next.js UI
+## build-panel: Build the Next.js UI (standalone)
+## `npm run build` chay ca postbuild:standalone, buoc copy .next/static va
+## public/ vao .next/standalone. Thieu buoc do thi UI tra ve HTML nhung moi
+## /_next/static/*.js deu 404 -> "Application error: a client-side exception".
 build-panel:
 	@echo "Building panel ($(PANEL_DIR)/)..."
-	cd $(PANEL_DIR) && $(NPM) install && $(NPM) run build
+	cd $(PANEL_DIR) && $(NPM) ci && $(NPM) run build
+	@test -f $(PANEL_DIR)/.next/standalone/server.js || \
+		{ echo "LOI: thieu $(PANEL_DIR)/.next/standalone/server.js"; exit 1; }
+	@test -d $(PANEL_DIR)/.next/standalone/.next/static || \
+		{ echo "LOI: thieu $(PANEL_DIR)/.next/standalone/.next/static"; exit 1; }
 	@echo "Panel built successfully!"
 
 ## build-agent: Build agent binary
@@ -118,10 +137,32 @@ build-agent:
 	cd $(AGENT_DIR) && $(GOBUILD) -o ../$(BUILD_DIR)/$(AGENT_BIN) ./cmd
 	@echo "Agent built successfully!"
 
+## package: Dong goi ban phat hanh tran (tar.gz + SHA256), giong job "Package" cua CI
+package: build-core build-agent build-panel
+	@echo "Packaging $(PKG_NAME)..."
+	rm -rf $(DIST_DIR)
+	mkdir -p $(DIST_DIR)/core/bin $(DIST_DIR)/agent/bin $(DIST_DIR)/panel/.next \
+		$(DIST_DIR)/deploy/nginx $(DIST_DIR)/deploy/scripts
+	cp $(BUILD_DIR)/$(API_BIN) $(BUILD_DIR)/$(CLI_BIN) $(BUILD_DIR)/$(PANELCTL_BIN) $(DIST_DIR)/core/bin/
+	cp $(BUILD_DIR)/$(AGENT_BIN) $(DIST_DIR)/agent/bin/
+	cp -r $(CORE_DIR)/migrations $(DIST_DIR)/core/migrations
+	cp -r $(PANEL_DIR)/.next/standalone $(DIST_DIR)/panel/.next/standalone
+	cp $(PANEL_DIR)/package.json $(DIST_DIR)/panel/package.json
+	cp -r deploy/systemd $(DIST_DIR)/deploy/systemd
+	cp deploy/nginx/vkai-panel.conf $(DIST_DIR)/deploy/nginx/
+	cp deploy/scripts/deploy.sh $(DIST_DIR)/deploy/scripts/
+	chmod +x $(DIST_DIR)/deploy/scripts/deploy.sh
+	tar -czf $(PKG_NAME) -C $(DIST_DIR) .
+	sha256sum $(PKG_NAME) > $(PKG_NAME).sha256
+	@echo "Package ready: $(PKG_NAME)"
+	@echo "Trien khai: sudo bash deploy/scripts/deploy.sh deploy $(PKG_NAME)"
+
 ## clean: Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(BUILD_DIR)
+	rm -rf $(DIST_DIR)
+	rm -f vkai-panel-*.tar.gz vkai-panel-*.tar.gz.sha256
 	rm -rf $(PANEL_DIR)/.next
 	rm -rf $(PANEL_DIR)/out
 	rm -rf $(PANEL_DIR)/node_modules
@@ -194,8 +235,31 @@ format-panel:
 	cd $(PANEL_DIR) && $(NPM) run format --if-present
 	@echo "Panel code formatted!"
 
-## dev: Start development servers
-dev: docker-up dev-core dev-panel
+## check-services: Kiem tra PostgreSQL/Redis cai tran tren may co dang chay khong
+check-services:
+	@for svc in postgresql redis-server redis; do \
+		if systemctl list-unit-files "$$svc.service" >/dev/null 2>&1 && \
+		   systemctl is-active --quiet "$$svc"; then \
+			echo "OK: $$svc dang chay."; \
+		fi; \
+	done
+	@systemctl is-active --quiet postgresql || \
+		echo "CANH: postgresql khong chay. Cai tran bang: sudo bash deploy/install.sh"
+	@systemctl is-active --quiet redis-server || systemctl is-active --quiet redis || \
+		echo "CANH: redis khong chay. Cai tran bang: sudo bash deploy/install.sh"
+
+## run-dev: Chay song song API (core/) va UI (panel/) o che do phat trien
+## PostgreSQL va Redis phai cai TRAN tren may (deploy/install.sh lo viec do);
+## khong con "docker compose up" cho ha tang phat trien nua.
+run-dev: check-services
+	@echo "Starting $(BRAND) development servers (Ctrl-C de dung ca hai)..."
+	@trap 'kill 0' EXIT INT TERM; \
+		( cd $(CORE_DIR) && $(GO) run ./cmd/api ) & \
+		( cd $(PANEL_DIR) && $(NPM) run dev ) & \
+		wait
+
+## dev: Alias cua run-dev (giu lai cho quen tay)
+dev: run-dev
 
 ## dev-core: Start the API development server
 dev-core:
@@ -245,24 +309,6 @@ install:
 	@test -f deploy/install.sh || { echo "deploy/install.sh is missing from this repo"; exit 1; }
 	sudo bash deploy/install.sh
 	@echo "Installation completed!"
-
-## docker-up: Start development Docker containers
-docker-up:
-	@echo "Starting Docker containers..."
-	docker compose -f docker-compose.dev.yml up -d
-	@echo "Docker containers started!"
-
-## docker-down: Stop development Docker containers
-docker-down:
-	@echo "Stopping Docker containers..."
-	docker compose -f docker-compose.dev.yml down
-	@echo "Docker containers stopped!"
-
-## docker-build: Build the production images
-docker-build:
-	@echo "Building Docker images..."
-	docker compose -f docker-compose.yml build
-	@echo "Docker images built!"
 
 ## deploy: Build then run the installer
 deploy: build install

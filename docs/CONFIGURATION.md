@@ -954,13 +954,26 @@ PHP_FPM_SOCKET=/var/run/php/php{version}-fpm.sock
 
 ### Docker Configuration
 
+These settings control the panel's **Docker management feature** -- the Docker
+screen and the `/api/v1/docker/*` API that let users manage their own containers,
+images, volumes, networks and compose stacks. They have nothing to do with how
+the panel itself runs: the panel runs bare-metal under systemd and is never
+containerised.
+
+Leave `ENABLE_DOCKER=false` on hosts where no one manages containers; the panel
+runs perfectly well without Docker Engine installed.
+
 ```bash
-# Enable Docker management
+# Enable Docker management (customer-facing feature)
 ENABLE_DOCKER=true
 
-# Docker socket
+# Docker socket the panel talks to on behalf of users
 DOCKER_SOCKET=/var/run/docker.sock
 ```
+
+> Access to this feature is gated by the `docker:*` RBAC permissions. The Docker
+> socket is effectively root-equivalent on the host, so grant them only to roles
+> that are meant to control containers.
 
 ---
 

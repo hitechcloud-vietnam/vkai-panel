@@ -48,6 +48,20 @@ var bypassPaths = map[string]bool{
 	"/livez":         true,
 }
 
+// acmeChallengePrefix is answered without an entrance check.
+//
+// The panel does not normally see this path at all: an HTTP-01 challenge is
+// fetched on port 80, which belongs to the customer websites, and the panel's
+// TLS manager answers it from the catch-all webroot or from a listener it binds
+// for the length of one challenge. It is bypassed here for the setups where a
+// reverse proxy forwards /.well-known to the panel port anyway - in which case
+// the alternative is an issuance that fails with a neutral 404 and no clue why.
+//
+// Nothing is disclosed by allowing it through: no route is registered under
+// this prefix, so the request reaches the same 404 the guard would have
+// produced, and the guard is not the thing that would have served a token.
+const acmeChallengePrefix = "/.well-known/acme-challenge/"
+
 // PanelGuardOptions configures a guard. It is deliberately decoupled from
 // config.PanelAccessConfig so tests can build one directly.
 type PanelGuardOptions struct {
@@ -215,6 +229,9 @@ func (g *PanelGuard) check(w http.ResponseWriter, r *http.Request) bool {
 	// Health probes are answered before any other rule so an orchestrator never
 	// needs to know the entrance.
 	if bypassPaths[path] {
+		return true
+	}
+	if isACMEChallenge(path) {
 		return true
 	}
 
@@ -423,6 +440,14 @@ func writeNeutralNotFound(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = w.Write([]byte("404 page not found\n"))
+}
+
+// isACMEChallenge reports whether a path is an ACME HTTP-01 challenge fetch.
+// normalizePath has already run path.Clean, which strips the trailing slash off
+// the bare prefix, so both forms are matched.
+func isACMEChallenge(p string) bool {
+	trimmed := strings.TrimSuffix(acmeChallengePrefix, "/")
+	return p == trimmed || strings.HasPrefix(p, acmeChallengePrefix)
 }
 
 // stripEntrance reports whether path is inside the entrance and returns what is

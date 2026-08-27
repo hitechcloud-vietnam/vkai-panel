@@ -273,6 +273,8 @@ This document tracks the development progress of VKAI Panel by HiTechCloud.
 ## Deployment Status
 
 ### Production Deployment
+- [x] Release-directory deployment (`/vkai-panel/releases/<version>` + `current` symlink)
+- [x] Packaged `.tar.gz` release + rollback (`deploy/scripts/deploy.sh`)
 - [x] Systemd service files
 - [x] Installation script
 - [x] Management script (vkai)
@@ -283,7 +285,7 @@ This document tracks the development progress of VKAI Panel by HiTechCloud.
 - [x] Redis setup
 
 ### Development Environment
-- [x] Docker Compose (databases only)
+- [x] Native PostgreSQL + Redis (installed by `setup-dev.sh`, no containers)
 - [x] Development setup script
 - [x] Environment configuration
 - [x] Hot reload support
@@ -374,7 +376,14 @@ This document tracks the development progress of VKAI Panel by HiTechCloud.
 
 ## Notes
 
-- Docker is minimized - services run as systemd units: `vkai-api`, `vkai-ui`, `vkai-agent`
+- Docker is **not** used to build, install or run the panel. The API is a Go
+  binary, the UI is a Next.js standalone build run by `node`, and both are
+  supervised by systemd units: `vkai-api`, `vkai-ui`, `vkai-agent`
+- Docker remains a **customer-facing feature** (Docker screen,
+  `/api/v1/docker/*`, `docker:*` permissions) - unchanged and fully supported.
+  The panel does not run in Docker; the panel manages Docker
+- Deployment is release-directory based: `/vkai-panel/releases/<version>` with a
+  `current` symlink, so rollback is a symlink switch plus a restart
 - All services are production-ready with systemd
 - Database uses PostgreSQL (not MariaDB/MySQL for panel DB)
 - Agent (vkaid) runs on managed servers

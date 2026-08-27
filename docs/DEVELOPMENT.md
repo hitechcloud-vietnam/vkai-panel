@@ -26,7 +26,11 @@
 - **PostgreSQL**: 16 or higher
 - **Redis**: 7 or higher
 - **Git**: Latest version
-- **Docker**: For development databases (optional)
+
+PostgreSQL and Redis are installed natively; there is no container runtime in the
+development loop. Docker Engine is only needed if you are working on the panel's
+Docker *feature* (the Docker screen and `/api/v1/docker/*`) and want live
+containers to test against.
 
 ### Quick Setup
 
@@ -47,22 +51,21 @@ make dev
 
 ## Development Environment
 
-### Option 1: Docker for Databases (Recommended)
+### Option 1: setup-dev.sh (Recommended)
+
+`setup-dev.sh` does the whole thing: installs PostgreSQL and Redis through the
+system package manager, creates the `vkai` role and `vkai_panel` database, runs
+`go mod tidy` and `npm install`, and writes `core/.env` plus `panel/.env.local`.
 
 ```bash
-# Start databases with Docker
-docker-compose -f docker-compose.dev.yml up -d
+./setup-dev.sh
 
-# Start the API (core/)
-cd core
-go run ./cmd/api
-
-# Start the UI (panel/) in another terminal
-cd panel
-npm run dev
+# Then, in two terminals
+cd core  && go run ./cmd/api      # API on 127.0.0.1:30110
+cd panel && npm run dev           # UI on http://localhost:3000
 ```
 
-### Option 2: Local Databases
+### Option 2: Manual Local Databases
 
 ```bash
 # Install PostgreSQL
@@ -154,7 +157,7 @@ vkai-panel/
 │   └── vkai.sh               # Management script
 ├── docs/                       # Documentation
 ├── scripts/                    # Utility scripts
-├── docker-compose.dev.yml     # Development Docker
+├── setup-dev.sh               # Development environment setup
 ├── Makefile                   # Build commands
 └── README.md                  # Project documentation
 ```
