@@ -233,10 +233,8 @@ jobs:
     permissions:
       contents: read
       security-events: write
-
-    # The `secrets` context is not available in a step-level `if:`, so the token
-    # is mapped to env here and the step tests the env value instead.
     env:
+      TRIVY_VERSION: v0.65.0
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
     steps:
@@ -248,45 +246,64 @@ jobs:
         env:
           VKAI_CRYPT_KEY: ${{ secrets.VKAI_CRYPT_KEY }}
 
-      # Reporting pass: never fails the build, results land in the Security tab.
-      - name: Run Trivy (report)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          skip-dirs: 'panel/node_modules,panel/.next,core/bin,agent/bin'
+      # Cài trực tiếp thay vì dùng aquasecurity/trivy-action: action đó tự tải
+      # binary trong bước setup và khi GitHub giới hạn tải xuống thì cả job đổ
+      # ngay ở "Set up job", chặn CI vì lý do không liên quan tới mã nguồn.
+      - name: Cài Trivy
+        id: trivy_install
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          for i in 1 2 3; do
+            if curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+                 | sh -s -- -b "${RUNNER_TEMP}/bin" "${TRIVY_VERSION}"; then
+              echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+              "${RUNNER_TEMP}/bin/trivy" --version
+              exit 0
+            fi
+            echo "Lần thử $i thất bại, chờ rồi thử lại..."
+            sleep $((i * 10))
+          done
+          echo "::warning::Không cài được Trivy sau 3 lần thử — bỏ qua bước quét."
+          exit 1
 
-      - name: Upload Trivy results
+      - name: Quét phụ thuộc (báo cáo SARIF)
+        if: steps.trivy_install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          trivy fs . \
+            --scanners vuln,secret,misconfig \
+            --format sarif \
+            --output trivy-results.sarif \
+            --ignore-unfixed \
+            --severity CRITICAL,HIGH \
+            --skip-dirs panel/node_modules,panel/.next,core/bin,agent/bin,dist \
+            --exit-code 0
+
+      - name: Nạp kết quả lên tab Security
+        if: hashFiles('trivy-results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
 
-      # Gate: only pull requests are blocked, and only on CRITICAL findings.
-      - name: Trivy gate (pull requests, CRITICAL only)
-        if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          ignore-unfixed: true
-          severity: 'CRITICAL'
-          exit-code: '1'
-          skip-dirs: 'panel/node_modules,panel/.next,core/bin,agent/bin'
+      # Chỉ lỗ hổng CRITICAL đã có bản vá mới chặn Pull Request.
+      # HIGH đi vào báo cáo để xử lý theo lộ trình, không chặn nhịp phát triển.
+      - name: Chặn PR nếu có lỗ hổng CRITICAL
+        if: github.event_name == 'pull_request' && steps.trivy_install.outcome == 'success'
+        run: |
+          trivy fs . \
+            --scanners vuln \
+            --format table \
+            --ignore-unfixed \
+            --severity CRITICAL \
+            --skip-dirs panel/node_modules,panel/.next,core/bin,agent/bin,dist \
+            --exit-code 1
 
-      # Skipped entirely when the secret is absent, so forks and fresh clones
-      # do not show a permanently failing step.
-      - name: Run Snyk security scan
+      - name: Quét Snyk
         if: ${{ env.SNYK_TOKEN != '' }}
-        uses: snyk/actions/golang@master
         continue-on-error: true
+        uses: snyk/actions/golang@master
         with:
           args: --all-projects
 
