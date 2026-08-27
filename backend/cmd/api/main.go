@@ -218,6 +218,11 @@ func main() {
 	fileProtectionService := service.NewFileProtectionService(fileProtectionRepo, logger)
 	fileProtectionHandler := handler.NewFileProtectionHandler(fileProtectionService, logger)
 
+	// Initialize Multi-user Management
+	multiUserRepo := repository.NewMultiUserRepository(db.DB, logger)
+	multiUserService := service.NewMultiUserService(multiUserRepo, logger)
+	multiUserHandler := handler.NewMultiUserHandler(multiUserService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -255,6 +260,7 @@ func main() {
 		emailMarketingHandler,
 		mailServerHandler,
 		fileProtectionHandler,
+		multiUserHandler,
 		jwtManager,
 		logger,
 	)

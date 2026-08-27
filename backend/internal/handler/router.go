@@ -45,6 +45,7 @@ type Router struct {
 	emailMarketingHandler *EmailMarketingHandler
 	mailServerHandler    *MailServerHandler
 	fileProtectionHandler *FileProtectionHandler
+	multiUserHandler     *MultiUserHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -85,6 +86,7 @@ func NewRouter(
 	emailMarketingHandler *EmailMarketingHandler,
 	mailServerHandler *MailServerHandler,
 	fileProtectionHandler *FileProtectionHandler,
+	multiUserHandler *MultiUserHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -127,6 +129,7 @@ func NewRouter(
 		emailMarketingHandler: emailMarketingHandler,
 		mailServerHandler:    mailServerHandler,
 		fileProtectionHandler: fileProtectionHandler,
+		multiUserHandler:     multiUserHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -750,6 +753,36 @@ func (r *Router) Setup() *gin.Engine {
 			// Server Config
 			mailServer.GET("/config", r.mailServerHandler.GetServerConfig)
 			mailServer.PUT("/config", r.mailServerHandler.UpdateServerConfig)
+		}
+
+		// Multi-user Management
+		multiUser := protected.Group("/multi-user")
+		{
+			multiUser.GET("/stats", r.multiUserHandler.GetStats)
+
+			// Roles
+			multiUser.GET("/roles", r.multiUserHandler.ListRoles)
+			multiUser.POST("/roles", r.multiUserHandler.CreateRole)
+			multiUser.GET("/roles/:id", r.multiUserHandler.GetRole)
+			multiUser.PUT("/roles/:id", r.multiUserHandler.UpdateRole)
+			multiUser.DELETE("/roles/:id", r.multiUserHandler.DeleteRole)
+
+			// Permissions
+			multiUser.GET("/permissions", r.multiUserHandler.ListPermissions)
+
+			// User-Role assignment
+			multiUser.POST("/users/:id/roles", r.multiUserHandler.AssignUserRole)
+			multiUser.DELETE("/users/:id/roles/:roleId", r.multiUserHandler.RemoveUserRole)
+			multiUser.GET("/users/:id/roles", r.multiUserHandler.GetUserRoles)
+			multiUser.GET("/users/:id/permissions", r.multiUserHandler.GetUserPermissions)
+
+			// Sessions
+			multiUser.GET("/sessions", r.multiUserHandler.ListActiveSessions)
+			multiUser.DELETE("/sessions/:id", r.multiUserHandler.DeleteSession)
+			multiUser.DELETE("/users/:id/sessions", r.multiUserHandler.TerminateUserSessions)
+
+			// Activity log
+			multiUser.GET("/activities", r.multiUserHandler.ListActivities)
 		}
 
 		// Config
