@@ -53,30 +53,30 @@ CREATE INDEX IF NOT EXISTS idx_config_templates_tenant_id ON config_templates(te
 CREATE INDEX IF NOT EXISTS idx_config_templates_is_default ON config_templates(is_default);
 
 -- Seed permissions for config management
-INSERT INTO permissions (name, description, resource, action) VALUES
-    ('config.create', 'Create config snapshots', 'config', 'create'),
-    ('config.read', 'View config snapshots', 'config', 'read'),
-    ('config.update', 'Update config snapshots', 'config', 'update'),
-    ('config.delete', 'Delete config snapshots', 'config', 'delete'),
-    ('config.rollback', 'Rollback config changes', 'config', 'rollback'),
-    ('config.diff', 'View config differences', 'config', 'diff'),
-    ('config.validate', 'Validate config', 'config', 'validate'),
-    ('config_templates.create', 'Create config templates', 'config_templates', 'create'),
-    ('config_templates.read', 'View config templates', 'config_templates', 'read'),
-    ('config_templates.update', 'Update config templates', 'config_templates', 'update'),
-    ('config_templates.delete', 'Delete config templates', 'config_templates', 'delete')
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO permissions (resource, action) VALUES
+    ('config', 'create'),
+    ('config', 'read'),
+    ('config', 'update'),
+    ('config', 'delete'),
+    ('config', 'rollback'),
+    ('config', 'diff'),
+    ('config', 'validate'),
+    ('config_templates', 'create'),
+    ('config_templates', 'read'),
+    ('config_templates', 'update'),
+    ('config_templates', 'delete')
+ON CONFLICT (resource, action) DO NOTHING;
 
 -- Assign config permissions to super_admin role
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r, permissions p
-WHERE r.name = 'super_admin' AND p.name LIKE 'config.%' OR p.name LIKE 'config_templates.%'
+WHERE r.name = 'super_admin' AND p.resource IN ('config', 'config_templates')
 ON CONFLICT DO NOTHING;
 
 -- Assign config permissions to admin role
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r, permissions p
-WHERE r.name = 'admin' AND p.name LIKE 'config.%' OR p.name LIKE 'config_templates.%'
+WHERE r.name = 'admin' AND p.resource IN ('config', 'config_templates')
 ON CONFLICT DO NOTHING;

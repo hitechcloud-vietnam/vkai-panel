@@ -99,37 +99,37 @@ CREATE INDEX idx_ha_pairs_primary_server ON ha_pairs(primary_server_id);
 CREATE INDEX idx_ha_pairs_secondary_server ON ha_pairs(secondary_server_id);
 
 -- Permissions
-INSERT INTO permissions (name, description, resource, action) VALUES
-    ('clusters.create', 'Create clusters', 'clusters', 'create'),
-    ('clusters.read', 'View clusters', 'clusters', 'read'),
-    ('clusters.update', 'Update clusters', 'clusters', 'update'),
-    ('clusters.delete', 'Delete clusters', 'clusters', 'delete'),
-    ('clusters.manage_nodes', 'Manage cluster nodes', 'clusters', 'manage_nodes'),
-    ('load_balancers.create', 'Create load balancers', 'load_balancers', 'create'),
-    ('load_balancers.read', 'View load balancers', 'load_balancers', 'read'),
-    ('load_balancers.update', 'Update load balancers', 'load_balancers', 'update'),
-    ('load_balancers.delete', 'Delete load balancers', 'load_balancers', 'delete'),
-    ('ha_pairs.create', 'Create HA pairs', 'ha_pairs', 'create'),
-    ('ha_pairs.read', 'View HA pairs', 'ha_pairs', 'read'),
-    ('ha_pairs.update', 'Update HA pairs', 'ha_pairs', 'update'),
-    ('ha_pairs.delete', 'Delete HA pairs', 'ha_pairs', 'delete'),
-    ('ha_pairs.failover', 'Trigger failover', 'ha_pairs', 'failover')
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO permissions (resource, action) VALUES
+    ('clusters', 'create'),
+    ('clusters', 'read'),
+    ('clusters', 'update'),
+    ('clusters', 'delete'),
+    ('clusters', 'manage_nodes'),
+    ('load_balancers', 'create'),
+    ('load_balancers', 'read'),
+    ('load_balancers', 'update'),
+    ('load_balancers', 'delete'),
+    ('ha_pairs', 'create'),
+    ('ha_pairs', 'read'),
+    ('ha_pairs', 'update'),
+    ('ha_pairs', 'delete'),
+    ('ha_pairs', 'failover')
+ON CONFLICT (resource, action) DO NOTHING;
 
 -- Assign permissions to super_admin role
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
-WHERE r.name = 'super_admin' AND p.name IN (
-    'clusters.create', 'clusters.read', 'clusters.update', 'clusters.delete', 'clusters.manage_nodes',
-    'load_balancers.create', 'load_balancers.read', 'load_balancers.update', 'load_balancers.delete',
-    'ha_pairs.create', 'ha_pairs.read', 'ha_pairs.update', 'ha_pairs.delete', 'ha_pairs.failover'
+WHERE r.name = 'super_admin' AND (p.resource, p.action) IN (
+    ('clusters', 'create'), ('clusters', 'read'), ('clusters', 'update'), ('clusters', 'delete'), ('clusters', 'manage_nodes'),
+    ('load_balancers', 'create'), ('load_balancers', 'read'), ('load_balancers', 'update'), ('load_balancers', 'delete'),
+    ('ha_pairs', 'create'), ('ha_pairs', 'read'), ('ha_pairs', 'update'), ('ha_pairs', 'delete'), ('ha_pairs', 'failover')
 )
 ON CONFLICT DO NOTHING;
 
 -- Assign read permissions to admin role
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
-WHERE r.name = 'admin' AND p.name IN (
-    'clusters.read', 'load_balancers.read', 'ha_pairs.read'
+WHERE r.name = 'admin' AND (p.resource, p.action) IN (
+    ('clusters', 'read'), ('load_balancers', 'read'), ('ha_pairs', 'read')
 )
 ON CONFLICT DO NOTHING;

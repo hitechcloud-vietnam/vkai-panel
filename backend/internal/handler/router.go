@@ -214,8 +214,8 @@ func (r *Router) Setup() *gin.Engine {
 			dns.PUT("/zones/:id", r.dnsHandler.UpdateZone)
 			dns.DELETE("/zones/:id", r.dnsHandler.DeleteZone)
 
-			dns.POST("/zones/:zoneId/records", r.dnsHandler.CreateRecord)
-			dns.GET("/zones/:zoneId/records", r.dnsHandler.ListRecords)
+			dns.POST("/zones/:id/records", r.dnsHandler.CreateRecord)
+			dns.GET("/zones/:id/records", r.dnsHandler.ListRecords)
 			dns.GET("/records/:id", r.dnsHandler.GetRecord)
 			dns.PUT("/records/:id", r.dnsHandler.UpdateRecord)
 			dns.DELETE("/records/:id", r.dnsHandler.DeleteRecord)
@@ -244,13 +244,13 @@ func (r *Router) Setup() *gin.Engine {
 			security.GET("/scans/:id", r.securityHandler.GetScan)
 			security.DELETE("/scans/:id", r.securityHandler.DeleteScan)
 
-			security.GET("/scans/:scanId/vulnerabilities", r.securityHandler.ListVulnerabilitiesByScan)
+			security.GET("/scans/:id/vulnerabilities", r.securityHandler.ListVulnerabilitiesByScan)
 			security.GET("/vulnerabilities", r.securityHandler.ListVulnerabilitiesByTenant)
 			security.GET("/vulnerabilities/:id", r.securityHandler.GetVulnerability)
 			security.PUT("/vulnerabilities/:id", r.securityHandler.UpdateVulnerability)
 			security.DELETE("/vulnerabilities/:id", r.securityHandler.DeleteVulnerability)
 
-			security.GET("/scans/:scanId/checks", r.securityHandler.ListChecksByScan)
+			security.GET("/scans/:id/checks", r.securityHandler.ListChecksByScan)
 
 			security.POST("/policies", r.securityHandler.CreatePolicy)
 			security.GET("/policies", r.securityHandler.ListPolicies)
@@ -344,12 +344,12 @@ func (r *Router) Setup() *gin.Engine {
 			php.DELETE("/pools/:id", r.phpHandler.DeletePHPPool)
 
 			php.POST("/extensions", r.phpHandler.InstallPHPExtension)
-			php.GET("/versions/:phpVersionId/extensions", r.phpHandler.ListPHPExtensions)
+			php.GET("/versions/:id/extensions", r.phpHandler.ListPHPExtensions)
 			php.PUT("/extensions/:id", r.phpHandler.UpdatePHPExtension)
 			php.DELETE("/extensions/:id", r.phpHandler.DeletePHPExtension)
 
-			php.GET("/versions/:phpVersionId/config", r.phpHandler.GetPHPConfig)
-			php.PUT("/versions/:phpVersionId/config", r.phpHandler.UpdatePHPConfig)
+			php.GET("/versions/:id/config", r.phpHandler.GetPHPConfig)
+			php.PUT("/versions/:id/config", r.phpHandler.UpdatePHPConfig)
 			php.DELETE("/config/:id", r.phpHandler.DeletePHPConfig)
 		}
 

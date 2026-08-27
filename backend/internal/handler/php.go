@@ -260,7 +260,7 @@ func (h *PHPHandler) InstallPHPExtension(c *gin.Context) {
 
 // ListPHPExtensions lists all PHP extensions
 func (h *PHPHandler) ListPHPExtensions(c *gin.Context) {
-	phpVersionID := c.Param("phpVersionId")
+	phpVersionID := c.Param("id")
 	tenantID := c.GetString("tenant_id")
 	if tenantID == "" {
 		utils.Unauthorized(c, "Tenant ID not found")
@@ -324,7 +324,7 @@ func (h *PHPHandler) DeletePHPExtension(c *gin.Context) {
 
 // GetPHPConfig gets PHP configuration
 func (h *PHPHandler) GetPHPConfig(c *gin.Context) {
-	phpVersionID := c.Param("phpVersionId")
+	phpVersionID := c.Param("id")
 	tenantID := c.GetString("tenant_id")
 	if tenantID == "" {
 		utils.Unauthorized(c, "Tenant ID not found")
@@ -343,7 +343,7 @@ func (h *PHPHandler) GetPHPConfig(c *gin.Context) {
 
 // UpdatePHPConfig updates PHP configuration
 func (h *PHPHandler) UpdatePHPConfig(c *gin.Context) {
-	phpVersionID := c.Param("phpVersionId")
+	phpVersionID := c.Param("id")
 	tenantID := c.GetString("tenant_id")
 	if tenantID == "" {
 		utils.Unauthorized(c, "Tenant ID not found")

@@ -59,30 +59,30 @@ CREATE INDEX IF NOT EXISTS idx_job_schedules_enabled ON job_schedules(enabled);
 CREATE INDEX IF NOT EXISTS idx_job_schedules_next_run_at ON job_schedules(next_run_at);
 
 -- Seed permissions for job management
-INSERT INTO permissions (name, description, resource, action) VALUES
-    ('jobs.create', 'Create jobs', 'jobs', 'create'),
-    ('jobs.read', 'View jobs', 'jobs', 'read'),
-    ('jobs.update', 'Update jobs', 'jobs', 'update'),
-    ('jobs.delete', 'Delete jobs', 'jobs', 'delete'),
-    ('jobs.cancel', 'Cancel jobs', 'jobs', 'cancel'),
-    ('jobs.retry', 'Retry failed jobs', 'jobs', 'retry'),
-    ('jobs.stats', 'View job statistics', 'jobs', 'stats'),
-    ('job_schedules.create', 'Create job schedules', 'job_schedules', 'create'),
-    ('job_schedules.read', 'View job schedules', 'job_schedules', 'read'),
-    ('job_schedules.update', 'Update job schedules', 'job_schedules', 'update'),
-    ('job_schedules.delete', 'Delete job schedules', 'job_schedules', 'delete')
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO permissions (resource, action) VALUES
+    ('jobs', 'create'),
+    ('jobs', 'read'),
+    ('jobs', 'update'),
+    ('jobs', 'delete'),
+    ('jobs', 'cancel'),
+    ('jobs', 'retry'),
+    ('jobs', 'stats'),
+    ('job_schedules', 'create'),
+    ('job_schedules', 'read'),
+    ('job_schedules', 'update'),
+    ('job_schedules', 'delete')
+ON CONFLICT (resource, action) DO NOTHING;
 
 -- Assign job permissions to super_admin role
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r, permissions p
-WHERE r.name = 'super_admin' AND p.name LIKE 'jobs.%' OR p.name LIKE 'job_schedules.%'
+WHERE r.name = 'super_admin' AND p.resource IN ('jobs', 'job_schedules')
 ON CONFLICT DO NOTHING;
 
 -- Assign job permissions to admin role
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id
 FROM roles r, permissions p
-WHERE r.name = 'admin' AND p.name LIKE 'jobs.%' OR p.name LIKE 'job_schedules.%'
+WHERE r.name = 'admin' AND p.resource IN ('jobs', 'job_schedules')
 ON CONFLICT DO NOTHING;

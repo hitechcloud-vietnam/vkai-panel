@@ -151,7 +151,7 @@ func (h *DNSHandler) DeleteZone(c *gin.Context) {
 
 // CreateRecord creates a new DNS record
 func (h *DNSHandler) CreateRecord(c *gin.Context) {
-	zoneID := c.Param("zoneId")
+	zoneID := c.Param("id")
 	if zoneID == "" {
 		utils.Error(c, http.StatusBadRequest, "Zone ID is required")
 		return
@@ -216,7 +216,7 @@ func (h *DNSHandler) GetRecord(c *gin.Context) {
 
 // ListRecords lists all DNS records for a zone
 func (h *DNSHandler) ListRecords(c *gin.Context) {
-	zoneID := c.Param("zoneId")
+	zoneID := c.Param("id")
 	if zoneID == "" {
 		utils.Error(c, http.StatusBadRequest, "Zone ID is required")
 		return

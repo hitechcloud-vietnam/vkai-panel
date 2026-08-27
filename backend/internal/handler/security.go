@@ -152,7 +152,7 @@ func (h *SecurityHandler) GetVulnerability(c *gin.Context) {
 
 // ListVulnerabilitiesByScan lists all vulnerabilities for a scan
 func (h *SecurityHandler) ListVulnerabilitiesByScan(c *gin.Context) {
-	scanID := c.Param("scanId")
+	scanID := c.Param("id")
 	if scanID == "" {
 		utils.Error(c, http.StatusBadRequest, "Scan ID is required")
 		return
@@ -258,7 +258,7 @@ func (h *SecurityHandler) DeleteVulnerability(c *gin.Context) {
 
 // ListChecksByScan lists all checks for a scan
 func (h *SecurityHandler) ListChecksByScan(c *gin.Context) {
-	scanID := c.Param("scanId")
+	scanID := c.Param("id")
 	if scanID == "" {
 		utils.Error(c, http.StatusBadRequest, "Scan ID is required")
 		return
