@@ -30,7 +30,7 @@ func (h *DNSHandler) CreateZone(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{"name": "Name is required", "provider": "Provider is required"})
+		utils.SendValidationError(c, map[string]string{"name": "Name is required", "provider": "Provider is required"})
 		return
 	}
 
@@ -47,7 +47,7 @@ func (h *DNSHandler) CreateZone(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, zone)
+	utils.Created(c, zone)
 }
 
 // GetZone gets a DNS zone by ID
@@ -71,7 +71,7 @@ func (h *DNSHandler) GetZone(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, zone)
+	utils.Success(c, zone)
 }
 
 // ListZones lists all DNS zones for a tenant
@@ -89,7 +89,7 @@ func (h *DNSHandler) ListZones(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, zones)
+	utils.Success(c, zones)
 }
 
 // UpdateZone updates a DNS zone
@@ -123,7 +123,7 @@ func (h *DNSHandler) UpdateZone(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, zone)
+	utils.Success(c, zone)
 }
 
 // DeleteZone deletes a DNS zone
@@ -146,7 +146,7 @@ func (h *DNSHandler) DeleteZone(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "DNS zone deleted successfully"})
+	utils.Success(c, gin.H{"message": "DNS zone deleted successfully"})
 }
 
 // CreateRecord creates a new DNS record
@@ -187,7 +187,7 @@ func (h *DNSHandler) CreateRecord(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, record)
+	utils.Created(c, record)
 }
 
 // GetRecord gets a DNS record by ID
@@ -211,7 +211,7 @@ func (h *DNSHandler) GetRecord(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, record)
+	utils.Success(c, record)
 }
 
 // ListRecords lists all DNS records for a zone
@@ -235,7 +235,7 @@ func (h *DNSHandler) ListRecords(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, records)
+	utils.Success(c, records)
 }
 
 // UpdateRecord updates a DNS record
@@ -273,7 +273,7 @@ func (h *DNSHandler) UpdateRecord(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, record)
+	utils.Success(c, record)
 }
 
 // DeleteRecord deletes a DNS record
@@ -296,5 +296,5 @@ func (h *DNSHandler) DeleteRecord(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "DNS record deleted successfully"})
+	utils.Success(c, gin.H{"message": "DNS record deleted successfully"})
 }

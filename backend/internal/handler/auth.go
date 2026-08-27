@@ -5,6 +5,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
 )
@@ -29,10 +30,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.authService.Login(c.Request.Context(), struct {
-		Username string
-		Password string
-	}{req.Username, req.Password}, c.ClientIP())
+	resp, err := h.authService.Login(c.Request.Context(), models.LoginRequest{
+		Username: req.Username,
+		Password: req.Password,
+	}, c.ClientIP())
 	if err != nil {
 		utils.Unauthorized(c, err.Error())
 		return

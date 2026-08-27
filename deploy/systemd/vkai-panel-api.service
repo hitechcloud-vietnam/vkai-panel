@@ -1,0 +1,30 @@
+[Unit]
+Description=VKAI Panel API Server
+After=network.target postgresql.service redis.service
+Wants=network-online.target
+Requires=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=vkai
+Group=vkai
+WorkingDirectory=/opt/vkai-panel
+EnvironmentFile=/opt/vkai-panel/.env
+ExecStart=/opt/vkai-panel/api
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-panel-api
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/vkai-panel /var/log/vkai-panel
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

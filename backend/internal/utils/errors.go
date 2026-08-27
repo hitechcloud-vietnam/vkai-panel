@@ -67,8 +67,8 @@ func AlreadyExistsError(resource string) *AppError {
 	}
 }
 
-// ValidationError creates a validation error
-func ValidationError(message string) *AppError {
+// NewValidationError creates a validation error
+func NewValidationError(message string) *AppError {
 	return &AppError{
 		Code:    "VALIDATION_ERROR",
 		Message: message,
@@ -85,8 +85,8 @@ func DatabaseError(err error) *AppError {
 	}
 }
 
-// InternalError creates an internal error
-func InternalError(err error) *AppError {
+// NewInternalError creates an internal error
+func NewInternalError(err error) *AppError {
 	return &AppError{
 		Code:    "INTERNAL_ERROR",
 		Message: "An internal error occurred",

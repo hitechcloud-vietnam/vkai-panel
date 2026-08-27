@@ -39,15 +39,16 @@ type WebServerAdapter interface {
 
 // SiteConfig represents a website configuration
 type SiteConfig struct {
-	Domain     string
-	RootDir    string
-	PHPVersion string
-	SSLEnabled bool
-	CertPath   string
-	KeyPath    string
+	Domain      string
+	RootDir     string
+	PHPVersion  string
+	SSLEnabled  bool
+	CertPath    string
+	KeyPath     string
 	ProxyTarget string
-	LogDir     string
-	Index      string
+	LogDir      string
+	Index       string
+	Port        int
 }
 
 // RewriteRule represents a URL rewrite rule

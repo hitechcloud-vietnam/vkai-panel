@@ -182,8 +182,6 @@ func (s *GitDeploymentService) Deploy(ctx context.Context, tenantID, id uuid.UUI
 		return nil, err
 	}
 
-	startTime := time.Now()
-
 	// Create deployment log
 	log := &models.GitDeploymentLog{
 		DeploymentID: deployment.ID,

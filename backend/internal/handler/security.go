@@ -28,7 +28,7 @@ func NewSecurityHandler(securityService *service.SecurityService, logger *zap.Lo
 func (h *SecurityHandler) CreateScan(c *gin.Context) {
 	var req models.CreateSecurityScanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{
+		utils.SendValidationError(c, map[string]string{
 			"server_id": "Server ID is required",
 			"scan_type": "Scan type is required",
 		})
@@ -48,7 +48,7 @@ func (h *SecurityHandler) CreateScan(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, scan)
+	utils.Created(c, scan)
 }
 
 // GetScan gets a security scan by ID
@@ -72,7 +72,7 @@ func (h *SecurityHandler) GetScan(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, scan)
+	utils.Success(c, scan)
 }
 
 // ListScans lists all security scans for a tenant
@@ -100,7 +100,7 @@ func (h *SecurityHandler) ListScans(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessWithPagination(c, scans, total, page, perPage)
+	utils.Paginated(c, scans, int64(total), page, perPage)
 }
 
 // DeleteScan deletes a security scan
@@ -123,7 +123,7 @@ func (h *SecurityHandler) DeleteScan(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Security scan deleted successfully"})
+	utils.Success(c, gin.H{"message": "Security scan deleted successfully"})
 }
 
 // GetVulnerability gets a vulnerability by ID
@@ -147,7 +147,7 @@ func (h *SecurityHandler) GetVulnerability(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, vuln)
+	utils.Success(c, vuln)
 }
 
 // ListVulnerabilitiesByScan lists all vulnerabilities for a scan
@@ -171,7 +171,7 @@ func (h *SecurityHandler) ListVulnerabilitiesByScan(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, vulns)
+	utils.Success(c, vulns)
 }
 
 // ListVulnerabilitiesByTenant lists all vulnerabilities for a tenant
@@ -200,7 +200,7 @@ func (h *SecurityHandler) ListVulnerabilitiesByTenant(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessWithPagination(c, vulns, total, page, perPage)
+	utils.Paginated(c, vulns, int64(total), page, perPage)
 }
 
 // UpdateVulnerability updates a vulnerability
@@ -213,7 +213,7 @@ func (h *SecurityHandler) UpdateVulnerability(c *gin.Context) {
 
 	var req models.UpdateSecurityVulnerabilityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{"status": "Status is required"})
+		utils.SendValidationError(c, map[string]string{"status": "Status is required"})
 		return
 	}
 
@@ -230,7 +230,7 @@ func (h *SecurityHandler) UpdateVulnerability(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, vuln)
+	utils.Success(c, vuln)
 }
 
 // DeleteVulnerability deletes a vulnerability
@@ -253,7 +253,7 @@ func (h *SecurityHandler) DeleteVulnerability(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Vulnerability deleted successfully"})
+	utils.Success(c, gin.H{"message": "Vulnerability deleted successfully"})
 }
 
 // ListChecksByScan lists all checks for a scan
@@ -277,14 +277,14 @@ func (h *SecurityHandler) ListChecksByScan(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, checks)
+	utils.Success(c, checks)
 }
 
 // CreatePolicy creates a new security policy
 func (h *SecurityHandler) CreatePolicy(c *gin.Context) {
 	var req models.CreateSecurityPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{
+		utils.SendValidationError(c, map[string]string{
 			"name":     "Name is required",
 			"category": "Category is required",
 			"rules":    "Rules are required",
@@ -305,7 +305,7 @@ func (h *SecurityHandler) CreatePolicy(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, policy)
+	utils.Created(c, policy)
 }
 
 // GetPolicy gets a security policy by ID
@@ -329,7 +329,7 @@ func (h *SecurityHandler) GetPolicy(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, policy)
+	utils.Success(c, policy)
 }
 
 // ListPolicies lists all security policies for a tenant
@@ -347,7 +347,7 @@ func (h *SecurityHandler) ListPolicies(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, policies)
+	utils.Success(c, policies)
 }
 
 // UpdatePolicy updates a security policy
@@ -377,7 +377,7 @@ func (h *SecurityHandler) UpdatePolicy(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, policy)
+	utils.Success(c, policy)
 }
 
 // DeletePolicy deletes a security policy
@@ -400,5 +400,5 @@ func (h *SecurityHandler) DeletePolicy(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Security policy deleted successfully"})
+	utils.Success(c, gin.H{"message": "Security policy deleted successfully"})
 }

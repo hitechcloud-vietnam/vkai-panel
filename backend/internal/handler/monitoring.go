@@ -57,22 +57,6 @@ func (h *MonitoringHandler) GetSystemInfo(c *gin.Context) {
 	})
 }
 
-func (h *MonitoringHandler) GetMetrics(c *gin.Context) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	utils.Success(c, gin.H{
-		"memory": gin.H{
-			"alloc":      m.Alloc,
-			"total_alloc": m.TotalAlloc,
-			"sys":        m.Sys,
-			"num_gc":     m.NumGC,
-		},
-		"goroutines": runtime.NumGoroutine(),
-		"timestamp":  time.Now().UTC(),
-	})
-}
-
 // Metric handlers
 func (h *MonitoringHandler) RecordMetric(c *gin.Context) {
 	serverID, err := uuid.Parse(c.Param("server_id"))

@@ -64,7 +64,7 @@ func (h *WebsiteHandler) List(c *gin.Context) {
 		return
 	}
 
-	utils.Paginated(c, websites, total, params.Page, params.PerPage)
+	utils.Paginated(c, websites, int64(total), params.Page, params.PerPage)
 }
 
 func (h *WebsiteHandler) Update(c *gin.Context) {

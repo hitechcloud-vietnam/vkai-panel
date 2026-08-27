@@ -70,7 +70,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest, ip str
 	}, nil
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*models.TokenPair, error) {
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
 	claims, err := s.jwtManager.ValidateToken(refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token: %w", err)

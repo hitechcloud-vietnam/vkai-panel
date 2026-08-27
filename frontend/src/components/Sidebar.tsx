@@ -140,6 +140,16 @@ const menuItems: MenuItem[] = [
     href: '/clusters',
   },
   {
+    label: 'Job Queue',
+    icon: <Activity size={18} />,
+    href: '/jobs',
+  },
+  {
+    label: 'Config Rollback',
+    icon: <Activity size={18} />,
+    href: '/config',
+  },
+  {
     label: 'Deployments',
     icon: <GitBranch size={18} />,
     href: '/deployments',
@@ -185,7 +195,7 @@ export default function Sidebar() {
             <span className="flex-1 text-left">{item.label}</span>
             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
-          {isExpanded && (
+          {isExpanded && item.children && (
             <div className="ml-4 mt-1 space-y-1">
               {item.children.map((child) => renderMenuItem(child, depth + 1))}
             </div>

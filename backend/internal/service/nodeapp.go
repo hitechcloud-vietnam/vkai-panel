@@ -3,23 +3,25 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/nodeapp"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 )
 
 type NodeAppService struct {
 	nodeAppRepo *repository.NodeAppRepository
+	systemdMgr  *nodeapp.SystemdServiceManager
 	logger      *zap.Logger
 }
 
 func NewNodeAppService(nodeAppRepo *repository.NodeAppRepository, logger *zap.Logger) *NodeAppService {
 	return &NodeAppService{
 		nodeAppRepo: nodeAppRepo,
+		systemdMgr:  nodeapp.NewSystemdServiceManager(logger),
 		logger:      logger,
 	}
 }
@@ -210,8 +212,26 @@ func (s *NodeAppService) Start(ctx context.Context, id, tenantID string) error {
 		return err
 	}
 
-	// TODO: Implement actual start logic using systemd
-	// This would create a systemd service file and start it
+	// Install systemd service if not already installed
+	if !s.systemdMgr.IsServiceInstalled(ctx, app) {
+		// Get environment variables
+		envVars, err := s.getEnvironmentVars(ctx, app.ID)
+		if err != nil {
+			s.logger.Warn("Failed to get environment vars, using empty", zap.Error(err))
+			envVars = make(map[string]string)
+		}
+
+		if err := s.systemdMgr.InstallService(ctx, app, envVars); err != nil {
+			return fmt.Errorf("failed to install systemd service: %w", err)
+		}
+	}
+
+	// Start the service
+	if err := s.systemdMgr.StartService(ctx, app); err != nil {
+		return fmt.Errorf("failed to start service: %w", err)
+	}
+
+	// Update status
 	app.Status = "running"
 	if err := s.nodeAppRepo.Update(ctx, app); err != nil {
 		return fmt.Errorf("failed to update app status: %w", err)
@@ -232,7 +252,12 @@ func (s *NodeAppService) Stop(ctx context.Context, id, tenantID string) error {
 		return err
 	}
 
-	// TODO: Implement actual stop logic using systemd
+	// Stop the service
+	if err := s.systemdMgr.StopService(ctx, app); err != nil {
+		return fmt.Errorf("failed to stop service: %w", err)
+	}
+
+	// Update status
 	app.Status = "stopped"
 	if err := s.nodeAppRepo.Update(ctx, app); err != nil {
 		return fmt.Errorf("failed to update app status: %w", err)
@@ -253,7 +278,12 @@ func (s *NodeAppService) Restart(ctx context.Context, id, tenantID string) error
 		return err
 	}
 
-	// TODO: Implement actual restart logic using systemd
+	// Restart the service
+	if err := s.systemdMgr.RestartService(ctx, app); err != nil {
+		return fmt.Errorf("failed to restart service: %w", err)
+	}
+
+	// Update status
 	app.Status = "running"
 	if err := s.nodeAppRepo.Update(ctx, app); err != nil {
 		return fmt.Errorf("failed to update app status: %w", err)
@@ -274,8 +304,25 @@ func (s *NodeAppService) GetStatus(ctx context.Context, id, tenantID string) (st
 		return "", err
 	}
 
-	// TODO: Implement actual status check using systemd
-	return app.Status, nil
+	// Get actual status from systemd
+	status, err := s.systemdMgr.GetServiceStatus(ctx, app)
+	if err != nil {
+		s.logger.Warn("Failed to get systemd status, using database status",
+			zap.String("id", app.ID.String()),
+			zap.Error(err),
+		)
+		return app.Status, nil
+	}
+
+	// Update database status if different
+	if status != app.Status {
+		app.Status = status
+		if err := s.nodeAppRepo.Update(ctx, app); err != nil {
+			s.logger.Warn("Failed to update app status", zap.Error(err))
+		}
+	}
+
+	return status, nil
 }
 
 // GetLogs gets the logs of a Node.js application
@@ -285,9 +332,28 @@ func (s *NodeAppService) GetLogs(ctx context.Context, id, tenantID string, lines
 		return nil, err
 	}
 
-	// TODO: Implement actual log reading
-	_ = app
-	return []string{"Logs not implemented yet"}, nil
+	// Get logs from systemd journal
+	logs, err := s.systemdMgr.GetServiceLogs(ctx, app, lines)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get logs: %w", err)
+	}
+
+	return logs, nil
+}
+
+// getEnvironmentVars gets environment variables for a Node.js app
+func (s *NodeAppService) getEnvironmentVars(ctx context.Context, appID uuid.UUID) (map[string]string, error) {
+	envs, err := s.nodeAppRepo.ListEnvironmentsByApp(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+
+	envVars := make(map[string]string)
+	for _, env := range envs {
+		envVars[env.Key] = env.Value
+	}
+
+	return envVars, nil
 }
 
 // CreateDependency creates a new dependency for a Node.js app

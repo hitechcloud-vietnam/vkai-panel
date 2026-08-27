@@ -40,7 +40,7 @@ func (s *WebsiteService) Create(ctx context.Context, req *models.CreateWebsiteRe
 	}
 
 	// Get server to determine web server type
-	server, err := s.serverRepo.GetByID(ctx, req.ServerID)
+	server, err := s.serverRepo.GetByID(ctx, tenantID, req.ServerID)
 	if err != nil {
 		return nil, fmt.Errorf("server not found: %w", err)
 	}
@@ -115,7 +115,7 @@ func (s *WebsiteService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	// Disable site in web server
-	server, err := s.serverRepo.GetByID(ctx, website.ServerID)
+	server, err := s.serverRepo.GetByID(ctx, website.TenantID, website.ServerID)
 	if err == nil {
 		adapter, ok := s.registry.Get(server.WebServerType)
 		if ok {
@@ -134,7 +134,7 @@ func (s *WebsiteService) EnableSSL(ctx context.Context, id uuid.UUID, cert, key,
 		return err
 	}
 
-	server, err := s.serverRepo.GetByID(ctx, website.ServerID)
+	server, err := s.serverRepo.GetByID(ctx, website.TenantID, website.ServerID)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ func (s *WebsiteService) AddDomain(ctx context.Context, websiteID uuid.UUID, dom
 
 	domain := &models.Domain{
 		TenantID:  website.TenantID,
-		WebsiteID: websiteID,
+		WebsiteID: &websiteID,
 		Name:      domainName,
 		Type:      domainType,
 		Status:    "active",

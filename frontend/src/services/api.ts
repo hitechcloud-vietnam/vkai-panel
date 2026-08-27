@@ -227,3 +227,41 @@ export const clusterApi = {
   deleteHAPair: (id: string) => api.delete(`/api/v1/ha-pairs/${id}`),
   triggerFailover: (id: string) => api.post(`/api/v1/ha-pairs/${id}/failover`),
 };
+
+// Job API
+export const jobApi = {
+  list: (params?: any) => api.get('/api/v1/jobs', { params }),
+  get: (id: string) => api.get(`/api/v1/jobs/${id}`),
+  getStats: () => api.get('/api/v1/jobs/stats'),
+  getQueueStats: () => api.get('/api/v1/jobs/queue-stats'),
+  delete: (id: string) => api.delete(`/api/v1/jobs/${id}`),
+  cancel: (id: string) => api.post(`/api/v1/jobs/${id}/cancel`),
+  retry: (id: string) => api.post(`/api/v1/jobs/${id}/retry`),
+  enqueueBackup: (data: any) => api.post('/api/v1/jobs/backup', data),
+  enqueueRestore: (data: any) => api.post('/api/v1/jobs/restore', data),
+  enqueueDeploy: (data: any) => api.post('/api/v1/jobs/deploy', data),
+  enqueueSSL: (data: any) => api.post('/api/v1/jobs/ssl', data),
+  enqueueCleanup: (data: any) => api.post('/api/v1/jobs/cleanup', data),
+  cleanupOld: (retentionDays?: number) =>
+    api.post('/api/v1/jobs/cleanup-old', null, { params: { retention_days: retentionDays } }),
+};
+
+// Config API
+export const configApi = {
+  listSnapshots: (params?: any) => api.get('/api/v1/config/snapshots', { params }),
+  getSnapshot: (id: string) => api.get(`/api/v1/config/snapshots/${id}`),
+  createSnapshot: (data: any) => api.post('/api/v1/config/snapshots', data),
+  deleteSnapshot: (id: string) => api.delete(`/api/v1/config/snapshots/${id}`),
+  rollback: (data: any) => api.post('/api/v1/config/rollback', data),
+  getDiff: (id1: string, id2: string) => api.get('/api/v1/config/diff', { params: { id1, id2 } }),
+  getHistory: (params: any) => api.get('/api/v1/config/history', { params }),
+  getStats: () => api.get('/api/v1/config/stats'),
+  cleanup: (keepVersions?: number) =>
+    api.post('/api/v1/config/cleanup', null, { params: { keep_versions: keepVersions } }),
+  validate: (data: any) => api.post('/api/v1/config/validate', data),
+  listTemplates: (params?: any) => api.get('/api/v1/config/templates', { params }),
+  getTemplate: (id: string) => api.get(`/api/v1/config/templates/${id}`),
+  createTemplate: (data: any) => api.post('/api/v1/config/templates', data),
+  updateTemplate: (id: string, data: any) => api.put(`/api/v1/config/templates/${id}`, data),
+  deleteTemplate: (id: string) => api.delete(`/api/v1/config/templates/${id}`),
+};

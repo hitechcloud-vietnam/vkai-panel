@@ -28,7 +28,7 @@ func NewNodeAppHandler(nodeAppService *service.NodeAppService, logger *zap.Logge
 func (h *NodeAppHandler) Create(c *gin.Context) {
 	var req models.CreateNodeAppRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{
+		utils.SendValidationError(c, map[string]string{
 			"server_id": "Server ID is required",
 			"name":      "Name is required",
 			"path":      "Path is required",
@@ -50,7 +50,7 @@ func (h *NodeAppHandler) Create(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, app)
+	utils.Created(c, app)
 }
 
 // Get gets a Node.js application by ID
@@ -74,7 +74,7 @@ func (h *NodeAppHandler) Get(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, app)
+	utils.Success(c, app)
 }
 
 // List lists all Node.js applications for a tenant
@@ -102,7 +102,7 @@ func (h *NodeAppHandler) List(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessWithPagination(c, apps, total, page, perPage)
+	utils.Paginated(c, apps, int64(total), page, perPage)
 }
 
 // Update updates a Node.js application
@@ -132,7 +132,7 @@ func (h *NodeAppHandler) Update(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, app)
+	utils.Success(c, app)
 }
 
 // Delete deletes a Node.js application
@@ -155,7 +155,7 @@ func (h *NodeAppHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Node.js app deleted successfully"})
+	utils.Success(c, gin.H{"message": "Node.js app deleted successfully"})
 }
 
 // Start starts a Node.js application
@@ -178,7 +178,7 @@ func (h *NodeAppHandler) Start(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Node.js app started successfully"})
+	utils.Success(c, gin.H{"message": "Node.js app started successfully"})
 }
 
 // Stop stops a Node.js application
@@ -201,7 +201,7 @@ func (h *NodeAppHandler) Stop(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Node.js app stopped successfully"})
+	utils.Success(c, gin.H{"message": "Node.js app stopped successfully"})
 }
 
 // Restart restarts a Node.js application
@@ -224,7 +224,7 @@ func (h *NodeAppHandler) Restart(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Node.js app restarted successfully"})
+	utils.Success(c, gin.H{"message": "Node.js app restarted successfully"})
 }
 
 // GetStatus gets the status of a Node.js application
@@ -248,7 +248,7 @@ func (h *NodeAppHandler) GetStatus(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"status": status})
+	utils.Success(c, gin.H{"status": status})
 }
 
 // GetLogs gets the logs of a Node.js application
@@ -277,7 +277,7 @@ func (h *NodeAppHandler) GetLogs(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"logs": logs})
+	utils.Success(c, gin.H{"logs": logs})
 }
 
 // CreateDependency creates a new dependency for a Node.js app
@@ -290,7 +290,7 @@ func (h *NodeAppHandler) CreateDependency(c *gin.Context) {
 
 	var req models.CreateNodeAppDependencyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{
+		utils.SendValidationError(c, map[string]string{
 			"name":    "Name is required",
 			"version": "Version is required",
 		})
@@ -310,7 +310,7 @@ func (h *NodeAppHandler) CreateDependency(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, dep)
+	utils.Created(c, dep)
 }
 
 // ListDependencies lists all dependencies for a Node.js app
@@ -334,7 +334,7 @@ func (h *NodeAppHandler) ListDependencies(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, deps)
+	utils.Success(c, deps)
 }
 
 // UpdateDependency updates a dependency
@@ -347,7 +347,7 @@ func (h *NodeAppHandler) UpdateDependency(c *gin.Context) {
 
 	var req models.UpdateNodeAppDependencyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{"version": "Version is required"})
+		utils.SendValidationError(c, map[string]string{"version": "Version is required"})
 		return
 	}
 
@@ -364,7 +364,7 @@ func (h *NodeAppHandler) UpdateDependency(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, dep)
+	utils.Success(c, dep)
 }
 
 // DeleteDependency deletes a dependency
@@ -387,7 +387,7 @@ func (h *NodeAppHandler) DeleteDependency(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Dependency deleted successfully"})
+	utils.Success(c, gin.H{"message": "Dependency deleted successfully"})
 }
 
 // CreateEnvironment creates a new environment variable for a Node.js app
@@ -400,7 +400,7 @@ func (h *NodeAppHandler) CreateEnvironment(c *gin.Context) {
 
 	var req models.CreateNodeAppEnvironmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{
+		utils.SendValidationError(c, map[string]string{
 			"key":   "Key is required",
 			"value": "Value is required",
 		})
@@ -420,7 +420,7 @@ func (h *NodeAppHandler) CreateEnvironment(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusCreated, env)
+	utils.Created(c, env)
 }
 
 // ListEnvironments lists all environment variables for a Node.js app
@@ -444,7 +444,7 @@ func (h *NodeAppHandler) ListEnvironments(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, envs)
+	utils.Success(c, envs)
 }
 
 // UpdateEnvironment updates an environment variable
@@ -457,7 +457,7 @@ func (h *NodeAppHandler) UpdateEnvironment(c *gin.Context) {
 
 	var req models.UpdateNodeAppEnvironmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ValidationError(c, map[string]string{"value": "Value is required"})
+		utils.SendValidationError(c, map[string]string{"value": "Value is required"})
 		return
 	}
 
@@ -474,7 +474,7 @@ func (h *NodeAppHandler) UpdateEnvironment(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, env)
+	utils.Success(c, env)
 }
 
 // DeleteEnvironment deletes an environment variable
@@ -497,5 +497,5 @@ func (h *NodeAppHandler) DeleteEnvironment(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, http.StatusOK, gin.H{"message": "Environment variable deleted successfully"})
+	utils.Success(c, gin.H{"message": "Environment variable deleted successfully"})
 }

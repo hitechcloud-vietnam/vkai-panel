@@ -187,6 +187,47 @@ deploy: build
 	./deploy/install.sh
 	@echo "Deployment completed!"
 
+## deploy-release: Deploy a specific release
+deploy-release:
+	@echo "Deploying release..."
+	./deploy/scripts/deploy.sh deploy $(release)
+	@echo "Deployment completed!"
+
+## rollback: Rollback to previous release
+rollback:
+	@echo "Rolling back..."
+	./deploy/scripts/deploy.sh rollback
+	@echo "Rollback completed!"
+
+## status: Show deployment status
+status:
+	./deploy/scripts/deploy.sh status
+
+## restart: Restart services
+restart:
+	@echo "Restarting services..."
+	./deploy/scripts/deploy.sh restart
+	@echo "Services restarted!"
+
+## install-systemd: Install systemd service files
+install-systemd:
+	@echo "Installing systemd services..."
+	sudo cp deploy/systemd/vkai-panel-api.service /etc/systemd/system/
+	sudo cp deploy/systemd/vkai-panel-frontend.service /etc/systemd/system/
+	sudo systemctl daemon-reload
+	sudo systemctl enable vkai-panel-api vkai-panel-frontend
+	@echo "Systemd services installed!"
+
+## uninstall-systemd: Uninstall systemd service files
+uninstall-systemd:
+	@echo "Uninstalling systemd services..."
+	sudo systemctl disable vkai-panel-api vkai-panel-frontend
+	sudo systemctl stop vkai-panel-api vkai-panel-frontend
+	sudo rm -f /etc/systemd/system/vkai-panel-api.service
+	sudo rm -f /etc/systemd/system/vkai-panel-frontend.service
+	sudo systemctl daemon-reload
+	@echo "Systemd services uninstalled!"
+
 ## setup: Setup development environment
 setup:
 	@echo "Setting up development environment..."

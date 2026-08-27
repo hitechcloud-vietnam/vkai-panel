@@ -6,7 +6,6 @@ import (
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/auth"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
-	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 )
 
 type Router struct {
@@ -36,6 +35,9 @@ type Router struct {
 	reverseProxyHandler *ReverseProxyHandler
 	gitDeploymentHandler *GitDeploymentHandler
 	wordpressHandler *WordPressHandler
+	wsHandler         *WebSocketHandler
+	jobHandler        *JobHandler
+	configHandler     *ConfigHandler
 	jwtManager        *auth.JWTManager
 	logger            *zap.Logger
 }
@@ -66,6 +68,9 @@ func NewRouter(
 	reverseProxyHandler *ReverseProxyHandler,
 	gitDeploymentHandler *GitDeploymentHandler,
 	wordpressHandler *WordPressHandler,
+	wsHandler *WebSocketHandler,
+	jobHandler *JobHandler,
+	configHandler *ConfigHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -98,6 +103,9 @@ func NewRouter(
 		reverseProxyHandler: reverseProxyHandler,
 		gitDeploymentHandler: gitDeploymentHandler,
 		wordpressHandler:   wordpressHandler,
+		wsHandler:          wsHandler,
+		jobHandler:         jobHandler,
+		configHandler:      configHandler,
 		jwtManager:         jwtManager,
 		logger:             logger,
 	}
@@ -533,6 +541,55 @@ func (r *Router) Setup() *gin.Engine {
 			haPairs.PUT("/:id", r.clusterHandler.UpdateHAPair)
 			haPairs.POST("/:id/failover", r.clusterHandler.TriggerFailover)
 			haPairs.DELETE("/:id", r.clusterHandler.DeleteHAPair)
+		}
+
+		// WebSocket endpoints
+		ws := protected.Group("/ws")
+		{
+			ws.GET("", r.wsHandler.HandleConnection)
+			ws.GET("/status", r.wsHandler.GetStatus)
+			ws.GET("/rooms/:room/status", r.wsHandler.GetRoomStatus)
+			ws.POST("/broadcast", r.wsHandler.BroadcastMessage)
+			ws.POST("/direct", r.wsHandler.SendDirectMessage)
+		}
+
+		// Jobs
+		jobs := protected.Group("/jobs")
+		{
+			jobs.GET("", r.jobHandler.ListJobs)
+			jobs.GET("/stats", r.jobHandler.GetJobStats)
+			jobs.GET("/queue-stats", r.jobHandler.GetQueueStats)
+			jobs.GET("/:id", r.jobHandler.GetJob)
+			jobs.DELETE("/:id", r.jobHandler.DeleteJob)
+			jobs.POST("/:id/cancel", r.jobHandler.CancelJob)
+			jobs.POST("/:id/retry", r.jobHandler.RetryJob)
+			jobs.POST("/backup", r.jobHandler.EnqueueBackup)
+			jobs.POST("/restore", r.jobHandler.EnqueueRestore)
+			jobs.POST("/deploy", r.jobHandler.EnqueueDeploy)
+			jobs.POST("/ssl", r.jobHandler.EnqueueSSL)
+			jobs.POST("/cleanup", r.jobHandler.EnqueueCleanup)
+			jobs.POST("/cleanup-old", r.jobHandler.CleanupOldJobs)
+		}
+
+		// Config
+		config := protected.Group("/config")
+		{
+			config.POST("/snapshots", r.configHandler.CreateSnapshot)
+			config.GET("/snapshots", r.configHandler.ListSnapshots)
+			config.GET("/snapshots/:id", r.configHandler.GetSnapshot)
+			config.DELETE("/snapshots/:id", r.configHandler.DeleteSnapshot)
+			config.POST("/rollback", r.configHandler.Rollback)
+			config.GET("/diff", r.configHandler.GetDiff)
+			config.GET("/history", r.configHandler.GetSnapshotHistory)
+			config.GET("/stats", r.configHandler.GetConfigStats)
+			config.POST("/cleanup", r.configHandler.CleanupOldSnapshots)
+			config.POST("/validate", r.configHandler.ValidateConfig)
+
+			config.POST("/templates", r.configHandler.CreateTemplate)
+			config.GET("/templates", r.configHandler.ListTemplates)
+			config.GET("/templates/:id", r.configHandler.GetTemplate)
+			config.PUT("/templates/:id", r.configHandler.UpdateTemplate)
+			config.DELETE("/templates/:id", r.configHandler.DeleteTemplate)
 		}
 	}
 

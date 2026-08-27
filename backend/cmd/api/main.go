@@ -11,15 +11,17 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"gopkg.in/natefinsh/lumberjack.v2"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/auth"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/config"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/database"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/handler"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/job"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/webserver"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/websocket"
 )
 
 func main() {
@@ -113,7 +115,7 @@ func main() {
 	fileManagerHandler := handler.NewFileManagerHandler(fileManager)
 
 	// Initialize monitoring
-	monitoringRepo := repository.NewMonitoringRepository(db)
+	monitoringRepo := repository.NewMonitoringRepository(db.DB)
 	monitoringService := service.NewMonitoringService(monitoringRepo, logger)
 	monitoringHandler := handler.NewMonitoringHandler(monitoringService, logger)
 
@@ -123,39 +125,65 @@ func main() {
 	nodeAppHandler := handler.NewNodeAppHandler(nodeAppService, logger)
 
 	// Initialize reverse proxy
-	reverseProxyRepo := repository.NewReverseProxyRepository(db)
+	reverseProxyRepo := repository.NewReverseProxyRepository(db.DB)
 	reverseProxyService := service.NewReverseProxyService(reverseProxyRepo, logger)
 	reverseProxyHandler := handler.NewReverseProxyHandler(reverseProxyService)
 
 	// Initialize git deployment
-	gitDeploymentRepo := repository.NewGitDeploymentRepository(db)
+	gitDeploymentRepo := repository.NewGitDeploymentRepository(db.DB)
 	gitDeploymentService := service.NewGitDeploymentService(gitDeploymentRepo, logger)
 	gitDeploymentHandler := handler.NewGitDeploymentHandler(gitDeploymentService)
 
 	// Initialize WordPress
-	wordpressRepo := repository.NewWordPressRepository(db)
+	wordpressRepo := repository.NewWordPressRepository(db.DB)
 	wordpressService := service.NewWordPressService(wordpressRepo, logger)
 	wordpressHandler := handler.NewWordPressHandler(wordpressService)
 
 	// Initialize log management
-	logRepo := repository.NewLogRepository(db)
+	logRepo := repository.NewLogRepository(db.DB)
 	logService := service.NewLogService(logRepo, logger)
 	logHandler := handler.NewLogHandler(logService, logger)
 
 	// Initialize notifications
-	notificationRepo := repository.NewNotificationRepository(db)
+	notificationRepo := repository.NewNotificationRepository(db.DB)
 	notificationService := service.NewNotificationService(notificationRepo, logger)
 	notificationHandler := handler.NewNotificationHandler(notificationService, logger)
 
 	// Initialize audit logging
-	auditRepo := repository.NewAuditRepository(db)
+	auditRepo := repository.NewAuditRepository(db.DB)
 	auditService := service.NewAuditService(auditRepo, logger)
 	auditHandler := handler.NewAuditHandler(auditService, logger)
 
 	// Initialize cluster management
-	clusterRepo := repository.NewClusterRepository(db)
+	clusterRepo := repository.NewClusterRepository(db.DB)
 	clusterService := service.NewClusterService(clusterRepo, logger)
 	clusterHandler := handler.NewClusterHandler(clusterService, logger)
+
+	// Initialize WebSocket hub
+	wsHub := websocket.NewHub(logger)
+	go wsHub.Run()
+
+	// Initialize WebSocket handler
+	wsHandler := handler.NewWebSocketHandler(wsHub, logger)
+
+	// Initialize job queue
+	jobQueue := job.NewQueueManager("localhost:6379", "", 0, logger)
+	defer jobQueue.Close()
+
+	// Initialize job service
+	jobRepo := repository.NewJobRepository(db.DB)
+	jobService := service.NewJobService(jobRepo, jobQueue, logger)
+	jobHandler := handler.NewJobHandler(jobService, logger)
+
+	// Start job worker in background
+	go func() {
+		jobQueue.StartWorker(10)
+	}()
+
+	// Initialize config management
+	configRepo := repository.NewConfigRepository(db.DB)
+	configService := service.NewConfigService(configRepo, logger)
+	configHandler := handler.NewConfigHandler(configService, logger)
 
 	// Setup router
 	router := handler.NewRouter(
@@ -184,6 +212,9 @@ func main() {
 		reverseProxyHandler,
 		gitDeploymentHandler,
 		wordpressHandler,
+		wsHandler,
+		jobHandler,
+		configHandler,
 		jwtManager,
 		logger,
 	)

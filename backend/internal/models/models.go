@@ -1,11 +1,37 @@
 package models
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// JSONMap is a map[string]interface{} that implements database/sql Scanner and driver.Valuer
+type JSONMap map[string]interface{}
+
+// Value implements the driver.Valuer interface
+func (j JSONMap) Value() (driver.Value, error) {
+	if j == nil {
+		return nil, nil
+	}
+	return json.Marshal(j)
+}
+
+// Scan implements the sql.Scanner interface
+func (j *JSONMap) Scan(value interface{}) error {
+	if value == nil {
+		*j = nil
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("JSONMap.Scan: expected []byte, got %T", value)
+	}
+	return json.Unmarshal(bytes, j)
+}
 
 // ============================================================
 // TENANT
@@ -97,8 +123,9 @@ type Server struct {
 	DiskTotal   int64      `json:"disk_total" db:"disk_total"`
 	Location    string     `json:"location" db:"location"`
 	Tags        []string   `json:"tags" db:"tags"`
-	Role        string     `json:"role" db:"role"`
-	Status      string     `json:"status" db:"status"`
+	Role          string     `json:"role" db:"role"`
+	WebServerType string     `json:"web_server_type" db:"web_server_type"`
+	Status        string     `json:"status" db:"status"`
 	LastSeenAt  *time.Time `json:"last_seen_at" db:"last_seen_at"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
@@ -361,40 +388,6 @@ type APIKey struct {
 	ExpiresAt *time.Time `json:"expires_at" db:"expires_at"`
 	Status    string     `json:"status" db:"status"`
 	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-}
-
-// ============================================================
-// AUDIT LOG
-// ============================================================
-
-type AuditLog struct {
-	ID         uuid.UUID `json:"id" db:"id"`
-	TenantID   uuid.UUID `json:"tenant_id" db:"tenant_id"`
-	UserID     uuid.UUID `json:"user_id" db:"user_id"`
-	Action     string    `json:"action" db:"action"`
-	Resource   string    `json:"resource" db:"resource"`
-	ResourceID string    `json:"resource_id" db:"resource_id"`
-	Details    string    `json:"details" db:"details"`
-	IPAddress  string    `json:"ip_address" db:"ip_address"`
-	UserAgent  string    `json:"user_agent" db:"user_agent"`
-	Result     string    `json:"result" db:"result"`
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
-}
-
-// ============================================================
-// NOTIFICATION
-// ============================================================
-
-type Notification struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	TenantID  uuid.UUID `json:"tenant_id" db:"tenant_id"`
-	UserID    *uuid.UUID `json:"user_id" db:"user_id"`
-	Type      string    `json:"type" db:"type"`
-	Title     string    `json:"title" db:"title"`
-	Message   string    `json:"message" db:"message"`
-	Severity  string    `json:"severity" db:"severity"` // info, warning, error, critical
-	Read      bool      `json:"read" db:"read"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
 // ============================================================

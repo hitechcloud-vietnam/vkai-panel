@@ -21,14 +21,6 @@ type APIError struct {
 	Details string `json:"details,omitempty"`
 }
 
-type PaginatedResponse struct {
-	Items      interface{} `json:"items"`
-	Total      int64       `json:"total"`
-	Page       int         `json:"page"`
-	PerPage    int         `json:"per_page"`
-	TotalPages int         `json:"total_pages"`
-}
-
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, APIResponse{
 		Success:   true,
@@ -47,6 +39,18 @@ func Created(c *gin.Context, data interface{}) {
 
 func NoContent(c *gin.Context) {
 	c.Status(http.StatusNoContent)
+}
+
+// Error sends an error response with a specific status code
+func Error(c *gin.Context, statusCode int, message string) {
+	c.JSON(statusCode, APIResponse{
+		Success: false,
+		Error: &APIError{
+			Code:    http.StatusText(statusCode),
+			Message: message,
+		},
+		RequestID: GetRequestID(c),
+	})
 }
 
 func BadRequest(c *gin.Context, message string) {
@@ -104,7 +108,7 @@ func Conflict(c *gin.Context, message string) {
 	})
 }
 
-func InternalError(c *gin.Context, err error) {
+func InternalError(c *gin.Context, err interface{}) {
 	c.JSON(http.StatusInternalServerError, APIResponse{
 		Success: false,
 		Error: &APIError{
@@ -137,8 +141,8 @@ func GetRequestID(c *gin.Context) string {
 	return uuid.New().String()
 }
 
-// ValidationError sends a validation error response
-func ValidationError(c *gin.Context, errors map[string]string) {
+// SendValidationError sends a validation error response
+func SendValidationError(c *gin.Context, errors map[string]string) {
 	c.JSON(http.StatusUnprocessableEntity, APIResponse{
 		Success: false,
 		Error: &APIError{

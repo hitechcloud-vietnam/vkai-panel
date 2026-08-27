@@ -120,9 +120,4 @@ func SecurityHeaders() gin.HandlerFunc {
 	}
 }
 
-func RateLimit() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// TODO: Implement rate limiting with Redis
-		c.Next()
-	}
-}
+

@@ -5,7 +5,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
-	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
 )
