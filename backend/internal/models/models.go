@@ -65,9 +65,9 @@ type User struct {
 	LastName     string     `json:"last_name" db:"last_name"`
 	Status       string     `json:"status" db:"status"`
 	LastLoginAt  *time.Time `json:"last_login_at" db:"last_login_at"`
-	LastLoginIP  string     `json:"last_login_ip" db:"last_login_ip"`
+	LastLoginIP  *string    `json:"last_login_ip" db:"last_login_ip"`
 	MFAEnabled   bool       `json:"mfa_enabled" db:"mfa_enabled"`
-	MFASecret    string     `json:"-" db:"mfa_secret"`
+	MFASecret    *string    `json:"-" db:"mfa_secret"`
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
 	DeletedAt    *time.Time `json:"-" db:"deleted_at"`
