@@ -42,6 +42,7 @@ type Router struct {
 	apiKeyHandler        *APIKeyHandler
 	wafHandler           *WAFHandler
 	websiteStatsHandler  *WebsiteStatsHandler
+	emailMarketingHandler *EmailMarketingHandler
 	jwtManager           *auth.JWTManager
 	logger               *zap.Logger
 }
@@ -79,6 +80,7 @@ func NewRouter(
 	apiKeyHandler *APIKeyHandler,
 	wafHandler *WAFHandler,
 	websiteStatsHandler *WebsiteStatsHandler,
+	emailMarketingHandler *EmailMarketingHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -118,6 +120,7 @@ func NewRouter(
 		apiKeyHandler:        apiKeyHandler,
 		wafHandler:           wafHandler,
 		websiteStatsHandler:  websiteStatsHandler,
+		emailMarketingHandler: emailMarketingHandler,
 		jwtManager:           jwtManager,
 		logger:               logger,
 	}
@@ -650,6 +653,36 @@ func (r *Router) Setup() *gin.Engine {
 			websiteStats.GET("/overview", r.websiteStatsHandler.GetOverview)
 			websiteStats.GET("/visitors", r.websiteStatsHandler.ListVisitorLogs)
 			websiteStats.POST("/visitors", r.websiteStatsHandler.RecordVisitorLog)
+		}
+
+		// Email Marketing
+		emailMarketing := protected.Group("/email-marketing")
+		{
+			emailMarketing.GET("/stats", r.emailMarketingHandler.GetStats)
+
+			// Campaigns
+			emailMarketing.GET("/campaigns", r.emailMarketingHandler.ListCampaigns)
+			emailMarketing.POST("/campaigns", r.emailMarketingHandler.CreateCampaign)
+			emailMarketing.GET("/campaigns/:id", r.emailMarketingHandler.GetCampaign)
+			emailMarketing.PUT("/campaigns/:id", r.emailMarketingHandler.UpdateCampaign)
+			emailMarketing.DELETE("/campaigns/:id", r.emailMarketingHandler.DeleteCampaign)
+			emailMarketing.POST("/campaigns/:id/send", r.emailMarketingHandler.SendCampaign)
+			emailMarketing.POST("/campaigns/:id/pause", r.emailMarketingHandler.PauseCampaign)
+
+			// Contacts
+			emailMarketing.GET("/contacts", r.emailMarketingHandler.ListContacts)
+			emailMarketing.POST("/contacts", r.emailMarketingHandler.CreateContact)
+			emailMarketing.DELETE("/contacts/:id", r.emailMarketingHandler.DeleteContact)
+
+			// Lists
+			emailMarketing.GET("/lists", r.emailMarketingHandler.ListLists)
+			emailMarketing.POST("/lists", r.emailMarketingHandler.CreateList)
+			emailMarketing.DELETE("/lists/:id", r.emailMarketingHandler.DeleteList)
+
+			// Templates
+			emailMarketing.GET("/templates", r.emailMarketingHandler.ListTemplates)
+			emailMarketing.POST("/templates", r.emailMarketingHandler.CreateTemplate)
+			emailMarketing.DELETE("/templates/:id", r.emailMarketingHandler.DeleteTemplate)
 		}
 
 		// Config

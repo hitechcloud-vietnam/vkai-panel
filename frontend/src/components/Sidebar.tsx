@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronRight,
   BarChart3,
+  Mail,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -119,6 +120,11 @@ const menuItems: MenuItem[] = [
     label: 'Website Stats',
     icon: <BarChart3 size={18} />,
     href: '/website-stats',
+  },
+  {
+    label: 'Email Marketing',
+    icon: <Mail size={18} />,
+    href: '/email-marketing',
   },
   {
     label: 'Backups',

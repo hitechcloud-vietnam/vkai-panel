@@ -203,6 +203,11 @@ func main() {
 	websiteStatsService := service.NewWebsiteStatsService(websiteStatsRepo, logger)
 	websiteStatsHandler := handler.NewWebsiteStatsHandler(websiteStatsService, logger)
 
+	// Initialize Email Marketing
+	emailMarketingRepo := repository.NewEmailMarketingRepository(db.DB, logger)
+	emailMarketingService := service.NewEmailMarketingService(emailMarketingRepo, logger)
+	emailMarketingHandler := handler.NewEmailMarketingHandler(emailMarketingService, logger)
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -237,6 +242,7 @@ func main() {
 		apiKeyHandler,
 		wafHandler,
 		websiteStatsHandler,
+		emailMarketingHandler,
 		jwtManager,
 		logger,
 	)
