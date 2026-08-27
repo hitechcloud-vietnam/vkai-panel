@@ -1,11 +1,11 @@
-# vKAI Panel Architecture
+# VKAI Panel Architecture
 
 ## Table of Contents
 
 1. [Overview](#overview)
 2. [System Architecture](#system-architecture)
-3. [Backend Architecture](#backend-architecture)
-4. [Frontend Architecture](#frontend-architecture)
+3. [Core API Architecture (`core/`)](#core-api-architecture-core)
+4. [Panel UI Architecture (`panel/`)](#panel-ui-architecture-panel)
 5. [Agent Architecture](#agent-architecture)
 6. [Database Architecture](#database-architecture)
 7. [Security Architecture](#security-architecture)
@@ -17,7 +17,7 @@
 
 ## Overview
 
-vKAI Panel is an enterprise-grade multi-server hosting control panel designed for hosting providers and DevOps teams. It provides a modern web interface for managing servers, websites, databases, DNS, SSL certificates, and more.
+VKAI Panel is an enterprise-grade multi-server hosting control panel designed for hosting providers and DevOps teams. It provides a modern web interface for managing servers, websites, databases, DNS, SSL certificates, and more.
 
 ### Design Principles
 
@@ -35,33 +35,46 @@ vKAI Panel is an enterprise-grade multi-server hosting control panel designed fo
 ### High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           Load Balancer                             │
-│                        (Nginx/HAProxy)                              │
-└─────────────────────────────────────────────────────────────────────┘
+                                 Internet
                                     │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-┌─────────────────────────┐     ┌─────────────────────────┐
-│   Frontend (Next.js)    │     │    API Server (Go)      │
-│      Port 3000          │     │     Port 30110          │
-└─────────────────────────┘     └─────────────────────────┘
-                                          │
-                        ┌─────────────────┼─────────────────┐
-                        │                 │                 │
-                        ▼                 ▼                 ▼
-              ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-              │ PostgreSQL  │   │    Redis    │   │   Agent     │
-              │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
-              └─────────────┘   └─────────────┘   └─────────────┘
+              ┌─────────────────────┴─────────────────────┐
+              │                                           │
+              ▼                                           ▼
+┌───────────────────────────┐             ┌───────────────────────────┐
+│  Port 80 / 443            │             │  Port 8888 (VKAI_PANEL_   │
+│  Customer websites        │             │  PORT) + security         │
+│  (nginx / apache / ...)   │             │  entrance /vkai_xxxxxxxx  │
+│  Web root:                │             │  ADMIN PANEL ONLY         │
+│  /vkai-panel/www/domains/ │             │                           │
+└───────────────────────────┘             └─────────────┬─────────────┘
+                                                        │
+                                      ┌─────────────────┴─────────────────┐
+                                      │                                   │
+                                      ▼                                   ▼
+                        ┌─────────────────────────┐     ┌─────────────────────────┐
+                        │   vkai-ui (Next.js)     │     │  vkai-api (Go)          │
+                        │   Port 3000, localhost  │     │  Port 30110, localhost  │
+                        └─────────────────────────┘     └─────────────────────────┘
+                                                                    │
+                                                  ┌─────────────────┼─────────────────┐
+                                                  │                 │                 │
+                                                  ▼                 ▼                 ▼
+                                        ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+                                        │ PostgreSQL  │   │    Redis    │   │ vkai-agent  │
+                                        │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
+                                        └─────────────┘   └─────────────┘   └─────────────┘
 ```
+
+The panel never listens on 80 or 443: those ports belong to the customer
+websites this server hosts. `vkai-api` owns the panel port itself and serves
+both the API and the UI behind the security entrance; ports 30110 and 3000 are
+bound to localhost and are not reachable from the Internet.
 
 ### Component Overview
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| Frontend | Next.js 14, React 18 | User interface |
+| UI (`panel/`, `vkai-ui`) | Next.js 14, React 18 | User interface |
 | API Server | Go 1.22, Gin | Business logic |
 | Database | PostgreSQL 16 | Data storage |
 | Cache | Redis 7 | Session, cache |
@@ -70,7 +83,11 @@ vKAI Panel is an enterprise-grade multi-server hosting control panel designed fo
 
 ---
 
-## Backend Architecture
+## Core API Architecture (`core/`)
+
+The Go API lives in the **`core/`** directory (formerly `backend/`) and ships as
+the `vkai-api` systemd service. The Go module path is unchanged:
+`github.com/hitechcloud-vietnam/vkai-panel`.
 
 ### Layered Architecture
 
@@ -89,7 +106,7 @@ vKAI Panel is an enterprise-grade multi-server hosting control panel designed fo
 ### Package Structure
 
 ```
-backend/
+core/
 ├── cmd/
 │   ├── api/                    # API server entry point
 │   └── migrate/                # Database migration tool
@@ -215,7 +232,11 @@ func main() {
 
 ---
 
-## Frontend Architecture
+## Panel UI Architecture (`panel/`)
+
+The Next.js UI lives in the **`panel/`** directory (formerly `frontend/`) and
+ships as the `vkai-ui` systemd service. It is only reachable through the panel
+port and the security entrance, never directly from the Internet.
 
 ### Component Architecture
 
@@ -236,7 +257,7 @@ func main() {
 ### Directory Structure
 
 ```
-frontend/
+panel/
 ├── src/
 │   ├── app/                    # Next.js app router
 │   │   ├── layout.tsx         # Root layout
@@ -557,44 +578,98 @@ Request ──► Auth Middleware ──► RBAC Check ──► Handler
 ### Production Deployment
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Nginx (Reverse Proxy)                  │
-│                    Port 80/443 (HTTP/HTTPS)                 │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-              ▼                               ▼
-┌─────────────────────────┐     ┌─────────────────────────┐
-│   Frontend (Next.js)    │     │    API Server (Go)      │
-│      Port 3000          │     │     Port 30110          │
-│    (systemd service)    │     │    (systemd service)    │
-└─────────────────────────┘     └─────────────────────────┘
-                                          │
-                        ┌─────────────────┼─────────────────┐
-                        │                 │                 │
-                        ▼                 ▼                 ▼
-              ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-              │ PostgreSQL  │   │    Redis    │   │   Agent     │
-              │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
-              │ (systemd)   │   │ (systemd)   │   │ (systemd)   │
-              └─────────────┘   └─────────────┘   └─────────────┘
+        Customer traffic                      Administrator traffic
+              │                                          │
+              ▼                                          ▼
+┌─────────────────────────────┐        ┌─────────────────────────────┐
+│  nginx / apache vhosts      │        │  vkai-api on port 8888      │
+│  Port 80 / 443              │        │  + entrance /vkai_xxxxxxxx  │
+│  Root: /vkai-panel/www/     │        │  + IP allow list, TLS       │
+│        domains/<domain>     │        │  (systemd: vkai-api)        │
+│  Logs: /vkai-panel/logs/    │        └──────────────┬──────────────┘
+│        sites/<domain>       │                       │
+└─────────────────────────────┘        ┌──────────────┴──────────────┐
+                                       │                             │
+                                       ▼                             ▼
+                         ┌─────────────────────────┐   ┌─────────────────────────┐
+                         │   vkai-ui (Next.js)     │   │   vkai-api internal API │
+                         │   127.0.0.1:3000        │   │   127.0.0.1:30110       │
+                         │   (systemd: vkai-ui)    │   │                         │
+                         └─────────────────────────┘   └────────────┬────────────┘
+                                                                    │
+                                                  ┌─────────────────┼─────────────────┐
+                                                  │                 │                 │
+                                                  ▼                 ▼                 ▼
+                                        ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+                                        │ PostgreSQL  │   │    Redis    │   │ vkai-agent  │
+                                        │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
+                                        │ (systemd)   │   │ (systemd)   │   │ (systemd)   │
+                                        └─────────────┘   └─────────────┘   └─────────────┘
 ```
+
+Ports 80 and 443 are reserved for customer websites. The panel is reached only
+through `VKAI_PANEL_PORT` (default `8888`) plus the security entrance; anything
+that arrives on the panel port without the correct host, source IP and entrance
+path receives a neutral 404. See [PANEL_ACCESS.md](PANEL_ACCESS.md).
+
+### Installed Layout
+
+| Path | Contents |
+|------|----------|
+| `/vkai-panel/` | Installation root |
+| `/vkai-panel/core/` | API source and binaries (`vkai-api`) |
+| `/vkai-panel/panel/` | Built UI served by `vkai-ui` |
+| `/vkai-panel/www/domains/<domain>/` | Customer website document roots |
+| `/vkai-panel/www/backup/` | Website and database backups |
+| `/vkai-panel/www/default/` | Default page for unmatched vhosts |
+| `/vkai-panel/logs/` | Panel logs |
+| `/vkai-panel/logs/sites/<domain>/` | Per-site web server logs |
+| `/vkai-panel/etc/` | Panel configuration (`.env`, `config.yaml`) |
+| `/vkai-panel/ssl/` | TLS certificates |
+| `/vkai-panel/tmp/` | Temporary files |
+| `/vkai-panel/etc/panel_access.json` | Generated panel port and entrance (mode `0600`) |
 
 ### Systemd Services
 
+| Unit | Role | Ports |
+|------|------|-------|
+| `vkai-api` | Go API; also owns the panel port and the security entrance | 8888 public, 30110 localhost |
+| `vkai-ui` | Next.js UI | 3000 localhost only |
+| `vkai-agent` | Node agent on each managed server | 30111 |
+
 ```ini
-# vkai-api.service
+# /etc/systemd/system/vkai-api.service
 [Unit]
-Description=vKAI Panel API Server
+Description=VKAI Panel API Server
 After=network.target postgresql.service redis.service
 
 [Service]
 Type=simple
 User=vkai
 Group=vkai
-WorkingDirectory=/opt/vkai-panel/backend
-ExecStart=/opt/vkai-panel/backend/bin/vkai-api
+WorkingDirectory=/vkai-panel/core
+EnvironmentFile=/vkai-panel/etc/.env
+ExecStart=/vkai-panel/core/bin/vkai-api
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```ini
+# /etc/systemd/system/vkai-ui.service
+[Unit]
+Description=VKAI Panel UI
+After=network.target vkai-api.service
+
+[Service]
+Type=simple
+User=vkai
+Group=vkai
+WorkingDirectory=/vkai-panel/panel
+EnvironmentFile=/vkai-panel/etc/.env
+ExecStart=/usr/bin/npm run start
 Restart=always
 RestartSec=5
 

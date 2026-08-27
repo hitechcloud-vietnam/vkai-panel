@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Chặn push thẳng vào main từ máy lập trình viên.
+# Cài đặt: git config core.hooksPath githooks   (hoặc: make hooks)
+protected="main"
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  branch="${remote_ref#refs/heads/}"
+  if [ "$branch" = "$protected" ]; then
+    echo "───────────────────────────────────────────────────────────"
+    echo " TỪ CHỐI: không được push thẳng vào nhánh '$protected'."
+    echo " Quy trình bắt buộc:"
+    echo "   git switch -c feat/<ten-tinh-nang>"
+    echo "   git push -u origin feat/<ten-tinh-nang>"
+    echo "   gh pr create --base main"
+    echo " Chỉ hợp nhất khi toàn bộ CI đã xanh."
+    echo "───────────────────────────────────────────────────────────"
+    exit 1
+  fi
+done
+exit 0

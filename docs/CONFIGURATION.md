@@ -1,95 +1,193 @@
-# vKAI Panel Configuration Guide
+# VKAI Panel Configuration Guide
 
 ## Table of Contents
 
-1. [Environment Variables](#environment-variables)
-2. [Database Configuration](#database-configuration)
-3. [Redis Configuration](#redis-configuration)
-4. [JWT Configuration](#jwt-configuration)
-5. [Logging Configuration](#logging-configuration)
-6. [Server Configuration](#server-configuration)
-7. [Nginx Configuration](#nginx-configuration)
-8. [SSL Configuration](#ssl-configuration)
-9. [Backup Configuration](#backup-configuration)
-10. [Notification Configuration](#notification-configuration)
-11. [Security Configuration](#security-configuration)
-12. [Performance Tuning](#performance-tuning)
+1. [Standard Paths](#standard-paths)
+2. [Environment Variables](#environment-variables)
+3. [Database Configuration](#database-configuration)
+4. [Redis Configuration](#redis-configuration)
+5. [JWT Configuration](#jwt-configuration)
+6. [Logging Configuration](#logging-configuration)
+7. [Server Configuration](#server-configuration)
+8. [Nginx Configuration](#nginx-configuration)
+9. [SSL Configuration](#ssl-configuration)
+10. [Backup Configuration](#backup-configuration)
+11. [Notification Configuration](#notification-configuration)
+12. [Security Configuration](#security-configuration)
+13. [Performance Tuning](#performance-tuning)
+
+---
+
+## Standard Paths
+
+Every absolute path the panel uses is derived from a single installation root,
+so an operator can relocate the whole tree with one variable.
+
+| Path | Contents | Variable |
+|------|----------|----------|
+| `/vkai-panel/` | Installation root | `VKAI_PANEL_ROOT` |
+| `/vkai-panel/core/` | API code and binaries (`vkai-api`) | derived |
+| `/vkai-panel/panel/` | Built UI (`vkai-ui`) | derived |
+| `/vkai-panel/www/domains/<domain>/` | Customer website document roots | `VKAI_WEB_ROOT` |
+| `/vkai-panel/www/backup/` | Website and database backups | `VKAI_BACKUP_ROOT` |
+| `/vkai-panel/www/default/` | Catch-all vhost for unmatched hosts | derived |
+| `/vkai-panel/logs/` | Panel logs | `VKAI_LOG_ROOT` |
+| `/vkai-panel/logs/sites/<domain>/` | Per-site web server logs | derived |
+| `/vkai-panel/etc/` | `.env`, `config.yaml`, `panel_access.json` | `VKAI_ETC_ROOT` |
+| `/vkai-panel/ssl/` | Certificates (`ssl/panel/` for the panel itself) | `VKAI_SSL_ROOT` |
+| `/vkai-panel/tmp/` | Panel-owned scratch space | `VKAI_TMP_ROOT` |
+
+Overriding `VKAI_PANEL_ROOT` moves every derived path with it. Overriding one of
+the specific variables moves only that subtree, which is how a separate backup
+volume or log partition is mounted in. Legacy unprefixed names (`PANEL_ROOT`,
+`WEB_ROOT`, `BACKUP_ROOT`, `LOG_ROOT`, `ETC_ROOT`, `SSL_ROOT`, `TMP_ROOT`) are
+still honoured for upgrades.
+
+`/opt/vkai-panel` and `/var/www` are the pre-whitelabel locations. They are no
+longer used.
 
 ---
 
 ## Environment Variables
 
-### Backend Configuration
+Every panel variable carries the **`VKAI_`** prefix. Precedence is
+**defaults < `config.yaml` < environment**, so a variable always wins over the
+file.
 
-Create `/opt/vkai-panel/.env`:
+### Core API Configuration (`core/`, service `vkai-api`)
+
+Create `/vkai-panel/etc/.env`:
 
 ```bash
 # ===========================================
-# Server Configuration
+# Panel access gate - own port, never 80/443
 # ===========================================
-SERVER_HOST=0.0.0.0
-SERVER_PORT=30110
-SERVER_READ_TIMEOUT=30s
-SERVER_WRITE_TIMEOUT=30s
-SERVER_IDLE_TIMEOUT=120s
+VKAI_PANEL_ENABLED=true
+VKAI_PANEL_PORT=8888
+VKAI_PANEL_BIND=0.0.0.0
+# Empty on first start: an entrance is generated and printed once.
+VKAI_PANEL_ENTRANCE=
+VKAI_PANEL_ENTRANCE_ENABLED=true
+VKAI_PANEL_SESSION_TTL=12h
+VKAI_PANEL_RANDOM_PORT=false
+VKAI_PANEL_ALLOWED_IPS=
+VKAI_PANEL_TRUSTED_PROXIES=
+VKAI_PANEL_DOMAIN=
+VKAI_PANEL_TLS_CERT=
+VKAI_PANEL_TLS_KEY=
+VKAI_PANEL_TLS_SELF_SIGNED=false
+VKAI_PANEL_CONFIG_FILE=/vkai-panel/etc/panel_access.json
 
 # ===========================================
-# Database Configuration
+# Filesystem layout
 # ===========================================
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=vkai_panel
-DB_USER=vkai
-DB_PASSWORD=your_secure_password
-DB_SSLMODE=disable
-DB_MAX_CONNECTIONS=25
-DB_MAX_IDLE_CONNECTIONS=5
-DB_CONNECTION_MAX_LIFETIME=5m
+VKAI_PANEL_ROOT=/vkai-panel
+VKAI_WEB_ROOT=/vkai-panel/www/domains
+VKAI_BACKUP_ROOT=/vkai-panel/www/backup
+VKAI_LOG_ROOT=/vkai-panel/logs
+VKAI_ETC_ROOT=/vkai-panel/etc
+VKAI_SSL_ROOT=/vkai-panel/ssl
+VKAI_TMP_ROOT=/vkai-panel/tmp
 
 # ===========================================
-# Redis Configuration
+# Internal API - localhost only when the panel gate is on
 # ===========================================
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
-REDIS_MAX_RETRIES=3
-REDIS_POOL_SIZE=10
+VKAI_SERVER_HOST=127.0.0.1
+VKAI_SERVER_PORT=30110
+VKAI_SERVER_MODE=release
+VKAI_SERVER_READ_TIMEOUT=30s
+VKAI_SERVER_WRITE_TIMEOUT=30s
+VKAI_SERVER_IDLE_TIMEOUT=120s
 
 # ===========================================
-# JWT Configuration
+# Database
 # ===========================================
-JWT_SECRET=your_jwt_secret_key_at_least_32_chars
-JWT_ACCESS_TOKEN_TTL=15m
-JWT_REFRESH_TOKEN_TTL=168h
-JWT_ISSUER=vkai-panel
+VKAI_DB_HOST=localhost
+VKAI_DB_PORT=5432
+VKAI_DB_NAME=vkai_panel
+VKAI_DB_USER=vkai
+VKAI_DB_PASSWORD=your_secure_password
+# "require" or stronger. "disable" only for a database on this same host.
+VKAI_DB_SSLMODE=require
+VKAI_DATABASE_MAX_OPEN=25
+VKAI_DATABASE_MAX_IDLE=5
 
 # ===========================================
-# Logging Configuration
+# Redis
 # ===========================================
-LOG_LEVEL=info
-LOG_FORMAT=json
-LOG_MAX_SIZE=100
-LOG_MAX_BACKUPS=5
-LOG_MAX_AGE=30
-LOG_COMPRESS=true
+VKAI_REDIS_HOST=localhost
+VKAI_REDIS_PORT=6379
+VKAI_REDIS_PASSWORD=
+VKAI_REDIS_DB=0
 
 # ===========================================
-# Frontend Configuration
+# Secrets - no defaults, the panel refuses to start without them
 # ===========================================
-NEXT_PUBLIC_API_URL=http://localhost:30110
+VKAI_JWT_SECRET=            # openssl rand -hex 32
+VKAI_SECRET_KEY=            # openssl rand -hex 32
+VKAI_AGENT_TOKEN=           # openssl rand -base64 24
+VKAI_JWT_ACCESS_EXPIRY=15
+VKAI_JWT_REFRESH_EXPIRY=10080
+VKAI_JWT_ISSUER=vkai-panel
+
+# ===========================================
+# Authorization and CORS
+# ===========================================
+VKAI_RBAC_ENFORCE=true
+VKAI_CORS_ALLOWED_ORIGINS=https://panel.example.com:8888
+
+# ===========================================
+# Logging
+# ===========================================
+VKAI_LOG_LEVEL=info
+VKAI_LOG_FORMAT=json
+VKAI_LOG_MAX_SIZE=100
+VKAI_LOG_MAX_BACKUPS=5
+VKAI_LOG_MAX_AGE=30
+VKAI_LOG_COMPRESS=true
+
+# ===========================================
+# Agent
+# ===========================================
+VKAI_AGENT_PORT=30111
+
+# ===========================================
+# UI - must point at the panel port, entrance included
+# ===========================================
+NEXT_PUBLIC_API_URL=https://panel.example.com:8888
 ```
 
-### Frontend Configuration
+The annotated reference copy is [`.env.example`](../.env.example) in the
+repository root.
 
-Create `/opt/vkai-panel/frontend/.env.local`:
+### Backward compatibility with older names
+
+Existing installations keep booting on their old environment file. When both
+forms are present the `VKAI_` name wins.
+
+| Current name | Still accepted |
+|--------------|----------------|
+| `VKAI_SERVER_HOST`, `VKAI_SERVER_PORT` | `PANEL_SERVER_HOST`, `PANEL_SERVER_PORT`, `SERVER_HOST`, `SERVER_PORT` |
+| `VKAI_DB_HOST`, `VKAI_DB_PORT`, `VKAI_DB_USER`, `VKAI_DB_PASSWORD`, `VKAI_DB_NAME`, `VKAI_DB_SSLMODE` | `VKAI_DATABASE_*` and the unprefixed `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE` |
+| `VKAI_REDIS_HOST`, `VKAI_REDIS_PORT`, `VKAI_REDIS_PASSWORD`, `VKAI_REDIS_DB` | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` |
+| `VKAI_JWT_SECRET`, `VKAI_JWT_ISSUER` | `JWT_SECRET`, `JWT_ISSUER` |
+| `VKAI_LOG_LEVEL` | `LOG_LEVEL` |
+| `VKAI_PANEL_*` (port, bind, entrance, allowed IPs, TLS, ...) | The same names without the prefix: `PANEL_PORT`, `PANEL_BIND`, `PANEL_HOST`, `PANEL_ENTRANCE`, `PANEL_ALLOW_IPS`, `PANEL_TLS_CERT_FILE`, `PANEL_TLS_KEY_FILE`, `PANEL_SSL`, `PANEL_STATE_FILE` |
+| `VKAI_PANEL_ROOT`, `VKAI_WEB_ROOT`, `VKAI_BACKUP_ROOT`, `VKAI_LOG_ROOT`, `VKAI_ETC_ROOT`, `VKAI_SSL_ROOT`, `VKAI_TMP_ROOT` | `PANEL_ROOT`, `WEB_ROOT`, `BACKUP_ROOT`, `LOG_ROOT`, `ETC_ROOT`, `SSL_ROOT`, `TMP_ROOT` |
+
+Prefer the `VKAI_` names: the legacy forms are deprecated and will be removed in
+a future major release.
+
+### UI Configuration (`panel/`, service `vkai-ui`)
+
+Create `/vkai-panel/panel/.env.local`:
 
 ```bash
-# API URL
-NEXT_PUBLIC_API_URL=http://localhost:30110
+# API URL - the panel port, plus the entrance when one is configured
+NEXT_PUBLIC_API_URL=https://panel.example.com:8888/vkai_a1b2c3d4
 
 # App Configuration
-NEXT_PUBLIC_APP_NAME=vKAI Panel
+NEXT_PUBLIC_APP_NAME=VKAI Panel
 NEXT_PUBLIC_APP_VERSION=1.0.0
 
 # Features
@@ -176,8 +274,8 @@ GRANT ALL PRIVILEGES ON DATABASE vkai_panel TO vkai;
 #### 5. Run Migrations
 
 ```bash
-cd /opt/vkai-panel/backend
-go run cmd/migrate/main.go
+cd /vkai-panel
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 ```
 
 ### Database Backup
@@ -191,7 +289,7 @@ psql -U vkai -d vkai_panel < backup.sql
 
 # Automated backup script
 #!/bin/bash
-BACKUP_DIR="/var/backups/vkai"
+BACKUP_DIR="/vkai-panel/www/backup"
 DATE=$(date +%Y%m%d_%H%M%S)
 pg_dump -U vkai -d vkai_panel | gzip > "$BACKUP_DIR/vkai_panel_$DATE.sql.gz"
 find $BACKUP_DIR -name "*.sql.gz" -mtime +30 -delete
@@ -291,15 +389,19 @@ python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 ### Token Configuration
 
 ```bash
-# Access token TTL (short-lived)
-JWT_ACCESS_TOKEN_TTL=15m
+# Access token lifetime, in minutes (short-lived)
+VKAI_JWT_ACCESS_EXPIRY=15
 
-# Refresh token TTL (long-lived)
-JWT_REFRESH_TOKEN_TTL=168h
+# Refresh token lifetime, in minutes (long-lived; 10080 = 7 days)
+VKAI_JWT_REFRESH_EXPIRY=10080
 
 # Token issuer
-JWT_ISSUER=vkai-panel
+VKAI_JWT_ISSUER=vkai-panel
 ```
+
+The same values can be pinned in `/vkai-panel/etc/config.yaml` as durations
+under `jwt.access_ttl` and `jwt.refresh_ttl`. Rotating `VKAI_JWT_SECRET`
+invalidates every issued access and refresh token.
 
 ### Token Refresh Flow
 
@@ -325,36 +427,39 @@ JWT_ISSUER=vkai-panel
 
 ```bash
 # JSON format (recommended for production)
-LOG_FORMAT=json
+VKAI_LOG_FORMAT=json
 
 # Text format (for development)
-LOG_FORMAT=text
+VKAI_LOG_FORMAT=text
 ```
 
 ### Log Rotation
 
 ```bash
 # Maximum log file size (MB)
-LOG_MAX_SIZE=100
+VKAI_LOG_MAX_SIZE=100
 
 # Maximum number of old log files
-LOG_MAX_BACKUPS=5
+VKAI_LOG_MAX_BACKUPS=5
 
 # Maximum days to retain old log files
-LOG_MAX_AGE=30
+VKAI_LOG_MAX_AGE=30
 
 # Compress old log files
-LOG_COMPRESS=true
+VKAI_LOG_COMPRESS=true
 ```
 
 ### Log Files
 
 ```
-/var/log/vkai/
-├── api.log          # API server logs
-├── api.log.1        # Rotated log
-├── api.log.2.gz     # Compressed rotated log
-└── ...
+/vkai-panel/logs/                    # VKAI_LOG_ROOT
+├── api.log                          # API server logs
+├── api.log.1                        # Rotated log
+├── api.log.2.gz                     # Compressed rotated log
+└── sites/                           # Web server logs, one directory per site
+    └── example.com/
+        ├── access.log
+        └── error.log
 ```
 
 ### Viewing Logs
@@ -364,13 +469,16 @@ LOG_COMPRESS=true
 journalctl -u vkai-api -f
 
 # View specific log file
-tail -f /var/log/vkai/api.log
+tail -f /vkai-panel/logs/api.log
 
 # Search logs
-grep "ERROR" /var/log/vkai/api.log
+grep "ERROR" /vkai-panel/logs/api.log
 
 # View last 100 lines
-tail -n 100 /var/log/vkai/api.log
+tail -n 100 /vkai-panel/logs/api.log
+
+# Web server logs of one customer site
+tail -f /vkai-panel/logs/sites/example.com/error.log
 ```
 
 ---
@@ -379,21 +487,29 @@ tail -n 100 /var/log/vkai/api.log
 
 ### Server Settings
 
-```bash
-# Server host
-SERVER_HOST=0.0.0.0
+These settings describe the **internal** API listener. With the panel access
+gate on (`VKAI_PANEL_ENABLED=true`, the default) the public listener is
+`VKAI_PANEL_BIND:VKAI_PANEL_PORT` instead, and the internal listener should stay
+on localhost.
 
-# Server port
-SERVER_PORT=30110
+```bash
+# Internal API host - keep on localhost when the panel gate is on
+VKAI_SERVER_HOST=127.0.0.1
+
+# Internal API port
+VKAI_SERVER_PORT=30110
+
+# Gin mode: release, debug, test
+VKAI_SERVER_MODE=release
 
 # Read timeout
-SERVER_READ_TIMEOUT=30s
+VKAI_SERVER_READ_TIMEOUT=30s
 
 # Write timeout
-SERVER_WRITE_TIMEOUT=30s
+VKAI_SERVER_WRITE_TIMEOUT=30s
 
 # Idle timeout
-SERVER_IDLE_TIMEOUT=120s
+VKAI_SERVER_IDLE_TIMEOUT=120s
 ```
 
 ### Timeouts
@@ -404,30 +520,68 @@ SERVER_IDLE_TIMEOUT=120s
 
 ### Connection Limits
 
-```bash
-# Maximum concurrent connections
-SERVER_MAX_CONNECTIONS=1000
+Concurrent-connection and request-rate limits are enforced by the rate limiting
+middleware and by the web server in front of the customer sites, not by a panel
+environment variable. Database pool sizing is the setting you tune here:
 
-# Maximum requests per second
-SERVER_RATE_LIMIT=100
+```bash
+VKAI_DATABASE_MAX_OPEN=25
+VKAI_DATABASE_MAX_IDLE=5
 ```
 
 ---
 
 ## Nginx Configuration
 
-### Reverse Proxy Configuration
+### The panel is not proxied on 80/443
 
-Create `/etc/nginx/sites-available/vkai-panel`:
+`vkai-api` serves the panel itself on `VKAI_PANEL_PORT` (default `8888`) behind
+the security entrance. Nginx on this server is for the **customer websites**.
+Never add a vhost on 80 or 443 that proxies the panel: it would put the admin
+interface back on the ports every scanner probes.
+
+### Customer website vhost
+
+Create `/etc/nginx/sites-available/example.com`:
 
 ```nginx
 server {
     listen 80;
-    server_name your-domain.com;
+    server_name example.com www.example.com;
 
-    # Frontend
+    root /vkai-panel/www/domains/example.com;
+    index index.php index.html;
+
+    access_log /vkai-panel/logs/sites/example.com/access.log;
+    error_log  /vkai-panel/logs/sites/example.com/error.log;
+
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+    }
+}
+```
+
+### Optional reverse proxy in front of the panel port
+
+Only when you need TLS termination or a hostname for the panel. It must listen
+on the panel port, and `VKAI_PANEL_TRUSTED_PROXIES` must name the proxy so the
+IP allow list still sees the real client address.
+
+```nginx
+server {
+    listen 8888 ssl http2;
+    server_name panel.example.com;
+
+    ssl_certificate     /vkai-panel/ssl/panel/panel.crt;
+    ssl_certificate_key /vkai-panel/ssl/panel/panel.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8888;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -435,38 +589,19 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # API
-    location /api/ {
-        proxy_pass http://127.0.0.1:30110;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # WebSocket
-    location /ws/ {
-        proxy_pass http://127.0.0.1:30110;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
         proxy_read_timeout 86400;
     }
 }
 ```
 
+A ready-made file ships as `deploy/nginx/vkai-panel.conf`. Set
+`VKAI_PANEL_BIND=127.0.0.1` on the node when a proxy on the same host fronts it.
+
 ### Enable Site
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/vkai-panel /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/example.com /etc/nginx/sites-enabled/
+sudo mkdir -p /vkai-panel/logs/sites/example.com
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -488,7 +623,16 @@ sudo certbot renew --dry-run
 
 ## SSL Configuration
 
-### Let's Encrypt
+Panel certificates and customer-site certificates are kept apart:
+
+| | Location | Configured by |
+|---|---|---|
+| Panel | `/vkai-panel/ssl/panel/` | `VKAI_PANEL_TLS_CERT`, `VKAI_PANEL_TLS_KEY`, `VKAI_PANEL_TLS_SELF_SIGNED` |
+| Customer site | `/vkai-panel/ssl/<domain>/` | the site's nginx/apache vhost |
+
+A site renewal can therefore never overwrite the panel's key.
+
+### Let's Encrypt (customer sites)
 
 #### 1. Install Certbot
 
@@ -526,12 +670,14 @@ openssl req -new -newkey rsa:2048 -nodes \
 
 ```bash
 # Copy certificate files
-sudo cp your-domain.crt /etc/ssl/vkai/
-sudo cp your-domain.key /etc/ssl/vkai/
+sudo mkdir -p /vkai-panel/ssl/your-domain.com
+sudo cp your-domain.crt /vkai-panel/ssl/your-domain.com/
+sudo cp your-domain.key /vkai-panel/ssl/your-domain.com/
 
 # Set permissions
-sudo chmod 600 /etc/ssl/vkai/your-domain.key
-sudo chmod 644 /etc/ssl/vkai/your-domain.crt
+sudo chown -R vkai:vkai /vkai-panel/ssl/your-domain.com
+sudo chmod 600 /vkai-panel/ssl/your-domain.com/your-domain.key
+sudo chmod 644 /vkai-panel/ssl/your-domain.com/your-domain.crt
 ```
 
 #### 3. Configure Nginx
@@ -541,8 +687,10 @@ server {
     listen 443 ssl http2;
     server_name your-domain.com;
 
-    ssl_certificate /etc/ssl/vkai/your-domain.crt;
-    ssl_certificate_key /etc/ssl/vkai/your-domain.key;
+    root /vkai-panel/www/domains/your-domain.com;
+
+    ssl_certificate /vkai-panel/ssl/your-domain.com/your-domain.crt;
+    ssl_certificate_key /vkai-panel/ssl/your-domain.com/your-domain.key;
 
     # SSL settings
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -563,7 +711,7 @@ server {
 
 ```bash
 # Backup directory
-BACKUP_DIR=/var/backups/vkai
+BACKUP_DIR=/vkai-panel/www/backup
 
 # Retention days
 RETENTION_DAYS=30
@@ -594,19 +742,19 @@ SFTP_PATH=/backups/vkai
 
 ```bash
 #!/bin/bash
-# /opt/vkai-panel/scripts/backup.sh
+# /vkai-panel/scripts/backup.sh
 
-BACKUP_DIR="/var/backups/vkai"
+BACKUP_DIR="/vkai-panel/www/backup"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Backup database
 pg_dump -U vkai -d vkai_panel | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
 
 # Backup websites
-tar -czf "$BACKUP_DIR/websites_$DATE.tar.gz" /var/www
+tar -czf "$BACKUP_DIR/websites_$DATE.tar.gz" /vkai-panel/www/domains
 
 # Backup configuration
-tar -czf "$BACKUP_DIR/config_$DATE.tar.gz" /opt/vkai-panel/.env /etc/nginx/sites-available
+tar -czf "$BACKUP_DIR/config_$DATE.tar.gz" /vkai-panel/etc/.env /etc/nginx/sites-available
 
 # Cleanup old backups
 find $BACKUP_DIR -name "*.gz" -mtime +30 -delete
@@ -859,14 +1007,14 @@ journalctl -u vkai-api -n 100
 lsof -i :30110
 ```
 
-#### Frontend Not Loading
+#### UI Not Loading
 
 ```bash
-# Check frontend status
-sudo systemctl status vkai-frontend
+# Check UI service status
+sudo systemctl status vkai-ui
 
 # Check logs
-journalctl -u vkai-frontend -n 100
+journalctl -u vkai-ui -n 100
 
 # Check port
 lsof -i :3000
@@ -878,13 +1026,17 @@ lsof -i :3000
 
 | File | Description |
 |------|-------------|
-| `/opt/vkai-panel/.env` | Main environment configuration |
-| `/opt/vkai-panel/frontend/.env.local` | Frontend configuration |
-| `/etc/nginx/sites-available/vkai-panel` | Nginx configuration |
+| `/vkai-panel/etc/.env` | Main environment configuration (mode `0600`, owner `vkai`) |
+| `/vkai-panel/etc/config.yaml` | Optional YAML configuration |
+| `/vkai-panel/etc/panel_access.json` | Generated panel port and entrance (mode `0600`) |
+| `/vkai-panel/panel/.env.local` | UI configuration |
+| `/etc/nginx/sites-available/<domain>` | Per-site vhost for a customer website |
+| `deploy/nginx/vkai-panel.conf` | Optional reverse proxy for the panel port |
 | `/etc/postgresql/16/main/postgresql.conf` | PostgreSQL configuration |
 | `/etc/redis/redis.conf` | Redis configuration |
-| `/etc/systemd/system/vkai-api.service` | API service configuration |
-| `/etc/systemd/system/vkai-frontend.service` | Frontend service configuration |
+| `/etc/systemd/system/vkai-api.service` | API service (`vkai-api`) |
+| `/etc/systemd/system/vkai-ui.service` | UI service (`vkai-ui`) |
+| `/etc/systemd/system/vkai-agent.service` | Agent service (`vkai-agent`) |
 
 ---
 

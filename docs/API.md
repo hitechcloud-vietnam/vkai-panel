@@ -1,12 +1,23 @@
-# vKAI Panel API Documentation
+# VKAI Panel API Documentation
 
 ## Overview
 
-The vKAI Panel API is a RESTful API that provides programmatic access to all panel functionality.
+The VKAI Panel API is a RESTful API that provides programmatic access to all panel functionality.
 
-**Base URL**: `http://your-server:30110/api/v1`
+**Base URL**: `https://<your-server>:8888/<entrance>/api/v1`
+
+The API is served on the panel port (`VKAI_PANEL_PORT`, default `8888`) behind
+the security entrance, never on 80/443. Port `30110` is the internal listener
+and is bound to localhost. Run `vkai panel info` on the server to print the
+current port and entrance.
+
+From the server itself the internal listener can be called directly:
+`http://127.0.0.1:30110/api/v1`.
 
 **Authentication**: JWT Bearer Token
+
+**Health endpoints**: `/api/v1/health`, `/health`, `/ready` and `/live` always
+answer, entrance or not, so container health checks work without the secret.
 
 ---
 
@@ -22,7 +33,7 @@ POST /api/v1/auth/login
 ```json
 {
   "username": "admin",
-  "password": "admin123"
+  "password": "your-admin-password"
 }
 ```
 
@@ -273,7 +284,7 @@ POST /api/v1/websites
   "server_id": 1,
   "web_server": "nginx",
   "php_version": "8.2",
-  "root_directory": "/var/www/example.com",
+  "root_directory": "/vkai-panel/www/domains/example.com",
   "enable_ssl": true,
   "create_database": true,
   "database_name": "example_db",
@@ -360,7 +371,7 @@ POST /api/v1/ssl/issue
 {
   "domain": "example.com",
   "email": "admin@example.com",
-  "webroot": "/var/www/example.com"
+  "webroot": "/vkai-panel/www/domains/example.com"
 }
 ```
 
@@ -756,7 +767,7 @@ POST /api/v1/files/write
 **Request Body**:
 ```json
 {
-  "path": "/var/www/index.html",
+  "path": "/vkai-panel/www/domains/example.com/index.html",
   "content": "<html>...</html>"
 }
 ```
@@ -770,7 +781,7 @@ POST /api/v1/files/mkdir
 **Request Body**:
 ```json
 {
-  "path": "/var/www/new-site"
+  "path": "/vkai-panel/www/domains/example.com/new-site"
 }
 ```
 
@@ -783,7 +794,7 @@ POST /api/v1/files/delete
 **Request Body**:
 ```json
 {
-  "path": "/var/www/old-file.txt"
+  "path": "/vkai-panel/www/domains/example.com/old-file.txt"
 }
 ```
 
@@ -796,8 +807,8 @@ POST /api/v1/files/rename
 **Request Body**:
 ```json
 {
-  "old_path": "/var/www/old-name.txt",
-  "new_path": "/var/www/new-name.txt"
+  "old_path": "/vkai-panel/www/domains/example.com/old-name.txt",
+  "new_path": "/vkai-panel/www/domains/example.com/new-name.txt"
 }
 ```
 
@@ -810,8 +821,8 @@ POST /api/v1/files/copy
 **Request Body**:
 ```json
 {
-  "source": "/var/www/file.txt",
-  "destination": "/var/www/backup/file.txt"
+  "source": "/vkai-panel/www/domains/example.com/file.txt",
+  "destination": "/vkai-panel/www/backup/file.txt"
 }
 ```
 
@@ -824,7 +835,7 @@ POST /api/v1/files/chmod
 **Request Body**:
 ```json
 {
-  "path": "/var/www/file.txt",
+  "path": "/vkai-panel/www/domains/example.com/file.txt",
   "mode": "0755"
 }
 ```
@@ -1005,7 +1016,8 @@ X-RateLimit-Reset: 1640000000
 Real-time features use WebSocket:
 
 ```javascript
-const ws = new WebSocket('ws://your-server:30110/ws');
+// Same origin as the API: the panel port plus the entrance.
+const ws = new WebSocket('wss://your-server:8888/vkai_a1b2c3d4/ws');
 
 ws.onopen = () => {
   ws.send(JSON.stringify({
@@ -1034,7 +1046,7 @@ npm install @vkai/sdk
 import { VkaiClient } from '@vkai/sdk';
 
 const client = new VkaiClient({
-  baseUrl: 'http://your-server:30110',
+  baseUrl: 'https://your-server:8888/vkai_a1b2c3d4',
   apiKey: 'your-api-key'
 });
 
@@ -1046,7 +1058,7 @@ const websites = await client.websites.list();
 ```go
 import "github.com/hitechcloud-vietnam/vkai-panel/sdk-go"
 
-client := vkai.NewClient("http://your-server:30110", "your-api-key")
+client := vkai.NewClient("https://your-server:8888/vkai_a1b2c3d4", "your-api-key")
 websites, err := client.Websites.List(ctx, nil)
 ```
 
@@ -1054,11 +1066,15 @@ websites, err := client.Websites.List(ctx, nil)
 
 ## Examples
 
+These run on the server itself against the internal listener. From outside the
+server, replace `http://127.0.0.1:30110` with
+`https://<your-server>:8888/<entrance>`.
+
 ### Create a Complete Website
 
 ```bash
 # 1. Create website
-curl -X POST http://localhost:30110/api/v1/websites \
+curl -X POST http://127.0.0.1:30110/api/v1/websites \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -1074,13 +1090,13 @@ curl -X POST http://localhost:30110/api/v1/websites \
   }'
 
 # 2. Upload files
-curl -X POST http://localhost:30110/api/v1/files/upload \
+curl -X POST http://127.0.0.1:30110/api/v1/files/upload \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@website.zip" \
-  -F "path=/var/www/example.com"
+  -F "path=/vkai-panel/www/domains/example.com"
 
 # 3. Issue SSL certificate
-curl -X POST http://localhost:30110/api/v1/ssl/issue \
+curl -X POST http://127.0.0.1:30110/api/v1/ssl/issue \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

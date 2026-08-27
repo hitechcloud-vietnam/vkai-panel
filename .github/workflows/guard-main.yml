@@ -1,0 +1,44 @@
+name: Guard main
+
+# Cảnh báo/chặn mã được đẩy thẳng vào main mà không qua Pull Request.
+# Đây là lớp phát hiện; lớp cưỡng chế thật là Branch protection ruleset trên GitHub.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: guard-main-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-pr-origin:
+    name: Verify commit came from a Pull Request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check commit is associated with a merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "Kiểm tra commit $SHA trên main..."
+          COUNT=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            -H "Accept: application/vnd.github+json" --jq 'length' || echo 0)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "OK: commit đến từ Pull Request."
+            exit 0
+          fi
+          if [ "${{ github.event.created }}" = "true" ]; then
+            echo "Bỏ qua: sự kiện tạo nhánh."
+            exit 0
+          fi
+          echo "::error::Commit $SHA được đẩy thẳng vào main, không qua Pull Request."
+          echo "Mọi thay đổi phải đi qua nhánh phụ + Pull Request + CI xanh."
+          exit 1

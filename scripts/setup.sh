@@ -1,127 +1,134 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# =============================================================================
+# VKAI Panel - chuan bi moi truong PHAT TRIEN (khong phai cai dat may chu)
+# HiTech Cloud (hitechcloud.vn)
+#
+# Cai dat len may chu that: sudo bash deploy/install.sh
+# =============================================================================
 
-# vKAI Panel - Development Setup Script
-set -e
+set -Eeuo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly REPO_ROOT
+readonly CORE_DIR="${REPO_ROOT}/core"     # truoc day la backend/
+readonly UI_DIR="${REPO_ROOT}/panel"      # truoc day la frontend/
+readonly AGENT_DIR="${REPO_ROOT}/agent"
+
+if [[ -t 1 ]]; then
+    C_RED=$'\033[0;31m'; C_GREEN=$'\033[0;32m'; C_YELLOW=$'\033[1;33m'; C_OFF=$'\033[0m'
+else
+    C_RED=""; C_GREEN=""; C_YELLOW=""; C_OFF=""
+fi
+
+ok()   { printf '%s[OK]%s %s\n'   "$C_GREEN"  "$C_OFF" "$*"; }
+warn() { printf '%s[!]%s %s\n'    "$C_YELLOW" "$C_OFF" "$*" >&2; }
+die()  { printf '%s[X]%s %s\n'    "$C_RED"    "$C_OFF" "$*" >&2; exit 1; }
+
+trap 'die "That bai o dong $LINENO: $BASH_COMMAND"' ERR
+
+has() { command -v "$1" >/dev/null 2>&1; }
 
 echo "========================================="
-echo "  vKAI Panel - Development Setup"
-echo "  HiTechCloud Server Management"
+echo "  VKAI Panel - chuan bi moi truong dev"
+echo "  HiTech Cloud (hitechcloud.vn)"
 echo "========================================="
+echo
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# --- Kiem tra cong cu --------------------------------------------------------
+echo "Kiem tra cong cu can thiet..."
 
-print_status() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
+has go || die "Chua co Go. Can Go 1.22 tro len."
+ok "Go: $(go version | awk '{print $3}')"
 
-print_warning() {
-    echo -e "${YELLOW}[!]${NC} $1"
-}
+has node || die "Chua co Node.js. Can Node.js 20 tro len."
+ok "Node.js: $(node --version)"
 
-print_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
+has npm || die "Chua co npm."
+ok "npm: $(npm --version)"
 
-# Check prerequisites
-echo ""
-echo "Checking prerequisites..."
-
-# Check Go
-if command -v go &> /dev/null; then
-    GO_VERSION=$(go version | awk '{print $3}')
-    print_status "Go installed: $GO_VERSION"
+if has psql; then
+    ok "PostgreSQL client: $(psql --version | awk '{print $3}')"
 else
-    print_error "Go is not installed. Please install Go 1.22+"
-    exit 1
+    warn "Khong co psql. Dung docker-compose de chay PostgreSQL."
 fi
 
-# Check Node.js
-if command -v node &> /dev/null; then
-    NODE_VERSION=$(node --version)
-    print_status "Node.js installed: $NODE_VERSION"
+if has redis-cli; then
+    ok "Redis client: $(redis-cli --version | awk '{print $2}')"
 else
-    print_error "Node.js is not installed. Please install Node.js 20+"
-    exit 1
+    warn "Khong co redis-cli. Dung docker-compose de chay Redis."
 fi
 
-# Check PostgreSQL
-if command -v psql &> /dev/null; then
-    PG_VERSION=$(psql --version | awk '{print $3}')
-    print_status "PostgreSQL installed: $PG_VERSION"
-else
-    print_warning "PostgreSQL not found. Using Docker instead."
-fi
-
-# Check Redis
-if command -v redis-cli &> /dev/null; then
-    REDIS_VERSION=$(redis-cli --version | awk '{print $2}')
-    print_status "Redis installed: $REDIS_VERSION"
-else
-    print_warning "Redis not found. Using Docker instead."
-fi
-
-# Setup Backend
-echo ""
-echo "Setting up backend..."
-cd backend
-
-# Install Go dependencies
-print_status "Installing Go dependencies..."
+# --- core/ (API Go) ----------------------------------------------------------
+echo
+echo "Chuan bi core/ (API Go)..."
+cd "$CORE_DIR"
 go mod tidy
+ok "Da tai phu thuoc Go cho core/"
 
-# Copy config
-if [ ! -f config.yaml ]; then
-    cp config.yaml.example config.yaml 2>/dev/null || true
-    print_status "Created config.yaml"
+if [[ ! -f "${CORE_DIR}/config.yaml" && -f "${CORE_DIR}/config.yaml.example" ]]; then
+    cp "${CORE_DIR}/config.yaml.example" "${CORE_DIR}/config.yaml"
+    ok "Da tao core/config.yaml tu ban mau"
 fi
 
-cd ..
+# --- panel/ (giao dien Next.js) ---------------------------------------------
+echo
+echo "Chuan bi panel/ (giao dien Next.js)..."
+cd "$UI_DIR"
+if [[ -f package-lock.json ]]; then
+    npm ci --no-audit --no-fund
+else
+    npm install --no-audit --no-fund
+fi
+ok "Da tai phu thuoc Node cho panel/"
 
-# Setup Frontend
-echo ""
-echo "Setting up frontend..."
-cd frontend
+# NEXT_PUBLIC_* duoc nhung vao bundle luc build, khong doc luc chay. O moi
+# truong dev "next dev" doc .env moi lan khoi dong lai, nhung file phai co mat
+# tai GOC du an panel/ - Next.js khong doc .env o thu muc khac.
+if [[ ! -f "${UI_DIR}/.env" && ! -L "${UI_DIR}/.env" ]]; then
+    if [[ -f "${REPO_ROOT}/.env" ]]; then
+        ln -sfn "${REPO_ROOT}/.env" "${UI_DIR}/.env"
+        ok "Da lien ket panel/.env -> .env o goc repo"
+    else
+        warn "Chua co panel/.env. Sao chep tu .env.example va dien gia tri that."
+    fi
+fi
 
-# Install Node dependencies
-print_status "Installing Node.js dependencies..."
-npm install
-
-cd ..
-
-# Setup Agent
-echo ""
-echo "Setting up agent..."
-cd agent
-
-# Install Go dependencies
-print_status "Installing Go dependencies..."
+# --- agent/ ------------------------------------------------------------------
+echo
+echo "Chuan bi agent/..."
+cd "$AGENT_DIR"
 go mod tidy
+ok "Da tai phu thuoc Go cho agent/"
 
-cd ..
+cd "$REPO_ROOT"
 
-echo ""
-echo "========================================="
-echo "  Setup Complete!"
-echo "========================================="
-echo ""
-echo "To start development:"
-echo ""
-echo "  1. Start database services:"
-echo "     docker-compose up -d postgres redis"
-echo ""
-echo "  2. Run database migrations:"
-echo "     cd backend && go run cmd/api/main.go"
-echo ""
-echo "  3. Start frontend:"
-echo "     cd frontend && npm run dev"
-echo ""
-echo "  4. Start agent (optional):"
-echo "     cd agent && VKAI_PANEL_URL=http://localhost:30110 VKAI_AGENT_TOKEN=your-token go run cmd/main.go"
-echo ""
-echo "Access the panel at: http://localhost:3000"
-echo "Default login: admin / admin123"
-echo ""
+cat <<GUIDE
+
+=========================================
+  Xong!
+=========================================
+
+Chay o che do phat trien:
+
+  1. Dich vu nen (CSDL, cache):
+     docker compose -f docker-compose.dev.yml up -d postgres redis
+
+  2. API (core/):
+     cd core && go run ./cmd/api
+
+  3. Giao dien (panel/):
+     cd panel && npm run dev
+
+  4. Agent (tuy chon):
+     cd agent && VKAI_PANEL_URL=http://localhost:30110 \\
+        VKAI_AGENT_TOKEN=<token> go run ./cmd
+
+Giao dien dev: http://localhost:3000
+
+Luu y:
+  * Cai len may chu that thi dung: sudo bash deploy/install.sh
+    (cai vao /vkai-panel, cong panel rieng + loi vao an toan).
+  * Cong 80/443 danh RIENG cho website cua khach, panel khong dung.
+  * Tai khoan mac dinh admin/admin123 CHI danh cho moi truong dev.
+
+GUIDE

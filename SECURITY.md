@@ -4,12 +4,12 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | ✅ Yes             |
-| < 1.0   | ❌ No              |
+| 1.0.x   | Yes                |
+| < 1.0   | No                 |
 
 ## Reporting a Vulnerability
 
-We take security seriously. If you discover a security vulnerability in vKAI Panel, please report it responsibly.
+We take security seriously. If you discover a security vulnerability in VKAI Panel, please report it responsibly.
 
 ### How to Report
 
@@ -17,7 +17,7 @@ We take security seriously. If you discover a security vulnerability in vKAI Pan
 
 Instead, please report security vulnerabilities by emailing:
 
-📧 **security@hitechcloud.vn**
+**security@hitechcloud.vn**
 
 ### What to Include
 
@@ -124,22 +124,43 @@ When reporting a vulnerability, please include:
 
 ### Environment Variables
 
+All panel variables carry the `VKAI_` prefix.
+
 ```bash
-# JWT Configuration
-JWT_SECRET=your-secure-secret-key
-JWT_ACCESS_TOKEN_TTL=15m
-JWT_REFRESH_TOKEN_TTL=7d
+# Panel access gate - own port, security entrance, never 80/443
+VKAI_PANEL_PORT=8888
+VKAI_PANEL_ENTRANCE_ENABLED=true
+VKAI_PANEL_ALLOWED_IPS=203.0.113.7,10.0.0.0/8
+VKAI_PANEL_TRUSTED_PROXIES=
+VKAI_PANEL_DOMAIN=panel.example.com
+VKAI_PANEL_TLS_CERT=/vkai-panel/ssl/panel/panel.crt
+VKAI_PANEL_TLS_KEY=/vkai-panel/ssl/panel/panel.key
+
+# JWT - at least 32 random characters, no default
+VKAI_JWT_SECRET=your-secure-secret-key
+VKAI_JWT_ACCESS_EXPIRY=15
+VKAI_JWT_REFRESH_EXPIRY=10080
+
+# Secret encryption key for stored database credentials
+VKAI_SECRET_KEY=
 
 # Database
-DB_SSL_MODE=require
+VKAI_DB_SSLMODE=require
 
 # Redis
-REDIS_PASSWORD=your-redis-password
+VKAI_REDIS_PASSWORD=your-redis-password
 
-# Server
-SERVER_HOST=0.0.0.0
-SERVER_PORT=30110
+# Internal API - localhost only when the panel gate is on
+VKAI_SERVER_HOST=127.0.0.1
+VKAI_SERVER_PORT=30110
+
+# Authorization and CORS
+VKAI_RBAC_ENFORCE=true
+VKAI_CORS_ALLOWED_ORIGINS=https://panel.example.com:8888
 ```
+
+The pre-whitelabel names without the `VKAI_` prefix are still accepted for
+backward compatibility, but are deprecated.
 
 ### Nginx Security Headers
 
@@ -159,16 +180,20 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" alway
 # Allow SSH
 sudo ufw allow 22/tcp
 
-# Allow HTTP/HTTPS
+# Allow HTTP/HTTPS - customer websites only, never the panel
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
-# Allow Panel API (restrict to trusted IPs)
-sudo ufw allow from TRUSTED_IP to any port 30110
+# Allow the panel port, restricted to trusted addresses
+sudo ufw allow from TRUSTED_IP to any port 8888 proto tcp
 
 # Enable firewall
 sudo ufw enable
 ```
+
+Never expose the internal API port (`30110`) or the UI port (`3000`): both bind
+to localhost and are reached through the panel port. Open a new panel port
+**before** restarting `vkai-api`, or you lock yourself out.
 
 ## Vulnerability Disclosure Policy
 
@@ -176,7 +201,7 @@ sudo ufw enable
 
 This policy applies to:
 
-- vKAI Panel software
+- VKAI Panel software
 - Official documentation
 - Official deployment scripts
 

@@ -1,0 +1,24 @@
+# golangci-lint configuration for the vKAI Panel backend.
+# Pinned to golangci-lint v1.59.x (schema v1) to stay compatible with Go 1.22.
+# Keep this in sync with the `version:` pinned in .github/workflows/ci.yml.
+run:
+  timeout: 5m
+  go: '1.22'
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+issues:
+  exclude-dirs:
+    - migrations
+    - bin
+    - vendor
+  max-issues-per-linter: 0
+  max-same-issues: 0

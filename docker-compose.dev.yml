@@ -1,5 +1,18 @@
-# vKAI Panel - Development Docker Compose
+# VKAI Panel - Development Docker Compose
 # Only for development/testing - Production uses systemd services
+#
+# This file starts the dependencies only; the API (core/) and the UI (panel/)
+# run on the host. The panel still refuses to use 80/443: run the API with its
+# own port, exactly like production.
+#
+#   export VKAI_PANEL_PORT=8888
+#   export VKAI_PANEL_ENTRANCE=/vkai_dev
+#   export VKAI_PANEL_CONFIG_FILE=$PWD/.panel_access.json   # no root needed
+#   cd core && go run ./cmd/api        # -> http://127.0.0.1:8888/vkai_dev/
+#   cd panel && npm run dev
+#
+# Leave VKAI_PANEL_ENTRANCE unset to have one generated and printed in the
+# startup banner. See docs/PANEL_ACCESS.md.
 
 version: '3.8'
 
@@ -16,7 +29,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d
+      - ./core/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vkai -d vkai_panel"]
       interval: 10s

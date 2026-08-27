@@ -1,4 +1,4 @@
-# vKAI Panel Security Guide
+# VKAI Panel Security Guide
 
 ## Table of Contents
 
@@ -32,15 +32,28 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                    Security Layers                          │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 1: Network Security (Firewall, IDS/IPS)             │
+│  Layer 0: Panel access gate                                 │
+│           own port (VKAI_PANEL_PORT, default 8888),         │
+│           host pin, IP allow list, security entrance;       │
+│           anything else gets a neutral 404                  │
+│  Layer 1: Network Security (Firewall, IDS/IPS)              │
 │  Layer 2: Transport Security (TLS/SSL)                      │
-│  Layer 3: Application Security (WAF, Rate Limiting)        │
-│  Layer 4: Authentication (JWT, MFA)                        │
-│  Layer 5: Authorization (RBAC, ABAC)                       │
-│  Layer 6: Data Security (Encryption, Masking)              │
-│  Layer 7: Monitoring (SIEM, Alerts)                        │
+│  Layer 3: Application Security (WAF, Rate Limiting)         │
+│  Layer 4: Authentication (JWT, MFA)                         │
+│  Layer 5: Authorization (RBAC, ABAC)                        │
+│  Layer 6: Data Security (Encryption, Masking)               │
+│  Layer 7: Monitoring (SIEM, Alerts)                         │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### The panel is not on 80/443
+
+Ports 80 and 443 belong to the customer websites hosted on this server. Putting
+an administration interface there means every scanner on the Internet probes it,
+a misconfigured customer vhost can expose it, and the panel's log lines drown in
+the sites' access logs. VKAI Panel therefore listens on its own port behind a
+secret entrance path, and checks host, source IP and entrance in that order
+before anything else runs. See [PANEL_ACCESS.md](PANEL_ACCESS.md).
 
 ---
 
@@ -328,13 +341,18 @@ ssl_stapling_verify on;
 
 #### Certificate Management
 
+Panel certificates live in `/vkai-panel/ssl/panel/` and are configured with
+`VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY` (or generated on first start with
+`VKAI_PANEL_TLS_SELF_SIGNED=true`). Customer site certificates live in
+`/vkai-panel/ssl/<domain>/`, so a site renewal can never overwrite the panel key.
+
 ```bash
 # Generate self-signed certificate (development)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout server.key -out server.crt
 
 # Let's Encrypt (production)
-certbot certonly --webroot -w /var/www/html -d your-domain.com
+certbot certonly --webroot -w /vkai-panel/www/default -d your-domain.com
 ```
 
 ### Data Masking
@@ -364,11 +382,14 @@ func MaskString(s string, visibleChars int) string {
 # Allow SSH
 sudo ufw allow 22/tcp
 
-# Allow HTTP/HTTPS
+# Allow HTTP/HTTPS - customer websites only, never the panel
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
-# Allow API port (internal only)
+# Allow the panel port, restricted to the addresses you administer from
+sudo ufw allow from 203.0.113.7 to any port 8888 proto tcp
+
+# Allow the internal API port (localhost only)
 sudo ufw allow from 127.0.0.1 to any port 30110
 
 # Allow PostgreSQL (internal only)
@@ -390,9 +411,12 @@ iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 # Allow SSH
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
-# Allow HTTP/HTTPS
+# Allow HTTP/HTTPS - customer websites
 iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+
+# Allow the panel port from a trusted address only
+iptables -A INPUT -p tcp -s 203.0.113.7 --dport 8888 -j ACCEPT
 
 # Drop everything else
 iptables -A INPUT -j DROP
@@ -600,9 +624,9 @@ ClientAliveCountMax 2
 ```bash
 # Set secure permissions
 chmod 700 /home/vkai
-chmod 600 /opt/vkai-panel/.env
-chmod 644 /opt/vkai-panel/config/*
-chmod 755 /opt/vkai-panel/scripts/*
+chmod 600 /vkai-panel/etc/.env
+chmod 644 /vkai-panel/config/*
+chmod 755 /vkai-panel/scripts/*
 ```
 
 #### User Management
@@ -711,7 +735,7 @@ bantime = 3600
 enabled = true
 port = 30110
 filter = vkai-api
-logpath = /var/log/vkai/api.log
+logpath = /vkai-panel/logs/api.log
 maxretry = 5
 bantime = 1800
 ```
@@ -771,10 +795,10 @@ groups:
 
 ```bash
 # Monitor logs
-tail -f /var/log/vkai/api.log | grep -i "error\|warning\|security"
+tail -f /vkai-panel/logs/api.log | grep -i "error\|warning\|security"
 
 # Check for suspicious activity
-grep "login_failed" /var/log/vkai/api.log | awk '{print $1}' | sort | uniq -c | sort -rn
+grep "login_failed" /vkai-panel/logs/api.log | awk '{print $1}' | sort | uniq -c | sort -rn
 ```
 
 #### 2. Containment
@@ -797,7 +821,7 @@ redis-cli FLUSHDB
 sudo -u postgres psql -c "UPDATE users SET password_hash = '<new_hash>' WHERE id = <user_id>;"
 
 # Rotate secrets
-openssl rand -base64 64 > /opt/vkai-panel/.env.new
+openssl rand -base64 64 > /vkai-panel/etc/.env.new
 ```
 
 #### 4. Recovery
@@ -808,7 +832,7 @@ pg_dump -U vkai -d vkai_panel < backup.sql
 
 # Restart services
 systemctl restart vkai-api
-systemctl restart vkai-frontend
+systemctl restart vkai-ui
 ```
 
 #### 5. Lessons Learned
@@ -919,6 +943,23 @@ security_controls:
 
 ### Pre-Deployment Checklist
 
+- [ ] **Panel access**
+  - [ ] Panel port is not 80/443 and is open in the firewall
+  - [ ] Security entrance enabled and the generated path recorded safely
+  - [ ] `VKAI_PANEL_ALLOWED_IPS` set to the administrators' addresses
+  - [ ] `VKAI_PANEL_TRUSTED_PROXIES` set if and only if a proxy fronts the panel
+  - [ ] `VKAI_PANEL_DOMAIN` set when the panel has a host name
+  - [ ] Panel TLS configured (`VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY`)
+  - [ ] Ports 30110 and 3000 are not reachable from the Internet
+  - [ ] `/vkai-panel/etc/.env` and `panel_access.json` are mode `0600`, owner `vkai`
+
+- [ ] **Secrets**
+  - [ ] `VKAI_JWT_SECRET` is at least 32 random characters and unique to this install
+  - [ ] `VKAI_SECRET_KEY` is set (32 bytes hex/base64)
+  - [ ] `VKAI_AGENT_TOKEN` is set and unique
+  - [ ] `VKAI_DB_PASSWORD` is not a value published in this repository
+  - [ ] Default administrator password changed at first login
+
 - [ ] **Authentication**
   - [ ] JWT tokens configured correctly
   - [ ] Password policy enforced
@@ -1007,7 +1048,7 @@ security_controls:
 ```bash
 # Vulnerability scanning
 sudo apt install nikto
-nikto -h http://localhost:3000
+nikto -h http://127.0.0.1:3000
 
 # Port scanning
 sudo apt install nmap

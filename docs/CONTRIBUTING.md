@@ -1,6 +1,6 @@
-# Contributing to vKAI Panel
+# Contributing to VKAI Panel
 
-Thank you for your interest in contributing to vKAI Panel! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to VKAI Panel! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -77,13 +77,14 @@ chmod +x setup-dev.sh
 # Start databases with Docker
 docker-compose -f docker-compose.dev.yml up -d
 
-# Setup backend
-cd backend
+# Setup the API (core/)
+cd core
 go mod tidy
-go run cmd/migrate/main.go
+cd ..
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
-# Setup frontend
-cd ../frontend
+# Setup the UI (panel/)
+cd panel
 npm install
 ```
 
@@ -93,24 +94,41 @@ npm install
 
 ### Branch Strategy
 
+**Pushing directly to `main` is forbidden.** `main` is protected by a branch
+ruleset, and the `Guard main` workflow fails any commit on `main` that did not
+arrive through a Pull Request. Every change starts on a side branch and lands
+via PR with green CI and at least one approving review.
+
 ```
-main
-  └── develop
-        ├── feature/your-feature
-        ├── bugfix/your-bugfix
-        └── hotfix/your-hotfix
+main                      protected, PR only
+  ├── feat/your-feature
+  ├── fix/your-bugfix
+  ├── docs/your-doc-change
+  ├── refactor/your-cleanup
+  └── chore/your-maintenance
 ```
+
+`develop` may be used as an integration branch for larger efforts; CI runs on
+both `main` and `develop`. It is not a way around the PR requirement.
+
+| Prefix | Use for |
+|--------|---------|
+| `feat/` | New functionality |
+| `fix/` | Bug fixes |
+| `docs/` | Documentation only |
+| `refactor/` | Restructuring with no behaviour change |
+| `chore/` | Build, CI, dependencies, tooling |
 
 ### Creating a Branch
 
 ```bash
-# Update your fork
+# Update your checkout
 git fetch upstream
-git checkout develop
-git merge upstream/develop
+git checkout main
+git merge --ff-only upstream/main
 
-# Create feature branch
-git checkout -b feature/your-feature-name
+# Create a side branch
+git checkout -b feat/your-feature-name
 ```
 
 ### Making Changes
@@ -125,7 +143,7 @@ git checkout -b feature/your-feature-name
 
 ```bash
 git fetch upstream
-git rebase upstream/develop
+git rebase upstream/main
 ```
 
 ---
@@ -347,15 +365,8 @@ Closes #123"
 1. Use imperative mood ("add feature" not "added feature")
 2. First line should be 50 characters or less
 3. Reference issues and pull requests
-4. Consider starting with an emoji:
-   - 🎉 `:tada:` for initial commit
-   - ✨ `:sparkles:` for new feature
-   - 🐛 `:bug:` for bug fix
-   - 📝 `:memo:` for documentation
-   - 🎨 `:art:` for code style
-   - ♻️ `:recycle:` for refactoring
-   - ✅ `:white_check_mark:` for tests
-   - 🔒 `:lock:` for security
+4. Do not use emoji, in commit messages or anywhere else: not in code, not in
+   documentation, not in UI strings.
 
 ---
 
@@ -366,78 +377,58 @@ Closes #123"
 1. **Update your branch**:
    ```bash
    git fetch upstream
-   git rebase upstream/develop
+   git rebase upstream/main
    ```
 
 2. **Run tests**:
    ```bash
-   # Backend
-   cd backend && go test ./...
-   
-   # Frontend
-   cd frontend && npm test
+   make test          # core, panel and agent
+   # or individually
+   cd core  && go test ./...
+   cd panel && npm test
    ```
 
 3. **Run linters**:
    ```bash
-   # Backend
-   golangci-lint run
-   
-   # Frontend
-   npm run lint
+   make lint
+   # or individually
+   cd core  && golangci-lint run
+   cd panel && npm run lint
    ```
 
 4. **Update documentation** if needed
 
 ### PR Template
 
-```markdown
-## Description
+GitHub fills the description from
+[`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md).
+Fill in every section rather than deleting it. The required checklist covers:
 
-Brief description of the changes.
-
-## Type of Change
-
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
-
-## Testing
-
-- [ ] Unit tests pass
-- [ ] Integration tests pass
-- [ ] Manual testing completed
-
-## Checklist
-
-- [ ] Code follows project style guidelines
-- [ ] Self-review completed
-- [ ] Comments added for complex code
-- [ ] Documentation updated
-- [ ] No new warnings generated
-- [ ] Tests added for new functionality
-- [ ] All tests pass
-
-## Related Issues
-
-Closes #123
-```
+- green CI on all three jobs (`Core API`, `Panel UI`, `Agent`);
+- confirmation that the change came through a side branch, not a direct push to
+  `main`;
+- what you actually tested, and how;
+- before/after screenshots when the UI changed;
+- the security impact (authentication, RBAC, panel port, entrance, IP allow
+  list, command execution, new dependencies);
+- the migration impact (files under `core/migrations/`, schema changes,
+  rollback, runtime on large data).
 
 ### Review Process
 
-1. **Automated Checks**: CI/CD pipeline runs
-2. **Code Review**: At least one maintainer reviews
-3. **Approval**: Maintainer approves the PR
-4. **Merge**: PR is merged into develop
+1. **Automated Checks**: the CI pipeline runs on the PR.
+2. **Code Review**: at least one maintainer reviews. `.github/CODEOWNERS`
+   routes security-sensitive paths to the repository owner automatically.
+3. **Approval**: a maintainer approves the PR.
+4. **Merge**: squash merge into `main`. Never push to `main` directly.
 
 ### After Merge
 
-1. Delete your feature branch
+1. Delete your side branch.
 2. Update your local repository:
    ```bash
-   git checkout develop
-   git pull upstream develop
+   git checkout main
+   git pull upstream main
    ```
 
 ---
@@ -491,13 +482,13 @@ describe('WebsiteList', () => {
 ### Running Tests
 
 ```bash
-# Backend tests
-cd backend
+# API tests (core/)
+cd core
 go test ./...
 go test -cover ./...
 
-# Frontend tests
-cd frontend
+# UI tests (panel/)
+cd panel
 npm test
 npm run test:coverage
 
@@ -687,4 +678,4 @@ If you have questions about contributing, please:
 3. Ask in GitHub Discussions
 4. Contact the maintainers
 
-Thank you for contributing to vKAI Panel! 🎉
+Thank you for contributing to VKAI Panel.

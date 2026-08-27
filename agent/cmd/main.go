@@ -17,7 +17,16 @@ import (
 
 const (
 	AgentVersion = "1.0.0"
-	AgentName    = "vkaid"
+
+	// AgentName is the binary and systemd unit name of the node agent.
+	AgentName = "vkaid"
+
+	// AgentProduct is what an operator reading the console sees.
+	AgentProduct = "VKAI Panel Agent"
+
+	// AgentVendor appears in the startup line so a support ticket carries the
+	// product it belongs to.
+	AgentVendor = "HiTech Cloud (hitechcloud.vn)"
 )
 
 type AgentConfig struct {
@@ -27,17 +36,17 @@ type AgentConfig struct {
 }
 
 type SystemInfo struct {
-	Hostname    string  `json:"hostname"`
-	OS          string  `json:"os"`
-	Kernel      string  `json:"kernel"`
-	Arch        string  `json:"arch"`
-	CPUCores    int     `json:"cpu_cores"`
-	RAMTotal    int64   `json:"ram_total"`
-	DiskTotal   int64   `json:"disk_total"`
-	Uptime      int64   `json:"uptime"`
-	Load1       float64 `json:"load1"`
-	Load5       float64 `json:"load5"`
-	Load15      float64 `json:"load15"`
+	Hostname  string  `json:"hostname"`
+	OS        string  `json:"os"`
+	Kernel    string  `json:"kernel"`
+	Arch      string  `json:"arch"`
+	CPUCores  int     `json:"cpu_cores"`
+	RAMTotal  int64   `json:"ram_total"`
+	DiskTotal int64   `json:"disk_total"`
+	Uptime    int64   `json:"uptime"`
+	Load1     float64 `json:"load1"`
+	Load5     float64 `json:"load5"`
+	Load15    float64 `json:"load15"`
 }
 
 type HeartbeatPayload struct {
@@ -64,17 +73,17 @@ type Service struct {
 }
 
 func main() {
-	fmt.Printf("%s v%s starting...\n", AgentName, AgentVersion)
+	fmt.Printf("%s (%s) v%s - %s\n", AgentProduct, AgentName, AgentVersion, AgentVendor)
 
 	cfg := loadConfig()
 
 	// Validate configuration
 	if cfg.PanelURL == "" {
-		fmt.Println("Error: VKAI_PANEL_URL environment variable is required")
+		fmt.Println("Loi: thieu bien moi truong VKAI_PANEL_URL (URL cua VKAI Panel)")
 		os.Exit(1)
 	}
 	if cfg.AgentToken == "" {
-		fmt.Println("Error: VKAI_AGENT_TOKEN environment variable is required")
+		fmt.Println("Loi: thieu bien moi truong VKAI_AGENT_TOKEN")
 		os.Exit(1)
 	}
 
@@ -96,15 +105,27 @@ func main() {
 	cancel()
 }
 
+// env returns the first non-empty value among the given variables. The VKAI_
+// name is listed first and the pre-whitelabel name after it, so an agent that
+// was deployed with the old environment file keeps running after an upgrade.
+func env(names ...string) string {
+	for _, name := range names {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func loadConfig() *AgentConfig {
 	port := 30111
-	if p := os.Getenv("VKAI_AGENT_PORT"); p != "" {
+	if p := env("VKAI_AGENT_PORT", "AGENT_PORT"); p != "" {
 		fmt.Sscanf(p, "%d", &port)
 	}
 
 	return &AgentConfig{
-		PanelURL:   os.Getenv("VKAI_PANEL_URL"),
-		AgentToken: os.Getenv("VKAI_AGENT_TOKEN"),
+		PanelURL:   env("VKAI_PANEL_URL", "PANEL_URL"),
+		AgentToken: env("VKAI_AGENT_TOKEN", "AGENT_TOKEN"),
 		ListenPort: port,
 	}
 }
