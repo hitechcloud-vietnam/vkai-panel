@@ -250,7 +250,7 @@ jobs:
 
       # Reporting pass: never fails the build, results land in the Security tab.
       - name: Run Trivy (report)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -271,7 +271,7 @@ jobs:
       # Gate: only pull requests are blocked, and only on CRITICAL findings.
       - name: Trivy gate (pull requests, CRITICAL only)
         if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
