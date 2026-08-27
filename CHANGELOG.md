@@ -1,32 +1,48 @@
 # Changelog
 
-## v0.2.0 - Phases 8-12 Complete (2026-08-27)
+All notable changes to this project will be documented in this file.
 
-### Features
-- **Phase 8**: WebSocket real-time communication with hub/client architecture
-- **Phase 9**: Job queue system with asynq (backup, restore, deploy, SSL, cleanup)
-- **Phase 10**: Config rollback with snapshots, diff, templates
-- **Phase 11**: Node.js app systemd integration for process management
-- **Phase 12**: CI/CD pipeline with GitHub Actions and deployment scripts
+## [0.2.1] - 2026-08-27
 
-### Bug Fixes
-- Fixed Go compilation errors (duplicate types, missing imports, method signatures)
-- Fixed frontend build errors (missing UI components, TypeScript types)
-- Added UI component library (Card, Button, Badge, Input, Select, Tabs)
+### Fixed
+- Fix Gin route wildcard conflicts (zoneId→id, scanId→id, phpVersionId→id)
+- Fix migration 012/013/014 permissions INSERT to use (resource, action) columns
+- Add pgx/v5/stdlib driver import for database connection
+- Fix DNS handler to use consistent parameter names
+- Fix security handler to use consistent parameter names
+- Fix PHP handler to use consistent parameter names
 
-### Infrastructure
-- Added GitHub Actions workflows for CI/CD
-- Added systemd service files for deployment
-- Added deployment scripts with rollback support
+## [0.2.0] - 2026-08-27
 
-## v0.1.0 - Initial Release (2026-08-26)
+### Added
+- Phase 8: WebSocket real-time communication
+- Phase 9: Job queue system with asynq
+- Phase 10: Config rollback management
+- Phase 11: Node.js app systemd integration
+- Phase 12: CI/CD pipeline with GitHub Actions
 
-### Features
-- Phase 1-7: Core panel functionality
-- Server management
-- Website management
-- Database management
+### Fixed
+- Go compilation errors (duplicate types, missing imports)
+- Frontend build errors (missing UI components)
+- TypeScript errors in Sidebar component
+- Lumberjack import typo
+
+## [0.1.0] - 2026-08-26
+
+### Added
+- Initial release with Phases 1-7
+- Multi-tenant architecture
+- RBAC with 8 roles
+- DNS management
 - SSL certificate management
-- Firewall management
-- Backup management
-- Monitoring and logging
+- PHP version management
+- Node.js app management
+- Reverse proxy management
+- Git deployment management
+- WordPress management
+- Security scanning
+- Monitoring and alerting
+- Log management
+- Notification system
+- Audit logging
+- Cluster and HA management
