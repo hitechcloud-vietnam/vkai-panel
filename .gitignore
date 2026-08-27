@@ -19,12 +19,16 @@ temp/
 *.tmp
 *.temp
 
-# Backend (Go)
-backend/bin/
-backend/vendor/
-backend/tmp/
-backend/logs/
-backend/config.yaml
+# Core API (Go) - core/
+core/bin/
+core/vendor/
+core/tmp/
+core/logs/
+core/config.yaml
+core/config.local.yaml
+core/coverage.out
+core/coverage.html
+core/.panel_access.json
 *.exe
 *.exe~
 *.dll
@@ -35,12 +39,12 @@ backend/config.yaml
 go.work
 go.work.sum
 
-# Frontend (Next.js)
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/build/
-frontend/.env.local
+# Panel UI (Next.js) - panel/
+panel/node_modules/
+panel/.next/
+panel/out/
+panel/build/
+panel/.env.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -129,4 +133,67 @@ output/
 *.pyc
 *.pyo
 __pycache__/
-backend/api
+
+# Binary da build nam ngay tai goc thu muc ma nguon
+core/api
+core/vkai-api
+core/vkai-cli
+core/vkai-panelctl
+agent/vkaid
+agent/vkai-agent
+
+# Thu muc lam viec cua ban phat trien
+.dev/
+
+# ── Khoá và bí mật (KHÔNG BAO GIỜ commit) ───────────────────────────────────
+# Khoá mã hoá mã nguồn của vkai-crypt. Mất khoá = mất mã nguồn đã đẩy lên.
+.vkai/
+*.key
+*.key.txt
+*.pem
+vkai-repo.key
+install-summary.txt
+secrets/
+*.jks
+*.keystore
+credentials.json
+service-account*.json
+
+# ── Sản phẩm build và bản phát hành ─────────────────────────────────────────
+dist/
+release/
+bin/
+# Chi binary o goc, khong dinh vao thu muc ma nguon cung ten
+/tools/protect/vkai-crypt
+/vkai-crypt
+/vkai-api
+/vkai-agent
+*.jsc
+SHA256SUMS
+
+# ── Phụ thuộc và cache của trình dựng ───────────────────────────────────────
+node_modules/
+.next/
+.turbo/
+.eslintcache
+.swc/
+vendor/
+.pnpm-store/
+.yarn/cache/
+
+# ── Runtime ─────────────────────────────────────────────────────────────────
+*.pid
+*.sock
+*.seed
+.pids/
+
+# ── Xung đột merge và bản vá ────────────────────────────────────────────────
+*.orig
+*.rej
+*.patch.bak
+
+# ── Môi trường phát triển cục bộ ────────────────────────────────────────────
+.envrc
+.direnv/
+.tool-versions.local
+reference/

@@ -1,62 +1,108 @@
-## Description
+<!--
+  VKAI Panel - HiTech Cloud
+  Cấm push thẳng vào `main`. Mọi thay đổi phải đi qua nhánh phụ + Pull Request.
+  Workflow "Guard main" sẽ báo lỗi nếu phát hiện commit vào main không qua PR.
+-->
 
-Please include a summary of the changes and the related issue. Please also include relevant motivation and context.
+## Mô tả thay đổi
 
-Fixes # (issue)
+Tóm tắt thay đổi này làm gì và vì sao cần làm.
 
-## Type of Change
+Đóng issue: # (số issue)
 
-Please delete options that are not relevant.
+## Loại thay đổi
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
+- [ ] Sửa lỗi (không phá vỡ tương thích)
+- [ ] Tính năng mới (không phá vỡ tương thích)
+- [ ] Thay đổi phá vỡ tương thích (breaking change)
+- [ ] Chỉ tài liệu
+- [ ] Refactor / dọn dẹp mã, không đổi hành vi
+- [ ] Hạ tầng, CI/CD, script triển khai
 
-## How Has This Been Tested?
+## Phạm vi ảnh hưởng
 
-Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce.
+- [ ] `core/` (API Go, dịch vụ `vkai-api`)
+- [ ] `panel/` (giao diện Next.js, dịch vụ `vkai-ui`)
+- [ ] `agent/` (dịch vụ `vkai-agent`)
+- [ ] `deploy/` (trình cài đặt, unit systemd, cấu hình nginx)
+- [ ] `docs/` hoặc tài liệu ở thư mục gốc
 
-- [ ] Unit tests
-- [ ] Integration tests
-- [ ] Manual testing
+## Checklist bắt buộc
 
-**Test Configuration**:
-- OS: [e.g., Ubuntu 22.04]
-- Browser: [e.g., Chrome 120]
-- Version: [e.g., 1.0.0]
+- [ ] **CI xanh** — cả ba job `Core API`, `Panel UI`, `Agent` đều pass.
+- [ ] **Không push thẳng `main`** — thay đổi này nằm trên nhánh phụ
+      (`feat/...`, `fix/...`, `docs/...`, `refactor/...`, `chore/...`) và được merge qua PR.
+- [ ] **Đã test** — mô tả rõ ở mục dưới, không chỉ ghi "đã chạy thử".
+- [ ] `make lint` và `make test` chạy sạch trên máy cục bộ.
+- [ ] Đã tự review lại diff của chính mình.
+- [ ] Đã cập nhật tài liệu tương ứng trong `docs/` hoặc `README.md`.
+- [ ] Không lộ bí mật: không có mật khẩu, token, khoá riêng, chuỗi kết nối thật trong diff.
+- [ ] Tên hiển thị, lệnh, dịch vụ, biến môi trường đúng chuẩn thương hiệu:
+      **VKAI Panel**, `vkai`, `vkai-api` / `vkai-ui` / `vkai-agent`, tiền tố `VKAI_`,
+      đường dẫn `/vkai-panel/...`.
 
-## Checklist
+## Đã test như thế nào
 
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published in downstream modules
+Mô tả cách kiểm chứng: lệnh đã chạy, môi trường, kết quả quan sát được.
 
-## Screenshots
+- [ ] Unit test
+- [ ] Integration test
+- [ ] Test thủ công trên giao diện
+- [ ] Test trên máy chủ thật / máy ảo
 
-If applicable, add screenshots to help explain your changes.
+**Môi trường test**
 
-## Additional Notes
+- Hệ điều hành: (ví dụ Ubuntu 22.04)
+- Trình duyệt: (ví dụ Chrome 120) — nếu có đổi UI
+- Phiên bản panel: (ví dụ 1.0.0)
+- Go / Node.js: (ví dụ Go 1.22, Node 20)
 
-Add any other notes about the pull request here.
+## Ảnh chụp giao diện (bắt buộc nếu đổi UI)
 
-## Related Issues
+Nếu PR này thay đổi giao diện, **phải** đính kèm ảnh chụp màn hình trước và sau.
 
-If this pull request is related to any issues, please link them here.
+| Trước | Sau |
+|---|---|
+| (ảnh) | (ảnh) |
 
-## Breaking Changes
+- [ ] PR này không đổi giao diện, nên không cần ảnh chụp.
 
-If this pull request includes breaking changes, please describe them here and provide migration instructions.
+## Ảnh hưởng bảo mật
 
-## Performance Impact
+- [ ] Không ảnh hưởng bảo mật.
+- [ ] Có ảnh hưởng — mô tả bên dưới.
 
-If this pull request has any performance impact, please describe it here.
+Nếu có, trả lời rõ:
 
-## Security Considerations
+- Thay đổi có chạm vào xác thực, phiên đăng nhập, JWT, RBAC hay không?
+- Có thêm/đổi endpoint công khai (không cần đăng nhập) nào không?
+- Có chạm vào cổng panel, lối vào an toàn, danh sách IP cho phép, TLS không?
+- Có thực thi lệnh hệ thống, đọc/ghi tệp ngoài thư mục gốc đã giới hạn,
+  hoặc nâng quyền không?
+- Có thêm phụ thuộc mới không? Nếu có, nguồn gốc và giấy phép là gì?
 
-If this pull request has any security implications, please describe them here.
+## Ảnh hưởng migration
+
+- [ ] Không có migration cơ sở dữ liệu.
+- [ ] Có migration — mô tả bên dưới.
+
+Nếu có:
+
+- Tệp migration: `core/migrations/...`
+- Thay đổi lược đồ: (thêm/sửa/xoá bảng, cột, index)
+- Có phá vỡ tương thích với bản cũ đang chạy không?
+- Có script/quy trình rollback không? Mô tả rõ.
+- Ước lượng thời gian chạy và mức khoá bảng trên dữ liệu lớn.
+- [ ] Đã test migration trên bản sao dữ liệu thật hoặc dữ liệu mẫu tương đương.
+
+## Thay đổi phá vỡ tương thích
+
+Nếu có, liệt kê những gì hỏng và hướng dẫn nâng cấp cho người đang dùng bản cũ.
+
+## Ảnh hưởng hiệu năng
+
+Nếu có, mô tả và kèm số đo nếu có thể.
+
+## Ghi chú thêm
+
+Bất cứ điều gì người review cần biết trước khi đọc diff.

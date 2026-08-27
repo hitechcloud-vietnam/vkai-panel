@@ -1,19 +1,90 @@
-# vKAI Panel Troubleshooting Guide
+# VKAI Panel Troubleshooting Guide
 
 ## Table of Contents
 
-1. [Common Issues](#common-issues)
-2. [Installation Issues](#installation-issues)
-3. [Database Issues](#database-issues)
-4. [Authentication Issues](#authentication-issues)
-5. [Service Issues](#service-issues)
-6. [Performance Issues](#performance-issues)
-7. [Network Issues](#network-issues)
-8. [SSL Issues](#ssl-issues)
-9. [Frontend Issues](#frontend-issues)
-10. [Agent Issues](#agent-issues)
-11. [Logs and Debugging](#logs-and-debugging)
-12. [FAQ](#faq)
+1. [Panel Access Issues](#panel-access-issues)
+2. [Common Issues](#common-issues)
+3. [Installation Issues](#installation-issues)
+4. [Database Issues](#database-issues)
+5. [Authentication Issues](#authentication-issues)
+6. [Service Issues](#service-issues)
+7. [Performance Issues](#performance-issues)
+8. [Network Issues](#network-issues)
+9. [SSL Issues](#ssl-issues)
+10. [Panel UI Issues](#panel-ui-issues)
+11. [Agent Issues](#agent-issues)
+12. [Logs and Debugging](#logs-and-debugging)
+13. [FAQ](#faq)
+
+---
+
+## Panel Access Issues
+
+The panel listens on its own port (`VKAI_PANEL_PORT`, default `8888`) behind a
+security entrance. Ports 80 and 443 belong to the customer websites and never
+answer for the panel. Every blocked request receives the same neutral 404, so
+"nothing works" usually means one of four things.
+
+### I do not know the URL, the port or the entrance
+
+```bash
+vkai panel info
+sudo cat /vkai-panel/etc/panel_access.json
+sudo journalctl -u vkai-api | grep -A20 "THONG TIN TRUY CAP"
+```
+
+Generate a new entrance if the old one leaked:
+
+```bash
+vkai panel entrance random
+sudo systemctl restart vkai-api
+```
+
+### Everything returns 404
+
+That is the design. Work through the three checks in order:
+
+```bash
+# 1. Is the panel listening on the port you are dialling?
+sudo ss -tlnp | grep vkai-api
+
+# 2. Is it reachable locally? /health always answers, entrance or not.
+curl -sI http://127.0.0.1:8888/health
+
+# 3. Why was the request refused?
+sudo journalctl -u vkai-api | grep "panel access denied"
+```
+
+The log names the reason: host does not match `VKAI_PANEL_DOMAIN`, source IP is
+outside `VKAI_PANEL_ALLOWED_IPS`, or the entrance path is wrong.
+
+### The port is open locally but not from outside
+
+The firewall is the usual culprit. Open the panel port, never 80/443 for the
+panel:
+
+```bash
+sudo ufw allow 8888/tcp                                                   # Ubuntu / Debian
+sudo firewall-cmd --permanent --add-port=8888/tcp && sudo firewall-cmd --reload   # RHEL family
+```
+
+Always open the new port **before** restarting `vkai-api` after changing
+`VKAI_PANEL_PORT`.
+
+### I locked myself out with the IP allow list
+
+Get in over SSH or the provider console, then:
+
+```bash
+sudo vkai panel allow-ip --clear
+sudo systemctl restart vkai-api
+```
+
+### The panel refuses to take the port I asked for
+
+Ports 80, 443, 22, 25, 3306, 5432 and 6379 are rejected on purpose: they belong
+to the customer websites and to the panel's own supporting services. Pick
+another port, or `sudo vkai port random`.
 
 ---
 
@@ -35,13 +106,17 @@ systemctl status vkai-api
 journalctl -u vkai-api -n 100
 
 # Check configuration
-cat /opt/vkai-panel/.env
+sudo cat /vkai-panel/etc/.env
 
-# Check port availability
-lsof -i :30110
+# Check port availability (panel port first, then the internal API)
+sudo lsof -i :8888
+sudo lsof -i :30110
+
+# Show the current panel port and entrance
+vkai panel info
 
 # Check permissions
-ls -la /opt/vkai-panel/backend/bin/
+ls -la /vkai-panel/core/bin/
 ```
 
 ### Database Connection Failed
@@ -63,7 +138,7 @@ psql -h localhost -U vkai -d vkai_panel
 tail -f /var/log/postgresql/postgresql-*.log
 
 # Verify credentials
-cat /opt/vkai-panel/.env | grep DB_
+sudo grep '^VKAI_DB_' /vkai-panel/etc/.env
 
 # Reset password if needed
 sudo -u postgres psql -c "ALTER USER vkai PASSWORD 'new_password';"
@@ -174,17 +249,21 @@ sudo journalctl -u postgresql
 **Solutions:**
 
 ```bash
-# Check migration status
-cd backend
-go run cmd/migrate/main.go -status
+# Migrations are plain SQL files applied in order from core/migrations/.
+# List them
+ls core/migrations/
 
-# Run specific migration
-go run cmd/migrate/main.go -version 001
+# Apply every migration
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
-# Reset database (WARNING: Data loss)
+# Apply one file by hand
+psql "postgres://vkai:PASSWORD@localhost:5432/vkai_panel" -v ON_ERROR_STOP=1 \
+  -f core/migrations/001_initial_schema.sql
+
+# Reset database (WARNING: data loss)
 sudo -u postgres psql -c "DROP DATABASE vkai_panel;"
 sudo -u postgres psql -c "CREATE DATABASE vkai_panel OWNER vkai;"
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 ```
 
 ### Connection Pool Exhausted
@@ -246,7 +325,7 @@ sudo -u postgres psql -d vkai_panel -c "CREATE INDEX idx_websites_domain ON webs
 
 ```bash
 # Check JWT secret
-cat /opt/vkai-panel/.env | grep JWT_SECRET
+sudo grep '^VKAI_JWT_SECRET' /vkai-panel/etc/.env
 
 # Verify token
 curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:30110/api/v1/auth/verify
@@ -286,11 +365,11 @@ sudo -u postgres psql -d vkai_panel -c "SELECT status FROM users WHERE username 
 **Solutions:**
 
 ```bash
-# Check token TTL
-cat /opt/vkai-panel/.env | grep JWT_ACCESS_TOKEN_TTL
+# Check token lifetime (minutes)
+sudo grep '^VKAI_JWT_ACCESS_EXPIRY' /vkai-panel/etc/.env
 
-# Increase token TTL
-JWT_ACCESS_TOKEN_TTL=30m
+# Increase it
+VKAI_JWT_ACCESS_EXPIRY=30
 
 # Restart API server
 sudo systemctl restart vkai-api
@@ -340,8 +419,11 @@ lsof -i :30110
 # Kill process
 kill -9 PID
 
-# Or change port in .env
-SERVER_PORT=30111
+# Or change the internal API port in /vkai-panel/etc/.env
+VKAI_SERVER_PORT=30111
+
+# To change the PANEL port, use the CLI and open the firewall first
+vkai panel port 9001
 
 # Restart service
 sudo systemctl restart vkai-api
@@ -539,7 +621,7 @@ sudo ufw enable
 openssl s_client -connect your-domain.com:443
 
 # Verify certificate files
-ls -la /etc/ssl/vkai/
+ls -la /vkai-panel/ssl/
 
 # Check Nginx SSL configuration
 cat /etc/nginx/sites-available/vkai-panel
@@ -567,10 +649,10 @@ sudo journalctl -u certbot
 nslookup your-domain.com
 
 # Check webroot
-ls -la /var/www/html
+ls -la /vkai-panel/www/default
 
 # Manual verification
-sudo certbot certonly --webroot -w /var/www/html -d your-domain.com
+sudo certbot certonly --webroot -w /vkai-panel/www/default -d your-domain.com
 
 # Check firewall
 sudo ufw allow 80/tcp
@@ -587,7 +669,7 @@ sudo ufw allow 443/tcp
 
 ```bash
 # Check certificate expiration
-openssl x509 -enddate -noout -in /etc/ssl/vkai/your-domain.crt
+openssl x509 -enddate -noout -in /vkai-panel/ssl/your-domain.com/your-domain.crt
 
 # Renew certificate
 sudo certbot renew
@@ -601,7 +683,11 @@ sudo systemctl restart nginx
 
 ---
 
-## Frontend Issues
+## Panel UI Issues
+
+The UI is the `panel/` directory, served by the `vkai-ui` service on
+`127.0.0.1:3000` and reached only through the panel port and the security
+entrance.
 
 ### Build Failed
 
@@ -641,7 +727,7 @@ npm run build
 curl http://localhost:30110/health
 
 # Check environment variables
-cat frontend/.env.local
+cat /vkai-panel/panel/.env.local
 
 # Clear browser cache
 # Ctrl+Shift+Delete (Chrome)
@@ -657,16 +743,20 @@ cat frontend/.env.local
 
 ```bash
 # Check API URL
-cat frontend/.env.local
+cat /vkai-panel/panel/.env.local
 
 # Test API connection
 curl http://localhost:30110/health
 
-# Check CORS configuration
-# Review backend CORS settings
+# Check CORS configuration: the origin the browser uses must be listed
+sudo grep '^VKAI_CORS_ALLOWED_ORIGINS' /vkai-panel/etc/.env
 
-# Check Nginx proxy configuration
-cat /etc/nginx/sites-available/vkai-panel
+# NEXT_PUBLIC_API_URL must point at the panel port, entrance included
+sudo grep 'NEXT_PUBLIC_API_URL' /vkai-panel/etc/.env /vkai-panel/panel/.env.local
+
+# A neutral 404 on every request means the entrance, host or source IP is wrong
+vkai panel info
+sudo journalctl -u vkai-api | grep "panel access denied"
 ```
 
 ---
@@ -689,7 +779,7 @@ systemctl status vkai-agent
 journalctl -u vkai-agent -n 100
 
 # Check agent configuration
-cat /opt/vkai-panel/agent/.env
+cat /vkai-panel/agent/.env
 
 # Test agent connection
 curl http://localhost:30111/health
@@ -727,7 +817,7 @@ sudo systemctl restart vkai-agent
 
 ```bash
 # Check agent permissions
-ls -la /opt/vkai-panel/agent/
+ls -la /vkai-panel/agent/
 
 # Check agent logs
 journalctl -u vkai-agent -n 100
@@ -749,12 +839,15 @@ journalctl -u vkai-agent -n 100
 # API logs
 journalctl -u vkai-api -f
 
-# Frontend logs
-journalctl -u vkai-frontend -f
+# UI logs
+journalctl -u vkai-ui -f
 
-# Nginx logs
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
+# Panel logs on disk
+tail -f /vkai-panel/logs/api.log
+
+# Web server logs of one customer site
+tail -f /vkai-panel/logs/sites/example.com/access.log
+tail -f /vkai-panel/logs/sites/example.com/error.log
 
 # PostgreSQL logs
 tail -f /var/log/postgresql/postgresql-*.log
@@ -770,7 +863,7 @@ journalctl -f
 
 ```bash
 # Enable debug logging
-LOG_LEVEL=debug
+VKAI_LOG_LEVEL=debug
 
 # Restart services
 sudo systemctl restart vkai-api
@@ -786,7 +879,7 @@ journalctl -u vkai-api -f | grep DEBUG
 sudo nano /etc/logrotate.d/vkai
 
 # Add configuration
-/var/log/vkai/*.log {
+/vkai-panel/logs/*.log {
     daily
     missingok
     rotate 14
@@ -834,31 +927,29 @@ psql -U vkai -d vkai_panel < backup.sql
 gunzip -c backup.sql.gz | psql -U vkai -d vkai_panel
 ```
 
-### How do I update vKAI Panel?
+### How do I update VKAI Panel?
 
 ```bash
 # Backup database
 pg_dump -U vkai -d vkai_panel > backup.sql
 
 # Pull latest code
-cd /opt/vkai-panel
+cd /vkai-panel
 git pull origin main
 
 # Run migrations
-cd backend
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
-# Rebuild backend
+# Rebuild the API
 go build -o bin/vkai-api ./cmd/api/
 
-# Rebuild frontend
-cd ../frontend
-npm install
+# Rebuild the UI
+cd ../panel
+npm ci
 npm run build
 
 # Restart services
-sudo systemctl restart vkai-api
-sudo systemctl restart vkai-frontend
+sudo systemctl restart vkai-api vkai-ui
 ```
 
 ### How do I add a new website?

@@ -1,26 +1,45 @@
+# =============================================================================
+# VKAI Panel - node agent  |  HiTech Cloud (hitechcloud.vn)
+# Cai dat: /etc/systemd/system/vkai-agent.service
+#
+# Agent thu thap so lieu he thong va thuc thi thao tac cap may chu, nen chay
+# bang root. Day la dich vu TUY CHON: bat bang "systemctl enable --now vkai-agent".
+# =============================================================================
 [Unit]
-Description=vKAI Agent
-After=network.target
+Description=VKAI Panel node agent
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/vkai-agent
-ExecStart=/opt/vkai-agent/vkaid
+Group=root
+WorkingDirectory=/vkai-panel/agent
+ExecStart=/vkai-panel/agent/bin/vkai-agent
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vkai-agent
 
-# Environment
-EnvironmentFile=/opt/vkai-agent/.env
+EnvironmentFile=/vkai-panel/etc/.env
 
-# Security
+# --- Gia co bao mat ----------------------------------------------------------
+# Agent can doc /proc va /sys de bao cao tai nguyen, nhung khong duoc ghi de
+# len he thong tap tin ngoai cac thu muc cua panel.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/proc /sys
+PrivateTmp=true
+ProtectKernelModules=true
+LockPersonality=true
+ReadWritePaths=/vkai-panel/logs
+ReadWritePaths=/vkai-panel/tmp
+ReadWritePaths=/vkai-panel/www
+
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

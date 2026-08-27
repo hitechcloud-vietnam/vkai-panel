@@ -1,16 +1,16 @@
-# vKAI Panel - Development Progress
+# VKAI Panel - Development Progress
 
 ## Overview
 
-This document tracks the development progress of vKAI Panel by HiTechCloud.
+This document tracks the development progress of VKAI Panel by HiTech Cloud.
 
-**Last Updated**: $(date)
+**Last Updated**: 2026-08-28
 
 ---
 
-## Phase 1: Core Architecture ✅ COMPLETE
+## Phase 1: Core Architecture - COMPLETE
 
-### Backend Core
+### Core API (`core/`)
 - [x] Go project structure
 - [x] Gin HTTP framework setup
 - [x] Configuration management (Viper)
@@ -68,7 +68,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ---
 
-## Phase 2: Website & SSL Management ✅ COMPLETE
+## Phase 2: Website & SSL Management - COMPLETE
 
 ### Website Management
 - [x] Website CRUD operations
@@ -99,7 +99,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ---
 
-## Phase 3: Database & Services ✅ COMPLETE
+## Phase 3: Database & Services - COMPLETE
 
 ### Database Management
 - [x] MySQL/MariaDB support
@@ -141,7 +141,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ---
 
-## Phase 4: Security & Backups ✅ COMPLETE
+## Phase 4: Security & Backups - COMPLETE
 
 ### Firewall Management
 - [x] iptables integration
@@ -170,7 +170,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ---
 
-## Phase 5: Advanced Features 🔄 IN PROGRESS
+## Phase 5: Advanced Features - IN PROGRESS
 
 ### PHP Management
 - [ ] PHP version management
@@ -209,7 +209,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ---
 
-## Phase 6: Monitoring & Logs ⏳ PLANNED
+## Phase 6: Monitoring & Logs - PLANNED
 
 ### Monitoring
 - [ ] CPU monitoring
@@ -245,7 +245,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ---
 
-## Phase 7: Enterprise Features ⏳ PLANNED
+## Phase 7: Enterprise Features - PLANNED
 
 ### Cluster Support
 - [ ] Multi-server management
@@ -366,7 +366,7 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 3. **Complete Phase 7**: Cluster, HA, Advanced automation
 4. **Testing**: Write comprehensive tests
 5. **Documentation**: Complete user and developer docs
-6. **Frontend**: Connect all backend APIs to frontend
+6. **UI**: Connect every API in `core/` to a screen in `panel/`
 7. **Security**: Security audit and hardening
 8. **Performance**: Performance optimization
 
@@ -374,10 +374,15 @@ This document tracks the development progress of vKAI Panel by HiTechCloud.
 
 ## Notes
 
-- Docker is minimized - services run as systemd units
+- Docker is minimized - services run as systemd units: `vkai-api`, `vkai-ui`, `vkai-agent`
 - All services are production-ready with systemd
 - Database uses PostgreSQL (not MariaDB/MySQL for panel DB)
 - Agent (vkaid) runs on managed servers
+- Source layout: `core/` (Go API), `panel/` (Next.js UI), `agent/` (Go node agent)
+- Installed layout is rooted at `/vkai-panel`; customer sites live in
+  `/vkai-panel/www/domains/<domain>`
+- The panel listens on its own port (default 8888) behind a security entrance;
+  80/443 belong to the customer websites
 - Multi-tenant isolation is enforced at all layers
 - Configuration changes support rollback
 - Long operations use job queue

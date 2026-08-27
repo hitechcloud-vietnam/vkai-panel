@@ -1,48 +1,59 @@
 ---
-name: Feature Request
-about: Suggest an idea for this project
+name: Đề xuất tính năng
+about: Đề xuất một tính năng mới cho VKAI Panel
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
 ---
 
-## Feature Description
+## Mô tả tính năng
 
-A clear and concise description of the feature.
+Mô tả ngắn gọn, rõ ràng tính năng bạn muốn có.
 
-## Use Case
+## Bài toán thực tế
 
-Explain your use case and why this feature would be useful.
+Bạn đang gặp vấn đề gì? Tính năng này giải quyết được việc gì mà hiện tại
+VKAI Panel chưa làm được?
 
-## Proposed Solution
+## Giải pháp đề xuất
 
-A clear and concise description of your proposed solution.
+Mô tả cách bạn hình dung tính năng sẽ hoạt động.
 
-## Alternatives Considered
+## Phương án thay thế đã cân nhắc
 
-A clear and concise description of any alternative solutions or features you've considered.
+Những cách khác bạn đã nghĩ tới và vì sao chưa đủ tốt.
 
-## Additional Context
+## Phạm vi ảnh hưởng
 
-Add any other context or screenshots about the feature request here.
+- [ ] `core/` (API Go, dịch vụ `vkai-api`)
+- [ ] `panel/` (giao diện Next.js, dịch vụ `vkai-ui`)
+- [ ] `agent/` (dịch vụ `vkai-agent`)
+- [ ] CLI `vkai`
+- [ ] Trình cài đặt / triển khai
+- [ ] Tài liệu
 
-## Impact
+## Mức độ
 
-- **Users Affected**: [e.g., All users, Admin users, Specific role]
-- **Priority**: [e.g., Low, Medium, High, Critical]
-- **Effort**: [e.g., Small, Medium, Large]
+- **Đối tượng hưởng lợi**: (ví dụ mọi người dùng, chỉ quản trị viên, một vai trò cụ thể)
+- **Mức ưu tiên**: (thấp / trung bình / cao / khẩn cấp)
+- **Ước lượng công sức**: (nhỏ / trung bình / lớn)
 
-## Mockups
+## Ảnh hưởng bảo mật và dữ liệu
 
-If applicable, add mockups or wireframes to help explain your feature request.
+- Tính năng có chạm vào xác thực, phân quyền RBAC, cổng panel hay lối vào an toàn không?
+- Có cần thêm bảng hoặc migration cơ sở dữ liệu không?
 
-## Related Features
+## Bản phác thảo giao diện
 
-If this feature is related to any existing features, please link them here.
+Nếu có, đính kèm mockup hoặc wireframe.
+
+## Tính năng liên quan
+
+Liên kết tới tính năng hoặc issue liên quan nếu có.
 
 ## Checklist
 
-- [ ] I have searched for existing feature requests
-- [ ] I have provided a clear use case
-- [ ] I have considered alternatives
-- [ ] I have provided additional context
+- [ ] Tôi đã tìm xem đề xuất này đã tồn tại chưa
+- [ ] Tôi đã nêu rõ bài toán thực tế
+- [ ] Tôi đã cân nhắc phương án thay thế
+- [ ] Tôi đã cung cấp đủ ngữ cảnh

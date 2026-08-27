@@ -2,12 +2,14 @@
 
 ## Getting Help
 
-We're here to help! If you need assistance with vKAI Panel, there are several ways to get support.
+We're here to help! If you need assistance with VKAI Panel, there are several ways to get support.
 
 ## Documentation
 
 Before reaching out for help, please check our comprehensive documentation:
 
+- [Panel Access Guide](docs/PANEL_ACCESS.md) - Panel port, security entrance, IP allow list, TLS.
+  **Start here** if you cannot reach the panel: it does not answer on 80/443.
 - [API Documentation](docs/API.md) - Complete API reference
 - [User Guide](docs/USER_GUIDE.md) - End-user documentation
 - [Developer Guide](docs/DEVELOPER_GUIDE.md) - Developer documentation
@@ -25,7 +27,7 @@ Before reaching out for help, please check our comprehensive documentation:
 
 For general questions, feature requests, and community discussions:
 
-🔗 **GitHub Discussions**: https://github.com/hitechcloud-vietnam/vkai-panel/discussions
+**GitHub Discussions**: https://github.com/hitechcloud-vietnam/vkai-panel/discussions
 
 **Categories**:
 - **General**: General questions and discussions
@@ -37,7 +39,7 @@ For general questions, feature requests, and community discussions:
 
 For bug reports and technical issues:
 
-🔗 **GitHub Issues**: https://github.com/hitechcloud-vietnam/vkai-panel/issues
+**GitHub Issues**: https://github.com/hitechcloud-vietnam/vkai-panel/issues
 
 **Before Creating an Issue**:
 1. Search existing issues
@@ -54,7 +56,7 @@ For bug reports and technical issues:
 
 Join our Discord community for real-time support:
 
-🔗 **Discord**: https://discord.gg/vkai-panel
+**Discord**: https://discord.gg/vkai-panel
 
 **Channels**:
 - #general - General discussion
@@ -66,7 +68,7 @@ Join our Discord community for real-time support:
 
 For technical questions:
 
-🔗 **Stack Overflow**: https://stackoverflow.com/questions/tagged/vkai-panel
+**Stack Overflow**: https://stackoverflow.com/questions/tagged/vkai-panel
 
 **Tags**:
 - vkai-panel
@@ -116,52 +118,33 @@ We offer consulting services for:
 4. **Steps to Reproduce**: Clear steps to reproduce the issue
 5. **Expected Behavior**: What you expected to happen
 6. **Actual Behavior**: What actually happened
-7. **Environment**: OS, browser, version
+7. **Environment**: OS, architecture, panel version, affected service (`vkai-api` / `vkai-ui` / `vkai-agent`), browser
 8. **Logs**: Relevant log entries
 9. **Screenshots**: If applicable
 
 ### Bug Report Template
 
-```markdown
-## Bug Description
+Opening an issue on GitHub loads
+[`.github/ISSUE_TEMPLATE/bug_report.md`](.github/ISSUE_TEMPLATE/bug_report.md)
+automatically. It asks for the bug description, reproduction steps, expected and
+actual behaviour, and this environment block:
 
-A clear and concise description of the bug.
+- Panel version, OS and CPU architecture
+- How it was installed and the installation directory
+- Which component is affected: `vkai-api`, `vkai-ui`, `vkai-agent` or the `vkai` CLI
+- Browser, when the problem is in the interface
+- Web server in use
 
-## Steps to Reproduce
+Collect logs with:
 
-1. Go to '...'
-2. Click on '...'
-3. Scroll down to '...'
-4. See error
-
-## Expected Behavior
-
-A clear and concise description of what you expected to happen.
-
-## Actual Behavior
-
-A clear and concise description of what actually happened.
-
-## Environment
-
-- OS: [e.g., Ubuntu 22.04]
-- Browser: [e.g., Chrome 120]
-- Version: [e.g., 1.0.0]
-
-## Logs
-
-```
-Paste relevant logs here
+```bash
+sudo journalctl -u vkai-api -n 200 --no-pager
+sudo journalctl -u vkai-ui -n 200 --no-pager
+sudo tail -n 200 /vkai-panel/logs/*.log
 ```
 
-## Screenshots
-
-If applicable, add screenshots to help explain your problem.
-
-## Additional Context
-
-Add any other context about the problem here.
-```
+Redact real IP addresses, domains, tokens and above all the panel's security
+entrance path before pasting anything into a public issue.
 
 ## Feature Requests
 
@@ -175,27 +158,12 @@ Add any other context about the problem here.
 
 ### Feature Request Template
 
-```markdown
-## Feature Description
-
-A clear and concise description of the feature.
-
-## Use Case
-
-Explain your use case and why this feature would be useful.
-
-## Proposed Solution
-
-A clear and concise description of your proposed solution.
-
-## Alternatives Considered
-
-A clear and concise description of any alternative solutions or features you've considered.
-
-## Additional Context
-
-Add any other context or screenshots about the feature request here.
-```
+Opening a feature request on GitHub loads
+[`.github/ISSUE_TEMPLATE/feature_request.md`](.github/ISSUE_TEMPLATE/feature_request.md)
+automatically. It asks for the feature description, the real problem behind it,
+your proposed solution, alternatives you considered, which component it touches
+(`core/`, `panel/`, `agent/`, the `vkai` CLI, the installer or the docs), and
+whether it affects authentication, RBAC, panel access or the database schema.
 
 ## Security Issues
 
@@ -205,7 +173,7 @@ Add any other context or screenshots about the feature request here.
 
 Instead, please report security vulnerabilities by emailing:
 
-📧 **security@hitechcloud.vn**
+**security@hitechcloud.vn**
 
 **Response Timeline**:
 - Initial Response: Within 24 hours
@@ -337,11 +305,11 @@ We value your feedback! You can provide feedback through:
 
 See our [User Guide](docs/USER_GUIDE.md) for getting started instructions.
 
-### How do I install vKAI Panel?
+### How do I install VKAI Panel?
 
 See our [Deployment Guide](docs/DEPLOYMENT.md) for installation instructions.
 
-### How do I configure vKAI Panel?
+### How do I configure VKAI Panel?
 
 See our [Configuration Guide](docs/CONFIGURATION.md) for configuration options.
 
@@ -367,4 +335,4 @@ See our [Security Issues](#security-issues) section for instructions.
 
 ---
 
-**Thank you for using vKAI Panel! We're here to help you succeed.**
+**Thank you for using VKAI Panel! We're here to help you succeed.**

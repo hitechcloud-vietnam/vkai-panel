@@ -1,12 +1,12 @@
-# vKAI Panel Development Guide
+# VKAI Panel Development Guide
 
 ## Table of Contents
 
 1. [Getting Started](#getting-started)
 2. [Development Environment](#development-environment)
 3. [Project Structure](#project-structure)
-4. [Backend Development](#backend-development)
-5. [Frontend Development](#frontend-development)
+4. [API Development (`core/`)](#api-development-core)
+5. [UI Development (`panel/`)](#ui-development-panel)
 6. [Agent Development](#agent-development)
 7. [Database](#database)
 8. [Testing](#testing)
@@ -53,12 +53,12 @@ make dev
 # Start databases with Docker
 docker-compose -f docker-compose.dev.yml up -d
 
-# Start backend
-cd backend
-go run cmd/api/main.go
+# Start the API (core/)
+cd core
+go run ./cmd/api
 
-# Start frontend (in another terminal)
-cd frontend
+# Start the UI (panel/) in another terminal
+cd panel
 npm run dev
 ```
 
@@ -80,16 +80,18 @@ sudo systemctl start postgresql
 sudo systemctl start redis-server
 
 # Run migrations
-cd backend
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
-# Start backend
-go run cmd/api/main.go
+# Start the API (core/)
+cd core
+go run ./cmd/api
 
-# Start frontend (in another terminal)
-cd frontend
+# Start the UI (panel/) in another terminal
+cd panel
 npm run dev
 ```
+
+`make dev-core` and `make dev-panel` do the same thing from the repository root.
 
 ### IDE Setup
 
@@ -115,10 +117,11 @@ Install recommended extensions:
 
 ```
 vkai-panel/
-├── backend/                    # Go API server
+├── core/                    # Go API server (service vkai-api)
 │   ├── cmd/                   # Entry points
-│   │   ├── api/              # API server
-│   │   └── migrate/          # Database migrations
+│   │   ├── api/              # API server (vkai-api)
+│   │   ├── cli/              # vkai command
+│   │   └── panelctl/         # vkai-panelctl: port, entrance, IP, domain
 │   ├── internal/              # Internal packages
 │   │   ├── auth/             # JWT authentication
 │   │   ├── config/           # Configuration
@@ -133,7 +136,7 @@ vkai-panel/
 │   │   └── webserver/        # Web server adapters
 │   ├── migrations/            # SQL migrations
 │   └── config.yaml           # Configuration file
-├── frontend/                   # Next.js frontend
+├── panel/                   # Next.js UI (service vkai-ui)
 │   ├── src/
 │   │   ├── app/              # Next.js app router
 │   │   ├── components/       # React components
@@ -143,7 +146,7 @@ vkai-panel/
 │   │   ├── store/            # Zustand stores
 │   │   └── styles/           # CSS styles
 │   └── package.json
-├── agent/                      # vKAI Agent
+├── agent/                      # VKAI Agent
 │   └── cmd/main.go           # Agent entry point
 ├── deploy/                     # Deployment files
 │   ├── systemd/              # Systemd service files
@@ -158,7 +161,7 @@ vkai-panel/
 
 ---
 
-## Backend Development
+## API Development (`core/`)
 
 ### Architecture
 
@@ -380,7 +383,7 @@ func AuthMiddleware(jwtService *auth.JWTService) gin.HandlerFunc {
 
 ---
 
-## Frontend Development
+## UI Development (`panel/`)
 
 ### Architecture
 
@@ -610,8 +613,7 @@ func main() {
 
 ```bash
 # Run migrations
-cd backend
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
 # Create new migration
 touch migrations/003_add_new_table.sql
@@ -666,7 +668,7 @@ err := db.SelectContext(ctx, &websites, query, tenantID, limit, offset)
 
 ```bash
 # Run all tests
-cd backend
+cd core
 go test ./...
 
 # Run specific package
@@ -679,11 +681,11 @@ go test -cover ./...
 go test -v ./...
 ```
 
-### Frontend Tests
+### UI Tests (`panel/`)
 
 ```bash
 # Run all tests
-cd frontend
+cd panel
 npm test
 
 # Run with coverage
@@ -724,9 +726,9 @@ func TestWebsiteService_Create(t *testing.T) {
 # Install Delve
 go install github.com/go-delve/delve/cmd/dlv@latest
 
-# Debug backend
-cd backend
-dlv debug cmd/api/main.go
+# Debug the API
+cd core
+dlv debug ./cmd/api
 
 # Set breakpoint
 (dlv) break main.main
@@ -747,7 +749,7 @@ dlv debug cmd/api/main.go
       "type": "go",
       "request": "launch",
       "mode": "debug",
-      "program": "${workspaceFolder}/backend/cmd/api",
+      "program": "${workspaceFolder}/core/cmd/api",
       "env": {},
       "args": []
     }
@@ -755,7 +757,7 @@ dlv debug cmd/api/main.go
 }
 ```
 
-### Frontend Debugging
+### UI Debugging
 
 #### Using Browser DevTools
 
@@ -774,11 +776,11 @@ dlv debug cmd/api/main.go
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Frontend",
+      "name": "Debug Panel UI",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:3000",
-      "webRoot": "${workspaceFolder}/frontend"
+      "webRoot": "${workspaceFolder}/panel"
     }
   ]
 }
@@ -882,7 +884,7 @@ Types:
 6. Add migration if needed
 7. Write tests
 
-### Add New Frontend Page
+### Add a New UI Page
 
 1. Create API service in `services/`
 2. Create Zustand store in `store/`

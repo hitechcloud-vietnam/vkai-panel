@@ -1,4 +1,4 @@
-# vKAI Panel User Guide
+# VKAI Panel User Guide
 
 ## Table of Contents
 
@@ -24,12 +24,25 @@
 
 ### First Login
 
-1. Open your browser and navigate to `http://your-server-ip`
-2. Enter the default credentials:
-   - **Username**: `admin`
-   - **Password**: `admin123`
-3. You will be prompted to change your password immediately
-4. Complete the initial setup wizard
+1. Open your browser at the panel URL. The panel does **not** answer on 80/443:
+   those ports serve the customer websites. The URL is the panel port plus the
+   security entrance, for example
+   `https://203.0.113.10:8888/vkai_91ac5b65/`.
+
+   Lost it? On the server run:
+
+   ```bash
+   vkai panel info
+   ```
+
+2. Enter the administrator credentials printed once by the installer
+   (username `admin` unless you chose another one).
+3. You will be prompted to change your password immediately.
+4. Complete the initial setup wizard.
+
+Any request that arrives with the wrong host name, from an address outside
+`VKAI_PANEL_ALLOWED_IPS`, or without the entrance path receives a neutral 404 -
+the port looks empty. See [PANEL_ACCESS.md](PANEL_ACCESS.md).
 
 ### Initial Setup Wizard
 
@@ -82,7 +95,7 @@ The dashboard provides an overview of your infrastructure:
    - **OS**: Operating system
    - **Role**: Server role (Web, Database, etc.)
 3. Click **Add Server**
-4. Install the vKAI Agent on the server:
+4. Install the VKAI Agent on the server:
    ```bash
    curl -sSL https://install.vkai.vn/agent.sh | bash
    ```
@@ -117,7 +130,7 @@ Click on a server to view:
    - **Server**: Select the server
    - **Web Server**: Select web server (Nginx, Apache, etc.)
    - **PHP Version**: Select PHP version (if applicable)
-   - **Root Directory**: Document root (default: `/var/www/domain`)
+   - **Root Directory**: Document root (default: `/vkai-panel/www/domains/<domain>`)
 3. Optional settings:
    - **Enable SSL**: Issue Let's Encrypt certificate
    - **Create Database**: Create a database for the website
@@ -637,7 +650,7 @@ Click on a website to view:
 - **Firewall**: Network security system
 - **Backup**: Data copy for recovery
 - **Service**: Systemd service
-- **Agent**: vKAI Agent (vkaid)
+- **Agent**: VKAI Agent (vkaid)
 
 ---
 

@@ -1,56 +1,74 @@
 ---
-name: Bug Report
-about: Create a report to help us improve
+name: Báo lỗi
+about: Báo một lỗi của VKAI Panel
 title: '[BUG] '
 labels: bug
 assignees: ''
 ---
 
-## Bug Description
+<!--
+  KHÔNG dùng mẫu này để báo lỗ hổng bảo mật.
+  Lỗ hổng bảo mật gửi riêng theo hướng dẫn trong SECURITY.md.
+  KHÔNG dán mật khẩu, token, khoá riêng hay lối vào an toàn (entrance) vào đây.
+-->
 
-A clear and concise description of the bug.
+## Mô tả lỗi
 
-## Steps to Reproduce
+Mô tả ngắn gọn, rõ ràng lỗi đang gặp.
 
-1. Go to '...'
-2. Click on '...'
-3. Scroll down to '...'
-4. See error
+## Các bước tái hiện
 
-## Expected Behavior
+1. Vào màn hình '...'
+2. Bấm '...'
+3. Quan sát '...'
 
-A clear and concise description of what you expected to happen.
+## Kết quả mong đợi
 
-## Actual Behavior
+Điều lẽ ra phải xảy ra.
 
-A clear and concise description of what actually happened.
+## Kết quả thực tế
 
-## Environment
+Điều thực sự xảy ra.
 
-- OS: [e.g., Ubuntu 22.04]
-- Browser: [e.g., Chrome 120]
-- Version: [e.g., 1.0.0]
-- Node.js Version: [e.g., 20.x]
-- Go Version: [e.g., 1.22]
+## Môi trường
 
-## Logs
+- Phiên bản VKAI Panel: (ví dụ 1.0.0)
+- Hệ điều hành máy chủ: (ví dụ Ubuntu 22.04, Rocky Linux 9)
+- Kiến trúc CPU: (`x86_64` hoặc `aarch64`)
+- Cách cài đặt: (một dòng lệnh / `deploy/install.sh` / Docker / build từ mã nguồn)
+- Thư mục cài: (mặc định `/vkai-panel`, hay đường dẫn khác)
+- Thành phần liên quan: (`vkai-api` / `vkai-ui` / `vkai-agent` / CLI `vkai`)
+- Trình duyệt: (ví dụ Chrome 120) — nếu lỗi ở giao diện
+- Web server: (nginx / apache / openlitespeed / caddy / traefik)
+- Go / Node.js: (nếu build từ mã nguồn)
+
+## Nhật ký
+
+Che hết thông tin nhạy cảm (IP thật, tên miền, token, đường dẫn lối vào an toàn)
+trước khi dán.
 
 ```
-Paste relevant logs here
+sudo journalctl -u vkai-api -n 200 --no-pager
+sudo journalctl -u vkai-ui -n 200 --no-pager
+sudo tail -n 200 /vkai-panel/logs/*.log
 ```
 
-## Screenshots
+```
+Dán nhật ký liên quan vào đây
+```
 
-If applicable, add screenshots to help explain your problem.
+## Ảnh chụp màn hình
 
-## Additional Context
+Nếu là lỗi giao diện, đính kèm ảnh chụp.
 
-Add any other context about the problem here.
+## Ngữ cảnh thêm
 
-## Possible Solution
+Bất cứ thông tin nào khác giúp tái hiện hoặc khoanh vùng lỗi.
 
-If you have a suggestion for how to fix the bug, please describe it here.
+## Hướng khắc phục đề xuất
 
-## Related Issues
+Nếu bạn đã biết nguyên nhân hoặc cách sửa, mô tả tại đây.
 
-If this issue is related to any other issues, please link them here.
+## Issue liên quan
+
+Liên kết tới các issue liên quan nếu có.

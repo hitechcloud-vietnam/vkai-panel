@@ -1,0 +1,68 @@
+# VKAI Panel - .dockerignore cho build context o GOC kho ma nguon (Dockerfile).
+# Muc dich: khong day node_modules/.next/.git vao daemon khi build anh gop.
+
+# Git
+.git
+.gitignore
+.github
+githooks
+
+# Phu thuoc & ban build
+panel/node_modules
+panel/.next
+panel/out
+panel/build
+core/vendor
+core/bin
+agent/vendor
+agent/bin
+build/
+dist/
+
+# Bien moi truong (khong bao gio dua bi mat vao anh)
+.env
+.env.*
+!.env.example
+core/.env
+panel/.env.local
+
+# Nhat ky & tam
+*.log
+logs/
+tmp/
+temp/
+.dev/
+
+# Tai lieu
+docs/
+*.md
+!README.md
+
+# Kiem thu
+coverage/
+*.out
+*.test
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker & trien khai (khong can trong build context cua anh)
+docker-compose*.yml
+.dockerignore
+
+# Chung chi
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Kho nen
+*.tar
+*.tar.gz
+*.zip

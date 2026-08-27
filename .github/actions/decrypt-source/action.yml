@@ -1,0 +1,46 @@
+name: Giải mã mã nguồn
+description: >
+  Giải mã mã nguồn đã được vkai-crypt mã hoá trong repository.
+  Nếu repository chưa bật mã hoá thì bước này không làm gì và vẫn thành công,
+  nhờ vậy dùng được cả trước và sau khi bật mã hoá.
+
+runs:
+  using: composite
+  steps:
+    - name: Kiểm tra repository có mã hoá không
+      id: detect
+      shell: bash
+      run: |
+        set -euo pipefail
+        if grep -rlq --binary-files=text '^VKAICRYPT1' \
+             --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.next . 2>/dev/null; then
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          echo "Phát hiện mã nguồn đã mã hoá."
+        else
+          echo "needed=false" >> "$GITHUB_OUTPUT"
+          echo "Repository chưa bật mã hoá — bỏ qua bước giải mã."
+        fi
+
+    # Bộ giải mã viết bằng Go thư viện chuẩn. Chỉ cài Go khi thật sự cần,
+    # để job không liên quan tới Go (panel, docker) không bị chậm đi vô ích.
+    - name: Chuẩn bị Go cho bộ giải mã
+      if: steps.detect.outputs.needed == 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+        cache: false
+
+    - name: Giải mã
+      if: steps.detect.outputs.needed == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${VKAI_CRYPT_KEY:-}" ]; then
+          echo "::error::Mã nguồn đã mã hoá nhưng thiếu secret VKAI_CRYPT_KEY."
+          echo "Thêm tại Settings > Secrets and variables > Actions."
+          echo "Lưu ý: secret không được cấp cho workflow chạy từ fork — đó là chủ ý."
+          exit 1
+        fi
+        # tools/protect cố ý không bị mã hoá nên luôn chạy được ở đây.
+        go run ./tools/protect/cmd/vkai-crypt decrypt-tree .
+        echo "Đã giải mã mã nguồn."

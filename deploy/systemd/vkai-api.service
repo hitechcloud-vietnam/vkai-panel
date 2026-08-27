@@ -1,30 +1,62 @@
+# =============================================================================
+# VKAI Panel - API (Go)  |  HiTech Cloud (hitechcloud.vn)
+# Cai dat: /etc/systemd/system/vkai-api.service
+# =============================================================================
 [Unit]
-Description=vKAI Panel API Server
-After=network.target postgresql.service redis.service
-Wants=postgresql.service redis.service
+Description=VKAI Panel API (core)
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+After=network-online.target postgresql.service redis.service redis-server.service
+Wants=network-online.target postgresql.service
 
 [Service]
 Type=simple
 User=vkai
 Group=vkai
-WorkingDirectory=/opt/vkai-panel/backend
-ExecStart=/opt/vkai-panel/backend/bin/vkai-api
+WorkingDirectory=/vkai-panel/core
+ExecStart=/vkai-panel/core/bin/vkai-api
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vkai-api
 
-# Environment
-EnvironmentFile=/opt/vkai-panel/.env
+# --- Cong truy cap panel -----------------------------------------------------
+# Panel nghe tren CONG RIENG. 80/443 danh cho website cua khach nen khong bao
+# gio duoc dat o day. Cac dong Environment= la GIA TRI MAC DINH: chung duoc
+# khai bao TRUOC EnvironmentFile nen bat cu gia tri nao trong .env deu thang.
+Environment=VKAI_PANEL_ENABLED=true
+Environment=VKAI_PANEL_BIND=127.0.0.1
+Environment=VKAI_PANEL_PORT=8888
+Environment=VKAI_PANEL_ENTRANCE_ENABLED=true
+Environment=VKAI_PANEL_CONFIG_FILE=/vkai-panel/etc/panel_access.json
+EnvironmentFile=/vkai-panel/etc/.env
 
-# Security
+# --- Gia co bao mat ----------------------------------------------------------
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/vkai /var/www /etc/nginx /etc/apache2 /etc/letsencrypt /etc/ssl/vkai
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Chi nhung thu muc panel THUC SU ghi vao moi duoc mo. /vkai-panel/core khong
+# nam trong danh sach: binary chi can doc.
+ReadWritePaths=/vkai-panel/etc
+ReadWritePaths=/vkai-panel/www
+ReadWritePaths=/vkai-panel/logs
+ReadWritePaths=/vkai-panel/ssl
+ReadWritePaths=/vkai-panel/tmp
+# Panel quan ly web server va chung chi cua khach.
+ReadWritePaths=-/etc/nginx
+ReadWritePaths=-/etc/apache2
+ReadWritePaths=-/etc/httpd
+ReadWritePaths=-/etc/letsencrypt
 
-# Resource limits
+# --- Gioi han tai nguyen -----------------------------------------------------
 LimitNOFILE=65536
 LimitNPROC=4096
 

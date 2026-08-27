@@ -1,10 +1,10 @@
-# vKAI Panel FAQ
+# VKAI Panel FAQ
 
 ## General Questions
 
-### What is vKAI Panel?
+### What is VKAI Panel?
 
-vKAI Panel is an enterprise-grade multi-server hosting control panel designed for hosting providers and DevOps teams. It provides a modern web interface for managing servers, websites, databases, DNS, SSL certificates, and more.
+VKAI Panel is an enterprise-grade multi-server hosting control panel designed for hosting providers and DevOps teams. It provides a modern web interface for managing servers, websites, databases, DNS, SSL certificates, and more.
 
 ### What are the system requirements?
 
@@ -22,22 +22,22 @@ vKAI Panel is an enterprise-grade multi-server hosting control panel designed fo
 - Disk: 100 GB SSD
 - Network: 1 Gbps
 
-### What technologies does vKAI Panel use?
+### What technologies does VKAI Panel use?
 
 - **Backend**: Go 1.22, Gin framework, JWT authentication
-- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
+- **UI (`panel/`)**: Next.js 14, React 18, TypeScript, Tailwind CSS
 - **Database**: PostgreSQL 16, Redis 7
 - **Agent**: Go binary (vkaid)
 - **Reverse Proxy**: Nginx
 - **Services**: systemd (no Docker required)
 
-### Is vKAI Panel free?
+### Is VKAI Panel free?
 
-Yes, vKAI Panel is open-source and free to use. It's licensed under the MIT License.
+Yes, VKAI Panel is open-source and free to use. It's licensed under the MIT License.
 
-### Can I use vKAI Panel in production?
+### Can I use VKAI Panel in production?
 
-Yes, vKAI Panel is designed for production use. It includes:
+Yes, VKAI Panel is designed for production use. It includes:
 - Systemd services for reliability
 - Security best practices
 - Performance optimization
@@ -47,7 +47,7 @@ Yes, vKAI Panel is designed for production use. It includes:
 
 ## Installation
 
-### How do I install vKAI Panel?
+### How do I install VKAI Panel?
 
 ```bash
 # Clone repository
@@ -67,58 +67,57 @@ The installation script:
 3. Creates system user
 4. Sets up directories
 5. Configures PostgreSQL and Redis
-6. Builds backend and frontend
+6. Builds the API (`core/`) and the UI (`panel/`)
 7. Configures environment
 8. Installs systemd services
-9. Configures Nginx
-10. Sets up firewall
+9. Configures Nginx for the customer websites
+10. Opens the panel port in the firewall and prints the access URL
 
-### Can I install vKAI Panel manually?
+### Can I install VKAI Panel manually?
 
 Yes, see the [Deployment Guide](DEPLOYMENT.md) for manual installation instructions.
 
-### How do I update vKAI Panel?
+### How do I update VKAI Panel?
 
 ```bash
 # Backup database
 pg_dump -U vkai -d vkai_panel > backup.sql
 
 # Pull latest code
-cd /opt/vkai-panel
+cd /vkai-panel
 git pull origin main
 
 # Run migrations
-cd backend
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
 # Rebuild
 go build -o bin/vkai-api ./cmd/api/
-cd ../frontend
-npm install
+cd ../panel
+npm ci
 npm run build
 
 # Restart services
-sudo systemctl restart vkai-api
-sudo systemctl restart vkai-frontend
+sudo systemctl restart vkai-api vkai-ui
 ```
 
-### How do I uninstall vKAI Panel?
+### How do I uninstall VKAI Panel?
 
 ```bash
 # Stop services
 sudo systemctl stop vkai-api
-sudo systemctl stop vkai-frontend
+sudo systemctl stop vkai-ui
 
 # Disable services
 sudo systemctl disable vkai-api
-sudo systemctl disable vkai-frontend
+sudo systemctl disable vkai-ui
 
 # Remove service files
 sudo rm /etc/systemd/system/vkai-api.service
-sudo rm /etc/systemd/system/vkai-frontend.service
+sudo rm /etc/systemd/system/vkai-ui.service
 
-# Remove files
-sudo rm -rf /opt/vkai-panel
+# Remove files - this deletes the customer websites under
+# /vkai-panel/www/domains as well. Move them out first.
+sudo rm -rf /vkai-panel
 
 # Remove user
 sudo userdel -r vkai
@@ -134,17 +133,29 @@ sudo -u postgres psql -c "DROP USER vkai;"
 
 ### Where is the configuration file?
 
-The main configuration file is `/opt/vkai-panel/.env`.
+The main configuration file is `/vkai-panel/etc/.env`.
 
 ### What configuration options are available?
 
 See the [Configuration Guide](CONFIGURATION.md) for all available options.
 
-### How do I change the API port?
+### How do I change the panel port?
 
-Edit `/opt/vkai-panel/.env`:
 ```bash
-SERVER_PORT=30111
+vkai panel port                 # show the current port
+sudo ufw allow 9001/tcp         # open the new port FIRST
+vkai panel port 9001
+sudo systemctl restart vkai-api
+```
+
+Ports 80, 443, 22, 25, 3306, 5432 and 6379 are rejected: 80/443 belong to the
+customer websites. See [PANEL_ACCESS.md](PANEL_ACCESS.md).
+
+### How do I change the internal API port?
+
+Edit `/vkai-panel/etc/.env`:
+```bash
+VKAI_SERVER_PORT=30111
 ```
 
 Then restart the API server:
@@ -159,9 +170,9 @@ sudo systemctl restart vkai-api
 sudo -u postgres psql -c "ALTER USER vkai PASSWORD 'new_password';"
 ```
 
-2. Update `.env`:
+2. Update `/vkai-panel/etc/.env`:
 ```bash
-DB_PASSWORD=new_password
+VKAI_DB_PASSWORD=new_password
 ```
 
 3. Restart services:
@@ -171,9 +182,9 @@ sudo systemctl restart vkai-api
 
 ### How do I enable debug logging?
 
-Edit `/opt/vkai-panel/.env`:
+Edit `/vkai-panel/etc/.env`:
 ```bash
-LOG_LEVEL=debug
+VKAI_LOG_LEVEL=debug
 ```
 
 Then restart:
@@ -187,11 +198,21 @@ sudo systemctl restart vkai-api
 
 ### What are the default credentials?
 
-- **URL**: http://localhost:3000 (development) or http://your-server-ip (production)
-- **Username**: admin
-- **Password**: admin123
+The installer generates a random administrator password and prints it once, at
+the end of the installation, together with the access URL. Read it back with:
 
-⚠️ **Change the default password immediately in production!**
+```bash
+vkai panel info
+```
+
+- **URL**: `https://<server-ip>:8888/<entrance>/` in production, or
+  `http://localhost:3000` when running the UI in development
+- **Username**: `admin`, unless the installer was told otherwise
+
+Only when the installer cannot produce a bcrypt hash (no Go and no
+`python3-bcrypt` on the machine) does it fall back to the migration default
+`admin` / `admin123`. It says so loudly when that happens. **Change that
+password at the first login.**
 
 ### How do I reset the admin password?
 
@@ -349,7 +370,7 @@ sudo certbot renew
 ### How do I check certificate expiration?
 
 ```bash
-openssl x509 -enddate -noout -in /etc/ssl/vkai/your-domain.crt
+openssl x509 -enddate -noout -in /vkai-panel/ssl/your-domain.com/your-domain.crt
 ```
 
 ---
@@ -585,7 +606,7 @@ journalctl -u vkai-api -n 100
 
 3. Check configuration:
 ```bash
-cat /opt/vkai-panel/.env
+cat /vkai-panel/etc/.env
 ```
 
 ---
@@ -610,12 +631,12 @@ make dev
 ### How do I run tests?
 
 ```bash
-# Backend tests
-cd backend
+# API tests (core/)
+cd core
 go test ./...
 
-# Frontend tests
-cd frontend
+# UI tests (panel/)
+cd panel
 npm test
 
 # All tests
@@ -661,19 +682,19 @@ See the [Contributing Guide](CONTRIBUTING.md) for instructions.
 
 ## License
 
-### What license is vKAI Panel under?
+### What license is VKAI Panel under?
 
-vKAI Panel is licensed under the MIT License. See [LICENSE](../LICENSE) for details.
+VKAI Panel is licensed under the MIT License. See [LICENSE](../LICENSE) for details.
 
-### Can I use vKAI Panel commercially?
+### Can I use VKAI Panel commercially?
 
 Yes, the MIT License allows commercial use.
 
-### Do I need to attribute vKAI Panel?
+### Do I need to attribute VKAI Panel?
 
 While not required, attribution is appreciated:
 ```markdown
-This project uses [vKAI Panel](https://github.com/hitechcloud-vietnam/vkai-panel) by [HiTechCloud Vietnam](https://hitechcloud.vn).
+This project uses [VKAI Panel](https://github.com/hitechcloud-vietnam/vkai-panel) by [HiTech Cloud Vietnam](https://hitechcloud.vn).
 ```
 
 ---

@@ -1,4 +1,4 @@
-# vKAI Panel Testing Guide
+# VKAI Panel Testing Guide
 
 ## Table of Contents
 
@@ -211,7 +211,7 @@ func TestWebsiteHandler_Create(t *testing.T) {
 }
 ```
 
-### Frontend Unit Tests
+### UI Unit Tests (`panel/`)
 
 #### Component Tests
 
@@ -773,26 +773,31 @@ services:
 
 ```bash
 # .env.test
-DB_HOST=localhost
-DB_PORT=5433
-DB_NAME=vkai_test
-DB_USER=vkai_test
-DB_PASSWORD=test_password
+VKAI_DB_HOST=localhost
+VKAI_DB_PORT=5433
+VKAI_DB_NAME=vkai_test
+VKAI_DB_USER=vkai_test
+VKAI_DB_PASSWORD=test_password
+VKAI_DB_SSLMODE=disable
 
-REDIS_HOST=localhost
-REDIS_PORT=6380
+VKAI_REDIS_HOST=localhost
+VKAI_REDIS_PORT=6380
 
-JWT_SECRET=test-secret-key
+VKAI_JWT_SECRET=test-secret-key-at-least-32-characters
+VKAI_SECRET_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+
+# Keep the test tree out of a real installation
+VKAI_PANEL_ROOT=/tmp/vkai-panel-test
 ```
 
 ---
 
 ## Running Tests
 
-### Backend Tests
+### Core API Tests (`core/`)
 
 ```bash
-cd backend
+cd core
 
 # Run all tests
 go test ./...
@@ -813,10 +818,10 @@ go test -tags=integration ./tests/integration/...
 go test -bench=. ./...
 ```
 
-### Frontend Tests
+### Panel UI Tests (`panel/`)
 
 ```bash
-cd frontend
+cd panel
 
 # Run all tests
 npm test
@@ -933,7 +938,7 @@ func TestValidateDomain(t *testing.T) {
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 
-# Frontend coverage
+# UI coverage
 npm run test:coverage
 open coverage/lcov-report/index.html
 ```
@@ -965,14 +970,19 @@ module.exports = {
 
 ### GitHub Actions
 
+The repository already runs its tests from `.github/workflows/ci.yml`, whose
+three jobs are `Core API`, `Panel UI` and `Agent`. All three must be green
+before a Pull Request can be merged; pushing straight to `main` is blocked. The
+workflow below is a minimal illustration of the same shape.
+
 ```yaml
-# .github/workflows/test.yml
+# Illustrative only - the real pipeline is .github/workflows/ci.yml
 name: Tests
 
 on: [push, pull_request]
 
 jobs:
-  backend-tests:
+  core-tests:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -1003,9 +1013,11 @@ jobs:
         with:
           go-version: '1.22'
       - run: go test ./...
+        working-directory: core
       - run: go test -cover ./...
+        working-directory: core
 
-  frontend-tests:
+  panel-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -1013,12 +1025,15 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
+        working-directory: panel
       - run: npm test
+        working-directory: panel
       - run: npm run test:coverage
+        working-directory: panel
 
   e2e-tests:
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests]
+    needs: [core-tests, panel-tests]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3

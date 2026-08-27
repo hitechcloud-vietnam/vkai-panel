@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 224 64" width="224" height="64" role="img" aria-label="VKAI Panel - HiTech Cloud">
+  <title>VKAI Panel</title>
+  <rect width="64" height="64" rx="14" ry="14" fill="#0B398C"/>
+  <path d="M46 18 L32 46" fill="none" stroke="#1791C8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M18 18 L32 46" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <g font-family="Inter, system-ui, -apple-system, Segoe UI, Arial, Helvetica, sans-serif">
+    <text x="80" y="33" fill="#0B398C" font-size="22" font-weight="700" letter-spacing="0.2">VKAI Panel</text>
+    <text x="80" y="49" fill="#1791C8" font-size="11" font-weight="500" letter-spacing="0.6">by HiTech Cloud</text>
+  </g>
+</svg>

@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Mã hoá mã nguồn khi đẩy lên Git (vkai-crypt)
+#
+# Cách hoạt động: file khớp mẫu dưới đây được mã hoá lúc `git add`/`commit`
+# và giải mã lúc `git checkout`. Bản dưới máy LUÔN là mã nguồn gốc; thứ nằm
+# trên GitHub là ciphertext.
+#
+# Bật lên:  go run ./tools/protect/cmd/vkai-crypt init
+#           git add --renormalize .
+# Kiểm tra: go run ./tools/protect/cmd/vkai-crypt status
+#
+# CỐ Ý KHÔNG mã hoá (nếu mã hoá sẽ tự khoá chân mình):
+#   - tools/protect/**      chính bộ giải mã, CI phải chạy được nó trước tiên
+#   - .github/**            CI phải đọc được để biết cách giải mã
+#   - go.mod, go.sum, package.json, package-lock.json
+#                           chỉ lộ danh sách thư viện, đổi lại giữ được
+#                           cache CI, Dependabot và quét lỗ hổng
+#   - LICENSE, README.md, .gitattributes, .gitignore
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Mặc định: chuẩn hoá xuống dòng
+* text=auto eol=lf
+
+# ── Mã nguồn được mã hoá ────────────────────────────────────────────────────
+*.go        filter=vkai-crypt diff=vkai-crypt
+*.ts        filter=vkai-crypt diff=vkai-crypt
+*.tsx       filter=vkai-crypt diff=vkai-crypt
+*.js        filter=vkai-crypt diff=vkai-crypt
+*.jsx       filter=vkai-crypt diff=vkai-crypt
+*.mjs       filter=vkai-crypt diff=vkai-crypt
+*.css       filter=vkai-crypt diff=vkai-crypt
+*.sql       filter=vkai-crypt diff=vkai-crypt
+*.sh        filter=vkai-crypt diff=vkai-crypt
+*.conf      filter=vkai-crypt diff=vkai-crypt
+*.service   filter=vkai-crypt diff=vkai-crypt
+Makefile    filter=vkai-crypt diff=vkai-crypt
+Dockerfile  filter=vkai-crypt diff=vkai-crypt
+docker-compose*.yml filter=vkai-crypt diff=vkai-crypt
+
+# ── Ngoại lệ: phải giữ nguyên văn ───────────────────────────────────────────
+tools/protect/**        !filter !diff text=auto eol=lf
+.github/**              !filter !diff
+go.mod                  !filter !diff
+go.sum                  !filter !diff
+package.json            !filter !diff
+package-lock.json       !filter !diff -diff linguist-generated=true
+tsconfig.json           !filter !diff
+.gitattributes          !filter !diff
+.gitignore              !filter !diff
+LICENSE                 !filter !diff
+README.md               !filter !diff
+
+# ── Tệp nhị phân: không chuyển đổi xuống dòng ───────────────────────────────
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.woff      binary
+*.woff2     binary
+*.pdf       binary
+*.gz        binary
+*.zip       binary

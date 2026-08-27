@@ -1,0 +1,53 @@
+# =============================================================================
+# VKAI Panel - giao dien Next.js  |  HiTech Cloud (hitechcloud.vn)
+# Cai dat: /etc/systemd/system/vkai-ui.service
+#
+# Chay ban build "standalone". Buoc build BAT BUOC phai copy .next/static va
+# public/ vao .next/standalone (npm run build da lam qua postbuild:standalone).
+# Thieu buoc do, trang tra ve HTML nhung moi /_next/static/*.js deu 404 va
+# trinh duyet hien "Application error: a client-side exception has occurred".
+# =============================================================================
+[Unit]
+Description=VKAI Panel UI (Next.js standalone)
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+After=network-online.target vkai-api.service
+Wants=network-online.target vkai-api.service
+
+[Service]
+Type=simple
+User=vkai
+Group=vkai
+WorkingDirectory=/vkai-panel/panel
+ExecStart=/usr/bin/node /vkai-panel/panel/.next/standalone/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-ui
+
+# Mac dinh; .env ghi de duoc vi duoc nap sau.
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+EnvironmentFile=/vkai-panel/etc/.env
+
+# --- Gia co bao mat ----------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Next.js ghi cache va nhat ky; ma nguon UI thi chi doc.
+ReadWritePaths=/vkai-panel/panel/.next/cache
+ReadWritePaths=/vkai-panel/logs
+ReadWritePaths=/vkai-panel/tmp
+
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

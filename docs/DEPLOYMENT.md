@@ -1,4 +1,4 @@
-# vKAI Panel Deployment Guide
+# VKAI Panel Deployment Guide
 
 ## Table of Contents
 
@@ -21,32 +21,58 @@
 
 ### Overview
 
-vKAI Panel is designed to run as systemd services without Docker. This guide covers production deployment on Ubuntu/Debian systems.
+VKAI Panel is designed to run as systemd services without Docker. This guide covers production deployment on Ubuntu/Debian systems.
 
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Nginx (Reverse Proxy)                  │
-│                    Port 80/443 (HTTP/HTTPS)                 │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-              ▼                               ▼
-┌─────────────────────────┐     ┌─────────────────────────┐
-│   Frontend (Next.js)    │     │    API Server (Go)      │
-│      Port 3000          │     │     Port 30110          │
-└─────────────────────────┘     └─────────────────────────┘
-                                          │
-                        ┌─────────────────┼─────────────────┐
-                        │                 │                 │
-                        ▼                 ▼                 ▼
-              ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-              │ PostgreSQL  │   │    Redis    │   │   Agent     │
-              │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
-              └─────────────┘   └─────────────┘   └─────────────┘
+        Customer traffic                      Administrator traffic
+              │                                          │
+              ▼                                          ▼
+┌─────────────────────────────┐        ┌─────────────────────────────┐
+│  nginx / apache vhosts      │        │  vkai-api on port 8888      │
+│  Port 80 / 443              │        │  + entrance /vkai_xxxxxxxx  │
+│  Root: /vkai-panel/www/     │        │  (systemd: vkai-api)        │
+│        domains/<domain>     │        └──────────────┬──────────────┘
+└─────────────────────────────┘                       │
+                                       ┌──────────────┴──────────────┐
+                                       │                             │
+                                       ▼                             ▼
+                         ┌─────────────────────────┐   ┌─────────────────────────┐
+                         │   vkai-ui (Next.js)     │   │   vkai-api internal API │
+                         │   127.0.0.1:3000        │   │   127.0.0.1:30110       │
+                         └─────────────────────────┘   └────────────┬────────────┘
+                                                                    │
+                                                  ┌─────────────────┼─────────────────┐
+                                                  │                 │                 │
+                                                  ▼                 ▼                 ▼
+                                        ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+                                        │ PostgreSQL  │   │    Redis    │   │ vkai-agent  │
+                                        │  Port 5432  │   │  Port 6379  │   │ Port 30111  │
+                                        └─────────────┘   └─────────────┘   └─────────────┘
 ```
+
+**Ports 80 and 443 are never used by the panel.** They belong to the customer
+websites hosted on this server. The panel answers only on `VKAI_PANEL_PORT`
+(default `8888`) behind the security entrance - see
+[PANEL_ACCESS.md](PANEL_ACCESS.md).
+
+### Standard Paths
+
+| Path | Contents |
+|------|----------|
+| `/vkai-panel/` | Installation root |
+| `/vkai-panel/core/` | API source and binaries (`vkai-api`) |
+| `/vkai-panel/panel/` | Built UI served by `vkai-ui` |
+| `/vkai-panel/www/domains/<domain>/` | Customer website document roots |
+| `/vkai-panel/www/backup/` | Website and database backups |
+| `/vkai-panel/www/default/` | Default page for unmatched vhosts |
+| `/vkai-panel/logs/` | Panel logs |
+| `/vkai-panel/logs/sites/<domain>/` | Per-site web server logs |
+| `/vkai-panel/etc/` | Panel configuration (`.env`, `config.yaml`) |
+| `/vkai-panel/ssl/` | TLS certificates |
+| `/vkai-panel/tmp/` | Temporary files |
+| `/vkai-panel/etc/panel_access.json` | Generated panel port and entrance (mode `0600`) |
 
 ---
 
@@ -54,7 +80,8 @@ vKAI Panel is designed to run as systemd services without Docker. This guide cov
 
 ### Minimum Requirements
 
-- **OS**: Ubuntu 22.04 LTS or Debian 12
+- **OS**: Ubuntu 22.04/24.04 LTS, Debian 11/12, Rocky Linux 8/9, AlmaLinux 8/9, RHEL 8/9, or CentOS Stream 9
+- **Architecture**: `x86_64`/`amd64` or `aarch64`/`arm64`
 - **CPU**: 2 cores
 - **RAM**: 4 GB
 - **Disk**: 50 GB SSD
@@ -85,8 +112,8 @@ vKAI Panel is designed to run as systemd services without Docker. This guide cov
 
 ```bash
 # Clone repository
-git clone https://github.com/hitechcloud-vietnam/vkai-panel.git /opt/vkai-panel
-cd /opt/vkai-panel
+git clone https://github.com/hitechcloud-vietnam/vkai-panel.git /vkai-panel
+cd /vkai-panel
 
 # Run installation script
 chmod +x deploy/install.sh
@@ -158,18 +185,14 @@ sudo usermod -aG www-data vkai
 #### 5. Setup Directories
 
 ```bash
-# Create directories
-sudo mkdir -p /opt/vkai-panel/{backend,frontend,config}
-sudo mkdir -p /var/log/vkai
-sudo mkdir -p /var/backups/vkai
-sudo mkdir -p /var/www
-sudo mkdir -p /etc/ssl/vkai
+# Create the standard layout
+sudo mkdir -p /vkai-panel/{core,panel,etc,ssl,tmp}
+sudo mkdir -p /vkai-panel/www/{domains,backup,default}
+sudo mkdir -p /vkai-panel/logs/sites
 
-# Set permissions
-sudo chown -R vkai:vkai /opt/vkai-panel
-sudo chown -R vkai:vkai /var/log/vkai
-sudo chown -R vkai:vkai /var/backups/vkai
-sudo chown -R vkai:vkai /var/www
+# Set ownership and permissions
+sudo chown -R vkai:vkai /vkai-panel
+sudo chmod 750 /vkai-panel/etc /vkai-panel/ssl
 ```
 
 #### 6. Setup PostgreSQL
@@ -185,8 +208,8 @@ sudo -u postgres psql -c "CREATE DATABASE vkai_panel OWNER vkai;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE vkai_panel TO vkai;"
 
 # Run migrations
-cd /opt/vkai-panel/backend
-sudo -u vkai go run cmd/migrate/main.go
+cd /vkai-panel
+sudo -u vkai make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 ```
 
 #### 7. Setup Redis
@@ -197,10 +220,10 @@ sudo systemctl enable redis-server
 sudo systemctl start redis-server
 ```
 
-#### 8. Build Backend
+#### 8. Build the API (core/)
 
 ```bash
-cd /opt/vkai-panel/backend
+cd /vkai-panel/core
 
 # Install dependencies
 sudo -u vkai go mod tidy
@@ -209,10 +232,10 @@ sudo -u vkai go mod tidy
 sudo -u vkai go build -o bin/vkai-api ./cmd/api/
 ```
 
-#### 9. Build Frontend
+#### 9. Build the UI (panel/)
 
 ```bash
-cd /opt/vkai-panel/frontend
+cd /vkai-panel/panel
 
 # Install dependencies
 sudo -u vkai npm install
@@ -223,113 +246,160 @@ sudo -u vkai npm run build
 
 #### 10. Configure Environment
 
+All panel settings use the **`VKAI_`** prefix. Start from
+[`.env.example`](../.env.example) in the repository, which documents every
+variable.
+
 ```bash
 # Create environment file
-sudo -u vkai tee /opt/vkai-panel/.env << EOF
-SERVER_HOST=0.0.0.0
-SERVER_PORT=30110
+sudo -u vkai tee /vkai-panel/etc/.env << EOF
+# --- Panel access gate: own port + security entrance, never 80/443 ---
+VKAI_PANEL_ENABLED=true
+VKAI_PANEL_PORT=8888
+VKAI_PANEL_BIND=0.0.0.0
+# Leave empty on the first start: one is generated and printed once.
+VKAI_PANEL_ENTRANCE=
+VKAI_PANEL_ENTRANCE_ENABLED=true
+VKAI_PANEL_SESSION_TTL=12h
+VKAI_PANEL_ALLOWED_IPS=
+VKAI_PANEL_TRUSTED_PROXIES=
+VKAI_PANEL_DOMAIN=
+VKAI_PANEL_CONFIG_FILE=/vkai-panel/etc/panel_access.json
 
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=vkai_panel
-DB_USER=vkai
-DB_PASSWORD=your_secure_password
-DB_SSLMODE=disable
+# --- Internal API (localhost only when the panel gate is on) ---
+VKAI_SERVER_HOST=127.0.0.1
+VKAI_SERVER_PORT=30110
+VKAI_SERVER_MODE=release
 
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
+# --- PostgreSQL ---
+VKAI_DB_HOST=localhost
+VKAI_DB_PORT=5432
+VKAI_DB_NAME=vkai_panel
+VKAI_DB_USER=vkai
+VKAI_DB_PASSWORD=your_secure_password
+VKAI_DB_SSLMODE=require
 
-JWT_SECRET=$(openssl rand -base64 64)
-JWT_ACCESS_TOKEN_TTL=15m
-JWT_REFRESH_TOKEN_TTL=168h
-JWT_ISSUER=vkai-panel
+# --- Redis ---
+VKAI_REDIS_HOST=localhost
+VKAI_REDIS_PORT=6379
+VKAI_REDIS_PASSWORD=
+VKAI_REDIS_DB=0
 
-LOG_LEVEL=info
-LOG_MAX_SIZE=100
-LOG_MAX_BACKUPS=5
-LOG_MAX_AGE=30
-LOG_COMPRESS=true
+# --- Secrets (no defaults: the panel refuses to start without them) ---
+VKAI_JWT_SECRET=$(openssl rand -hex 32)
+VKAI_SECRET_KEY=$(openssl rand -hex 32)
+VKAI_AGENT_TOKEN=$(openssl rand -base64 24)
+VKAI_JWT_ACCESS_EXPIRY=15
+VKAI_JWT_REFRESH_EXPIRY=10080
 
-NEXT_PUBLIC_API_URL=http://localhost:30110
+# --- Logging ---
+VKAI_LOG_LEVEL=info
+VKAI_LOG_MAX_SIZE=100
+VKAI_LOG_MAX_BACKUPS=5
+VKAI_LOG_MAX_AGE=30
+VKAI_LOG_COMPRESS=true
+
+# --- UI: must point at the panel port, entrance included ---
+NEXT_PUBLIC_API_URL=https://panel.example.com:8888
 EOF
 
 # Set permissions
-sudo chmod 600 /opt/vkai-panel/.env
+sudo chmod 600 /vkai-panel/etc/.env
+sudo chown vkai:vkai /vkai-panel/etc/.env
 ```
+
+**Legacy names.** For backward compatibility the panel still accepts the older
+unprefixed panel-access names (`PANEL_PORT`, `PANEL_BIND`, `PANEL_ENTRANCE`,
+`PANEL_ALLOWED_IPS`, `PANEL_TLS_CERT`, ...) and the older database names
+(`VKAI_DATABASE_HOST`, `VKAI_DATABASE_PASSWORD`, `VKAI_DATABASE_DBNAME`, ...).
+The `VKAI_` form always wins when both are set. Use the `VKAI_` names in new
+installations; the legacy names are deprecated.
 
 #### 11. Install Systemd Services
 
 ```bash
 # Copy service files
-sudo cp /opt/vkai-panel/deploy/systemd/vkai-api.service /etc/systemd/system/
-sudo cp /opt/vkai-panel/deploy/systemd/vkai-frontend.service /etc/systemd/system/
+sudo cp /vkai-panel/deploy/systemd/vkai-api.service /etc/systemd/system/
+sudo cp /vkai-panel/deploy/systemd/vkai-ui.service /etc/systemd/system/
 
 # Reload systemd
 sudo systemctl daemon-reload
 
 # Enable services
 sudo systemctl enable vkai-api
-sudo systemctl enable vkai-frontend
+sudo systemctl enable vkai-ui
 
 # Start services
 sudo systemctl start vkai-api
-sudo systemctl start vkai-frontend
+sudo systemctl start vkai-ui
 ```
 
-#### 12. Configure Nginx
+#### 12. Configure Nginx for customer websites
+
+Nginx on this server exists for the **customer websites**, not for the panel.
+The panel is served by `vkai-api` itself on `VKAI_PANEL_PORT`; do not proxy it
+from port 80 or 443.
 
 ```bash
-# Copy Nginx configuration
-sudo tee /etc/nginx/sites-available/vkai-panel << 'EOF'
+# Default vhost: answer 444 for any hostname that has no site yet
+sudo tee /etc/nginx/sites-available/vkai-default << 'EOF'
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name _;
+    root /vkai-panel/www/default;
+    index index.html;
+
+    access_log /vkai-panel/logs/sites/default/access.log;
+    error_log  /vkai-panel/logs/sites/default/error.log;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:30110;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /ws/ {
-        proxy_pass http://127.0.0.1:30110;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 86400;
+        try_files $uri $uri/ =404;
     }
 }
 EOF
 
-# Enable site
-sudo ln -sf /etc/nginx/sites-available/vkai-panel /etc/nginx/sites-enabled/
+sudo mkdir -p /vkai-panel/logs/sites/default
+sudo ln -sf /etc/nginx/sites-available/vkai-default /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
-# Test and reload
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+Per-site vhosts created through the panel follow the same layout:
+
+- document root `/vkai-panel/www/domains/<domain>`
+- logs `/vkai-panel/logs/sites/<domain>/{access,error}.log`
+- certificates under `/vkai-panel/ssl/`
+
+#### 13. Open the panel port
+
+```bash
+# Ubuntu / Debian
+sudo ufw allow 8888/tcp
+
+# RHEL / Rocky / AlmaLinux
+sudo firewall-cmd --permanent --add-port=8888/tcp && sudo firewall-cmd --reload
+```
+
+Then read the access banner printed once at first start:
+
+```bash
+vkai panel info
+sudo journalctl -u vkai-api | grep -A20 "THONG TIN TRUY CAP"
+```
+
+The URL looks like `https://203.0.113.10:8888/vkai_91ac5b65/`. Anything that
+reaches the panel port with the wrong host, source IP or entrance path gets a
+neutral 404.
+
+#### 14. Optional: reverse proxy in front of the panel port
+
+Only if you need TLS termination or a hostname in front of the panel. The proxy
+must listen on the **panel port**, never on 80/443, and you must set
+`VKAI_PANEL_TRUSTED_PROXIES` to the proxy address so `X-Forwarded-For` is
+trusted. Full instructions: [PANEL_ACCESS.md](PANEL_ACCESS.md).
 
 ---
 
@@ -337,53 +407,70 @@ sudo systemctl reload nginx
 
 ### Environment Variables
 
-Edit `/opt/vkai-panel/.env`:
+Edit `/vkai-panel/etc/.env`. Every panel variable uses the **`VKAI_`** prefix.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VKAI_PANEL_PORT` | Panel port. 80, 443, 22, 25, 3306, 5432 and 6379 are rejected | `8888` |
+| `VKAI_PANEL_BIND` | Interface the panel binds | `0.0.0.0` |
+| `VKAI_PANEL_ENTRANCE` | Secret entrance path, e.g. `/vkai_a1b2c3d4`. Empty = generated on first start | (generated) |
+| `VKAI_PANEL_ENTRANCE_ENABLED` | Enable the security entrance | `true` |
+| `VKAI_PANEL_SESSION_TTL` | Entrance cookie lifetime | `12h` |
+| `VKAI_PANEL_ALLOWED_IPS` | Comma separated IPs/CIDRs allowed to reach the panel. Empty = everyone | (empty) |
+| `VKAI_PANEL_TRUSTED_PROXIES` | Addresses whose `X-Forwarded-For` is trusted | (empty) |
+| `VKAI_PANEL_DOMAIN` | Pin the panel to one host name | (empty) |
+| `VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY` | Panel TLS certificate and key | (empty) |
+| `VKAI_PANEL_TLS_SELF_SIGNED` | Generate a self-signed panel certificate | `false` |
+| `VKAI_PANEL_CONFIG_FILE` | Where the generated port/entrance are stored | `/vkai-panel/etc/panel_access.json` |
+| `VKAI_SERVER_HOST` / `VKAI_SERVER_PORT` | Internal API bind address | `127.0.0.1` / `30110` |
+| `VKAI_SERVER_MODE` | Gin mode: `release`, `debug`, `test` | `release` |
+| `VKAI_DB_HOST` / `VKAI_DB_PORT` | PostgreSQL | `localhost` / `5432` |
+| `VKAI_DB_USER` / `VKAI_DB_NAME` | Database user and name | `vkai` / `vkai_panel` |
+| `VKAI_DB_PASSWORD` | Database password | **required, no default** |
+| `VKAI_DB_SSLMODE` | `require` or stronger; `disable` only for a localhost database | `require` |
+| `VKAI_REDIS_HOST` / `VKAI_REDIS_PORT` / `VKAI_REDIS_DB` | Redis | `localhost` / `6379` / `0` |
+| `VKAI_JWT_SECRET` | JWT signing key, at least 32 random characters | **required, no default** |
+| `VKAI_JWT_ACCESS_EXPIRY` / `VKAI_JWT_REFRESH_EXPIRY` | Token lifetimes in minutes | `15` / `10080` |
+| `VKAI_SECRET_KEY` | 32-byte hex/base64 key encrypting stored secrets | **required** for managed DB users |
+| `VKAI_CORS_ALLOWED_ORIGINS` | Browser origins allowed to call the API. No wildcard | (empty) |
+| `VKAI_RBAC_ENFORCE` | Enforce permission checks | `true` |
+| `VKAI_FILEMANAGER_ROOT` | Jail directory for the file manager | the web root, `/vkai-panel/www/domains` |
+| `VKAI_BACKUP_ROOT` | Root every backup destination must resolve inside | `/vkai-panel/www/backup` |
+| `VKAI_CRON_USER` | Account panel-managed cron jobs run as | `www-data` |
+| `VKAI_AGENT_PORT` / `VKAI_AGENT_TOKEN` | Agent port and shared secret | `30111` / **required** |
+| `VKAI_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `VKAI_PANEL_ROOT` | Installation root; every other path is derived from it | `/vkai-panel` |
+| `VKAI_WEB_ROOT` | Customer website document roots | `/vkai-panel/www/domains` |
+| `VKAI_LOG_ROOT` | Panel logs (site logs go to `<log root>/sites/<domain>`) | `/vkai-panel/logs` |
+| `VKAI_ETC_ROOT` | Configuration directory | `/vkai-panel/etc` |
+| `VKAI_SSL_ROOT` | Certificates (`<ssl root>/panel` for the panel's own) | `/vkai-panel/ssl` |
+| `VKAI_TMP_ROOT` | Panel-owned scratch space | `/vkai-panel/tmp` |
+| `NEXT_PUBLIC_API_URL` | URL the UI calls; must include the panel port and entrance | (required) |
+
+The complete annotated list is [`.env.example`](../.env.example).
+
+#### Legacy variable names
+
+Older names are still accepted so existing installations keep working, but they
+are deprecated and the `VKAI_` form always takes precedence:
+
+| Current | Still accepted |
+|---------|----------------|
+| `VKAI_PANEL_PORT`, `VKAI_PANEL_BIND`, `VKAI_PANEL_ENTRANCE`, `VKAI_PANEL_ALLOWED_IPS`, ... | The same names without the `VKAI_` prefix (`PANEL_PORT`, `PANEL_BIND`, `PANEL_HOST`, `PANEL_ENTRANCE`, `PANEL_ALLOW_IPS`, `PANEL_TLS_CERT_FILE`, `PANEL_TLS_KEY_FILE`, `PANEL_SSL`) |
+| `VKAI_DB_HOST`, `VKAI_DB_PORT`, `VKAI_DB_USER`, `VKAI_DB_PASSWORD`, `VKAI_DB_NAME`, `VKAI_DB_SSLMODE` | `VKAI_DATABASE_HOST`, `VKAI_DATABASE_PORT`, `VKAI_DATABASE_USER`, `VKAI_DATABASE_PASSWORD`, `VKAI_DATABASE_DBNAME`, `VKAI_DATABASE_SSLMODE` |
+
+Unprefixed application names such as `SERVER_PORT`, `DB_PASSWORD` or
+`JWT_SECRET` are **not** read. Rename them to the `VKAI_` form when upgrading
+from an old installation.
+
+### UI Configuration
+
+Edit `/vkai-panel/panel/.env.local`:
 
 ```bash
-# Server
-SERVER_HOST=0.0.0.0
-SERVER_PORT=30110
-
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=vkai_panel
-DB_USER=vkai
-DB_PASSWORD=your_secure_password
-DB_SSLMODE=disable
-DB_MAX_CONNECTIONS=25
-DB_MAX_IDLE_CONNECTIONS=5
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
-
-# JWT
-JWT_SECRET=your_jwt_secret_key_at_least_32_chars
-JWT_ACCESS_TOKEN_TTL=15m
-JWT_REFRESH_TOKEN_TTL=168h
-JWT_ISSUER=vkai-panel
-
-# Logging
-LOG_LEVEL=info
-LOG_MAX_SIZE=100
-LOG_MAX_BACKUPS=5
-LOG_MAX_AGE=30
-LOG_COMPRESS=true
-
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:30110
-```
-
-### Frontend Configuration
-
-Edit `/opt/vkai-panel/frontend/.env.local`:
-
-```bash
-NEXT_PUBLIC_API_URL=http://localhost:30110
-NEXT_PUBLIC_APP_NAME=vKAI Panel
+# Point at the panel port, entrance included when one is configured
+NEXT_PUBLIC_API_URL=https://panel.example.com:8888/vkai_a1b2c3d4
+NEXT_PUBLIC_APP_NAME=VKAI Panel
 NEXT_PUBLIC_APP_VERSION=1.0.0
 ```
 
@@ -391,7 +478,15 @@ NEXT_PUBLIC_APP_VERSION=1.0.0
 
 ## SSL Setup
 
-### Let's Encrypt
+Certificates come in two flavours and they are kept apart:
+
+- **Customer website certificates** - issued per domain by certbot/Let's Encrypt
+  and used by the nginx/apache vhosts on 80/443.
+- **Panel certificate** - used only by `vkai-api` on the panel port, configured
+  with `VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY`, or generated on first start
+  when `VKAI_PANEL_TLS_SELF_SIGNED=true`.
+
+### Let's Encrypt (customer websites)
 
 ```bash
 # Install Certbot
@@ -411,15 +506,16 @@ echo "0 0 1 * * certbot renew" | sudo crontab -
 
 ```bash
 # Copy certificate files
-sudo cp your-domain.crt /etc/ssl/vkai/
-sudo cp your-domain.key /etc/ssl/vkai/
+sudo cp your-domain.crt /vkai-panel/ssl/
+sudo cp your-domain.key /vkai-panel/ssl/
 
 # Set permissions
-sudo chmod 600 /etc/ssl/vkai/your-domain.key
-sudo chmod 644 /etc/ssl/vkai/your-domain.crt
+sudo chown vkai:vkai /vkai-panel/ssl/your-domain.*
+sudo chmod 600 /vkai-panel/ssl/your-domain.key
+sudo chmod 644 /vkai-panel/ssl/your-domain.crt
 
-# Update Nginx configuration
-sudo nano /etc/nginx/sites-available/vkai-panel
+# Update the customer website vhost
+sudo nano /etc/nginx/sites-available/your-domain.com
 ```
 
 Add SSL configuration:
@@ -429,8 +525,13 @@ server {
     listen 443 ssl http2;
     server_name your-domain.com;
 
-    ssl_certificate /etc/ssl/vkai/your-domain.crt;
-    ssl_certificate_key /etc/ssl/vkai/your-domain.key;
+    root /vkai-panel/www/domains/your-domain.com;
+
+    access_log /vkai-panel/logs/sites/your-domain.com/access.log;
+    error_log  /vkai-panel/logs/sites/your-domain.com/error.log;
+
+    ssl_certificate /vkai-panel/ssl/your-domain.crt;
+    ssl_certificate_key /vkai-panel/ssl/your-domain.key;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512;
@@ -462,16 +563,26 @@ A       @       your-server-ip  3600
 A       www     your-server-ip  3600
 ```
 
-### Nginx Configuration
+To use a host name for the **panel** instead, point a record at the server and
+set `VKAI_PANEL_DOMAIN=panel.example.com`. The panel still answers on its own
+port: `https://panel.example.com:8888/vkai_a1b2c3d4/`.
 
-Update `/etc/nginx/sites-available/vkai-panel`:
+### Nginx Configuration (customer website)
+
+Create `/etc/nginx/sites-available/your-domain.com`:
 
 ```nginx
 server {
     listen 80;
     server_name your-domain.com www.your-domain.com;
 
-    # ... configuration
+    root /vkai-panel/www/domains/your-domain.com;
+    index index.php index.html;
+
+    access_log /vkai-panel/logs/sites/your-domain.com/access.log;
+    error_log  /vkai-panel/logs/sites/your-domain.com/error.log;
+
+    # ... rest of the site configuration
 }
 ```
 
@@ -481,21 +592,21 @@ server {
 
 ### Automated Backups
 
-Create backup script `/opt/vkai-panel/scripts/backup.sh`:
+Create backup script `/vkai-panel/scripts/backup.sh`:
 
 ```bash
 #!/bin/bash
-BACKUP_DIR="/var/backups/vkai"
+BACKUP_DIR="/vkai-panel/www/backup"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Backup database
 pg_dump -U vkai -d vkai_panel | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
 
 # Backup websites
-tar -czf "$BACKUP_DIR/websites_$DATE.tar.gz" /var/www
+tar -czf "$BACKUP_DIR/websites_$DATE.tar.gz" /vkai-panel/www/domains
 
 # Backup configuration
-tar -czf "$BACKUP_DIR/config_$DATE.tar.gz" /opt/vkai-panel/.env /etc/nginx/sites-available
+tar -czf "$BACKUP_DIR/config_$DATE.tar.gz" /vkai-panel/etc /etc/nginx/sites-available
 
 # Cleanup old backups (keep 30 days)
 find $BACKUP_DIR -name "*.gz" -mtime +30 -delete
@@ -505,10 +616,10 @@ Add to crontab:
 
 ```bash
 # Daily backup at 2 AM
-0 2 * * * /opt/vkai-panel/scripts/backup.sh
+0 2 * * * /vkai-panel/scripts/backup.sh
 
 # Weekly full backup
-0 3 * * 0 tar -czf /var/backups/vkai/full_$(date +\%Y\%m\%d).tar.gz /opt/vkai-panel /var/www
+0 3 * * 0 tar -czf /vkai-panel/www/backup/full_$(date +\%Y\%m\%d).tar.gz --exclude=/vkai-panel/www/backup /vkai-panel
 ```
 
 ### Remote Backups
@@ -523,7 +634,7 @@ sudo apt install awscli
 aws configure
 
 # Backup to S3
-aws s3 sync /var/backups/vkai s3://your-bucket/backups/
+aws s3 sync /vkai-panel/www/backup s3://your-bucket/backups/
 ```
 
 #### SFTP Backup
@@ -533,7 +644,7 @@ aws s3 sync /var/backups/vkai s3://your-bucket/backups/
 #!/bin/bash
 sftp backup-user@backup-server << EOF
 cd /backups/vkai
-put /var/backups/vkai/*.gz
+put /vkai-panel/www/backup/*.gz
 EOF
 ```
 
@@ -562,47 +673,47 @@ sudo nethogs
 ```bash
 # Check service status
 systemctl status vkai-api
-systemctl status vkai-frontend
+systemctl status vkai-ui
 systemctl status nginx
 systemctl status postgresql
 systemctl status redis-server
 
 # View service logs
 journalctl -u vkai-api -f
-journalctl -u vkai-frontend -f
+journalctl -u vkai-ui -f
 ```
 
 ### Log Monitoring
 
 ```bash
-# View API logs
-tail -f /var/log/vkai/api.log
+# View panel logs
+tail -f /vkai-panel/logs/api.log
 
 # Search for errors
-grep -i error /var/log/vkai/api.log
+grep -i error /vkai-panel/logs/api.log
 
-# View Nginx logs
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
+# View the web server logs of one customer site
+tail -f /vkai-panel/logs/sites/your-domain.com/access.log
+tail -f /vkai-panel/logs/sites/your-domain.com/error.log
 ```
 
 ### Health Checks
 
-Create health check script `/opt/vkai-panel/scripts/health-check.sh`:
+Create health check script `/vkai-panel/scripts/health-check.sh`:
 
 ```bash
 #!/bin/bash
 
 # Check API
-if ! curl -s http://localhost:30110/health > /dev/null; then
+if ! curl -s http://127.0.0.1:30110/health > /dev/null; then
     echo "API is down"
     systemctl restart vkai-api
 fi
 
-# Check Frontend
-if ! curl -s http://localhost:3000 > /dev/null; then
-    echo "Frontend is down"
-    systemctl restart vkai-frontend
+# Check the UI
+if ! curl -s http://127.0.0.1:3000 > /dev/null; then
+    echo "UI is down"
+    systemctl restart vkai-ui
 fi
 
 # Check PostgreSQL
@@ -622,7 +733,7 @@ Add to crontab:
 
 ```bash
 # Health check every 5 minutes
-*/5 * * * * /opt/vkai-panel/scripts/health-check.sh
+*/5 * * * * /vkai-panel/scripts/health-check.sh
 ```
 
 ---
@@ -638,9 +749,12 @@ sudo apt install ufw
 # Allow SSH
 sudo ufw allow 22/tcp
 
-# Allow HTTP/HTTPS
+# Allow HTTP/HTTPS - customer websites only
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
+
+# Allow the panel port. Restrict it to the addresses you administer from.
+sudo ufw allow from 203.0.113.0/24 to any port 8888 proto tcp
 
 # Enable firewall
 sudo ufw enable
@@ -648,6 +762,11 @@ sudo ufw enable
 # Check status
 sudo ufw status
 ```
+
+Do **not** expose 30110 (internal API) or 3000 (UI) to the Internet: both bind
+to localhost and are reached through the panel port. Open the panel port
+**before** restarting `vkai-api` after changing `VKAI_PANEL_PORT`, otherwise you
+lock yourself out.
 
 ### SSH Hardening
 
@@ -798,17 +917,16 @@ gzip_types text/plain text/css text/xml text/javascript application/json applica
 
 ### Application Optimization
 
+In `/vkai-panel/etc/.env`:
+
 ```bash
-# Connection pool
-DB_MAX_CONNECTIONS=25
-DB_MAX_IDLE_CONNECTIONS=5
-
-# Redis pool
-REDIS_POOL_SIZE=10
-
-# Rate limiting
-RATE_LIMIT=100
+# PostgreSQL connection pool
+VKAI_DATABASE_MAX_OPEN=25
+VKAI_DATABASE_MAX_IDLE=5
 ```
+
+The same values can be set in `/vkai-panel/etc/config.yaml` under
+`database.max_open` and `database.max_idle`; the environment variable wins.
 
 ---
 
@@ -816,31 +934,40 @@ RATE_LIMIT=100
 
 ### Load Balancing
 
-```nginx
-upstream vkai_backend {
-    server 10.0.0.1:30110;
-    server 10.0.0.2:30110;
-    server 10.0.0.3:30110;
-}
+Several panel nodes can sit behind one load balancer. The balancer listens on
+the **panel port**, not on 80/443, and every node must trust it via
+`VKAI_PANEL_TRUSTED_PROXIES` so the IP allow list keeps working.
 
-upstream vkai_frontend {
-    server 10.0.0.1:3000;
-    server 10.0.0.2:3000;
-    server 10.0.0.3:3000;
+```nginx
+upstream vkai_panel_nodes {
+    server 10.0.0.1:8888;
+    server 10.0.0.2:8888;
+    server 10.0.0.3:8888;
 }
 
 server {
-    listen 80;
-    server_name your-domain.com;
+    listen 8888 ssl http2;
+    server_name panel.example.com;
+
+    ssl_certificate     /vkai-panel/ssl/panel.crt;
+    ssl_certificate_key /vkai-panel/ssl/panel.key;
 
     location / {
-        proxy_pass http://vkai_frontend;
-    }
-
-    location /api/ {
-        proxy_pass http://vkai_backend;
+        proxy_pass http://vkai_panel_nodes;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+```
+
+On each node:
+
+```bash
+VKAI_PANEL_BIND=10.0.0.1
+VKAI_PANEL_TRUSTED_PROXIES=10.0.0.10
+VKAI_PANEL_DOMAIN=panel.example.com
 ```
 
 ### Database Replication
@@ -871,10 +998,14 @@ systemctl status vkai-api
 journalctl -u vkai-api -n 100
 
 # Check configuration
-cat /opt/vkai-panel/.env
+sudo cat /vkai-panel/etc/.env
 
 # Check port availability
-lsof -i :30110
+sudo lsof -i :8888
+sudo lsof -i :30110
+
+# Show the current panel port and entrance
+vkai panel info
 ```
 
 #### Database Connection Issues
@@ -948,14 +1079,16 @@ sudo -u postgres psql -c "SELECT count(*) FROM pg_stat_activity;"
 # Update system packages
 sudo apt update && sudo apt upgrade -y
 
-# Update vKAI Panel
-cd /opt/vkai-panel
-git pull origin main
-sudo systemctl restart vkai-api
-sudo systemctl restart vkai-frontend
+# Update VKAI Panel
+vkai update
+# or, from a source checkout:
+#   cd /vkai-panel && git pull origin main
+#   cd core  && sudo -u vkai go build -o bin/vkai-api ./cmd/api/
+#   cd ../panel && sudo -u vkai npm ci && sudo -u vkai npm run build
+sudo systemctl restart vkai-api vkai-ui
 
 # Clean up old logs
-find /var/log/vkai -name "*.log" -mtime +30 -delete
+find /vkai-panel/logs -name "*.log" -mtime +30 -delete
 
 # Vacuum PostgreSQL
 sudo -u postgres vacuumdb --all --analyze
@@ -968,7 +1101,7 @@ sudo -u postgres vacuumdb --all --analyze
 pg_dump -U vkai -d vkai_panel | psql -U vkai -d vkai_panel_test
 
 # Verify backup integrity
-gunzip -t /var/backups/vkai/db_*.sql.gz
+gunzip -t /vkai-panel/www/backup/db_*.sql.gz
 ```
 
 ---

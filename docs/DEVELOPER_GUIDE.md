@@ -1,12 +1,12 @@
-# vKAI Panel Developer Guide
+# VKAI Panel Developer Guide
 
 ## Table of Contents
 
 1. [Development Setup](#development-setup)
 2. [Project Structure](#project-structure)
 3. [Architecture](#architecture)
-4. [Backend Development](#backend-development)
-5. [Frontend Development](#frontend-development)
+4. [API Development (`core/`)](#api-development-core)
+5. [UI Development (`panel/`)](#ui-development-panel)
 6. [Agent Development](#agent-development)
 7. [Database](#database)
 8. [Testing](#testing)
@@ -58,29 +58,31 @@ sudo apt install redis-server
 sudo systemctl start redis-server
 ```
 
-#### 2. Setup Backend
+#### 2. Setup the API (`core/`)
 
 ```bash
-cd backend
+cd core
 
 # Install dependencies
 go mod tidy
 
 # Create .env file
-cp .env.example .env
+cp ../.env.example ../.env
 # Edit .env with your database credentials
 
-# Run migrations
-go run cmd/migrate/main.go
+# Run migrations (from the repository root)
+cd ..
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 
 # Start server
-go run cmd/api/main.go
+cd core
+go run ./cmd/api
 ```
 
-#### 3. Setup Frontend
+#### 3. Setup the UI (`panel/`)
 
 ```bash
-cd frontend
+cd panel
 
 # Install dependencies
 npm install
@@ -114,10 +116,11 @@ go build -o vkaid cmd/main.go
 
 ```
 vkai-panel/
-├── backend/                    # Go backend
+├── core/                    # Go API server (service vkai-api)
 │   ├── cmd/                   # Entry points
-│   │   ├── api/              # API server
-│   │   └── migrate/          # Database migrations
+│   │   ├── api/              # API server (vkai-api)
+│   │   ├── cli/              # vkai command
+│   │   └── panelctl/         # vkai-panelctl: port, entrance, IP, domain
 │   ├── internal/             # Internal packages
 │   │   ├── config/          # Configuration
 │   │   ├── handler/         # HTTP handlers
@@ -129,7 +132,7 @@ vkai-panel/
 │   ├── migrations/          # SQL migrations
 │   ├── go.mod
 │   └── go.sum
-├── frontend/                   # Next.js frontend
+├── panel/                   # Next.js UI (service vkai-ui)
 │   ├── src/
 │   │   ├── app/             # App router
 │   │   ├── components/      # React components
@@ -156,7 +159,7 @@ vkai-panel/
 
 ## Architecture
 
-### Backend Architecture
+### Core API Architecture (`core/`)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -194,7 +197,7 @@ vkai-panel/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Frontend Architecture
+### Panel UI Architecture (`panel/`)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -229,7 +232,7 @@ vkai-panel/
 
 ---
 
-## Backend Development
+## API Development (`core/`)
 
 ### Adding a New Feature
 
@@ -363,12 +366,12 @@ CREATE INDEX idx_my_features_tenant_id ON my_features(tenant_id);
 
 Run migrations:
 ```bash
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 ```
 
 ---
 
-## Frontend Development
+## UI Development (`panel/`)
 
 ### Adding a New Page
 
@@ -514,7 +517,7 @@ apiClient.interceptors.response.use(
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        vKAI Agent                           │
+│                        VKAI Agent                           │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
@@ -605,7 +608,7 @@ CREATE INDEX idx_websites_status ON websites(status);
 
 ### Migrations
 
-Migration files are in `backend/migrations/`:
+Migration files are in `core/migrations/`:
 
 ```
 migrations/
@@ -617,8 +620,7 @@ migrations/
 
 Run migrations:
 ```bash
-cd backend
-go run cmd/migrate/main.go
+make migrate DATABASE_URL=postgres://vkai:PASSWORD@localhost:5432/vkai_panel
 ```
 
 ---
@@ -628,7 +630,7 @@ go run cmd/migrate/main.go
 ### Backend Tests
 
 ```bash
-cd backend
+cd core
 
 # Run all tests
 go test ./...
@@ -680,10 +682,10 @@ func TestWebsiteService_Create(t *testing.T) {
 }
 ```
 
-### Frontend Tests
+### UI Tests (`panel/`)
 
 ```bash
-cd frontend
+cd panel
 
 # Run tests
 npm test

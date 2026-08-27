@@ -1,0 +1,9 @@
+# Mặc định: mọi thay đổi cần chủ sở hữu repo xem xét.
+*                       @thanhan92-f1
+
+# Vùng nhạy cảm: bảo mật, xác thực, truy cập panel
+/backend/internal/auth/         @thanhan92-f1
+/backend/internal/middleware/   @thanhan92-f1
+/backend/internal/config/       @thanhan92-f1
+/.github/                       @thanhan92-f1
+/deploy/                        @thanhan92-f1
