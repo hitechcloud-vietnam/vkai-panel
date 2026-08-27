@@ -26,7 +26,7 @@ const (
 
 	// AgentVendor appears in the startup line so a support ticket carries the
 	// product it belongs to.
-	AgentVendor = "HiTech Cloud (hitechcloud.vn)"
+	AgentVendor = "HiTechCloud (hitechcloud.vn)"
 )
 
 type AgentConfig struct {

@@ -1,5 +1,5 @@
 # ============================================================================
-# VKAI Panel - Makefile (HiTech Cloud)
+# VKAI Panel - Makefile (HiTechCloud)
 # ----------------------------------------------------------------------------
 # Thu muc ma nguon:
 #   core/   Go API      (module github.com/hitechcloud-vietnam/vkai-panel)
@@ -20,7 +20,7 @@
 # --- Thuong hieu -----------------------------------------------------------
 BRAND        = VKAI Panel
 BRAND_SLUG   = vkai
-BRAND_VENDOR = HiTech Cloud
+BRAND_VENDOR = HiTechCloud
 VERSION     ?= 1.0.0
 
 # --- Thu muc ma nguon ------------------------------------------------------

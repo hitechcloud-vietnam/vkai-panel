@@ -131,21 +131,21 @@ const DB_TYPES = [
 ];
 
 const INPUT_CLASS =
-  'border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0';
+  'border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0';
 const SELECT_TRIGGER_CLASS =
-  'border-gray-300 bg-white text-gray-900 focus:ring-1 focus:ring-blue-500 focus:ring-offset-0';
+  'border-gray-300 bg-white text-gray-900 focus:ring-1 focus:ring-brand-500 focus:ring-offset-0';
 const PRIMARY_BUTTON_CLASS =
-  'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500';
+  'bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-500';
 const SECONDARY_BUTTON_CLASS =
-  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-blue-500';
+  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-brand-500';
 const ICON_BUTTON_CLASS =
-  'h-8 w-8 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-blue-500';
+  'h-8 w-8 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-brand-500';
 const DANGER_ICON_BUTTON_CLASS =
   'h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500';
 const TH_CLASS =
   'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500';
 const TABS_TRIGGER_CLASS =
-  'text-gray-600 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none focus-visible:ring-blue-500';
+  'text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none focus-visible:ring-brand-500';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -318,7 +318,7 @@ export default function DatabasesPage() {
     switch (type) {
       case 'mysql':
       case 'mariadb':
-        return <Database className="text-blue-600" size={16} />;
+        return <Database className="text-brand-600" size={16} />;
       case 'postgresql':
         return <Database className="text-sky-600" size={16} />;
       case 'redis':
@@ -536,7 +536,7 @@ export default function DatabasesPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="animate-spin text-blue-600" size={24} aria-hidden="true" />
+        <Loader2 className="animate-spin text-brand-600" size={24} aria-hidden="true" />
         <span className="sr-only">Loading databases</span>
       </div>
     );
@@ -602,8 +602,8 @@ export default function DatabasesPage() {
         <Card className="border-gray-200 bg-white shadow-sm">
           <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="rounded-md border border-blue-200 bg-blue-50 p-2">
-                <Server className="text-blue-600" size={18} />
+              <div className="rounded-md border border-brand-200 bg-brand-50 p-2">
+                <Server className="text-brand-600" size={18} />
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -863,7 +863,7 @@ export default function DatabasesPage() {
                         >
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <Database className="text-blue-600" size={16} />
+                              <Database className="text-brand-600" size={16} />
                               <span className="text-sm font-medium text-gray-900">
                                 {db.name}
                               </span>
@@ -1073,7 +1073,7 @@ export default function DatabasesPage() {
                 type="button"
                 onClick={() => setShowServerForm(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={16} />
               </button>
@@ -1238,7 +1238,7 @@ export default function DatabasesPage() {
                 type="button"
                 onClick={() => setShowDatabaseForm(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={16} />
               </button>
@@ -1434,7 +1434,7 @@ export default function DatabasesPage() {
                 type="button"
                 onClick={() => setShowUserForm(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={16} />
               </button>
@@ -1586,7 +1586,7 @@ export default function DatabasesPage() {
                 type="button"
                 onClick={() => setShowPasswordForm(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={16} />
               </button>

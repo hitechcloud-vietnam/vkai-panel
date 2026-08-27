@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document tracks the development progress of VKAI Panel by HiTech Cloud.
+This document tracks the development progress of VKAI Panel by HiTechCloud.
 
 **Last Updated**: 2026-08-28
 

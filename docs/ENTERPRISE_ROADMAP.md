@@ -1,6 +1,6 @@
 # VKAI Panel - Lộ trình Doanh nghiệp (Enterprise Roadmap)
 
-Tài liệu định hướng sản phẩm cho VKAI Panel - HiTech Cloud.
+Tài liệu định hướng sản phẩm cho VKAI Panel - HiTechCloud.
 Phiên bản tài liệu: 1.0 - Cập nhật: 2026-08-28.
 Đối tượng đọc: ban lãnh đạo, quản lý sản phẩm, kiến trúc sư hệ thống, đội phát triển.
 
@@ -10,7 +10,7 @@ Phiên bản tài liệu: 1.0 - Cập nhật: 2026-08-28.
 
 ### 1.1. Tại sao tài liệu này tồn tại
 
-VKAI Panel là control panel đầu tiên do HiTech Cloud tự phát triển. Khác với một dự án nội bộ,
+VKAI Panel là control panel đầu tiên do HiTechCloud tự phát triển. Khác với một dự án nội bộ,
 đây là **bộ mặt kỹ thuật của doanh nghiệp**: khách hàng hosting sẽ đăng nhập vào panel nhiều lần
 mỗi tuần, còn website công ty thì họ chỉ xem một lần khi mua hàng. Panel là điểm chạm thường
 xuyên nhất giữa doanh nghiệp và khách hàng, đồng thời là nơi mọi sự cố kỹ thuật bộc lộ ra ngoài.

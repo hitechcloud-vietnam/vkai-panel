@@ -9,8 +9,8 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "vkai",
-	Short: "VKAI Panel - cong cu quan tri may chu (HiTech Cloud)",
-	Long: `VKAI Panel CLI is the command-line interface for a VKAI Panel server by HiTech Cloud.
+	Short: "VKAI Panel - cong cu quan tri may chu (HiTechCloud)",
+	Long: `VKAI Panel CLI is the command-line interface for a VKAI Panel server by HiTechCloud.
 It provides commands for user management, server configuration, database operations,
 service management, and more.
 
@@ -55,7 +55,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("VKAI Panel CLI v0.3.0 - HiTech Cloud (hitechcloud.vn)")
+		fmt.Println("VKAI Panel CLI v0.3.0 - HiTechCloud (hitechcloud.vn)")
 		fmt.Println("Build: 2026-08-28")
 	},
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # vkai - lenh quan tri VKAI Panel
-# HiTech Cloud (hitechcloud.vn)
+# HiTechCloud (hitechcloud.vn)
 #
 # Cai dat: install -m 0755 deploy/vkai.sh /usr/local/bin/vkai
 # =============================================================================
@@ -9,7 +9,7 @@
 set -Eeuo pipefail
 
 readonly BRAND_NAME="VKAI Panel"
-readonly BRAND_ORG="HiTech Cloud (hitechcloud.vn)"
+readonly BRAND_ORG="HiTechCloud (hitechcloud.vn)"
 
 readonly PANEL_ROOT="/vkai-panel"
 readonly CORE_DIR="${PANEL_ROOT}/core"

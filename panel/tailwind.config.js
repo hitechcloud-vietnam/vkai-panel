@@ -6,19 +6,49 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Accent thuong hieu - thang blue chuan (giu khoa "primary" de khong vo code cu)
+        // Thang "brand" - navy rut tu logo hitechcloud.vn (#0B398C). Mau chinh.
+        brand: {
+          50: '#EFF4FC',
+          100: '#D9E4F7',
+          200: '#B3C8EF',
+          300: '#7FA3E0',
+          400: '#4A78CC',
+          500: '#1F53B0',
+          600: '#0B398C',
+          700: '#092E70',
+          800: '#072454',
+          900: '#051A3D',
+          950: '#03102A',
+        },
+        // Thang "accent" - cyan rut tu logo (#1791C8). Diem nhan phu, chuoi du
+        // lieu thu hai trong bieu do, huy hieu thong tin. KHONG dung lam nen
+        // nut chinh (tuong phan voi chu trang khong dat 4.5:1).
+        accent: {
+          50: '#ECF7FC',
+          100: '#D2ECF7',
+          200: '#A5D8EF',
+          300: '#6FC0E4',
+          400: '#3BA6D6',
+          500: '#1791C8',
+          600: '#1277A5',
+          700: '#0E5D82',
+          800: '#0A4360',
+          900: '#07303F',
+        },
+        // Luoi an toan cho class cu: "primary" duoc map TRUNG voi "brand" nen
+        // moi class primary-* con sot lai van hien thi dung mau thuong hieu.
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          950: '#172554',
+          50: '#EFF4FC',
+          100: '#D9E4F7',
+          200: '#B3C8EF',
+          300: '#7FA3E0',
+          400: '#4A78CC',
+          500: '#1F53B0',
+          600: '#0B398C',
+          700: '#092E70',
+          800: '#072454',
+          900: '#051A3D',
+          950: '#03102A',
         },
         // Thang "dark" duoc map NGUOC ve xam sang: neu con sot class cu
         // (bg-dark-900, text-dark-300...) giao dien van hien thi dung tone light.

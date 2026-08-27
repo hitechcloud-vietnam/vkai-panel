@@ -59,12 +59,12 @@ interface ReportStats {
 const CARD = 'bg-white border border-gray-200 rounded-lg shadow-sm';
 const CARD_HEADER = 'px-5 py-4 border-b border-gray-200';
 const INPUT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const LABEL = 'mb-1.5 block text-sm font-medium text-gray-700';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 disabled:opacity-50';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const ICON_DANGER =
   'rounded-md p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500';
@@ -281,7 +281,7 @@ export default function DailyReportsPage() {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: 'Total Reports', value: stats.total_reports ?? 0, icon: <FileText size={20} />, color: 'text-blue-600' },
+            { label: 'Total Reports', value: stats.total_reports ?? 0, icon: <FileText size={20} />, color: 'text-brand-600' },
             { label: 'This Month', value: stats.reports_this_month ?? 0, icon: <Calendar size={20} />, color: 'text-emerald-600' },
             { label: 'Active Schedules', value: stats.active_schedules ?? 0, icon: <Clock size={20} />, color: 'text-sky-600' },
             { label: 'Deliveries', value: stats.total_deliveries ?? 0, icon: <Send size={20} />, color: 'text-gray-600' },
@@ -309,9 +309,9 @@ export default function DailyReportsPage() {
               type="button"
               aria-current={activeTab === tab ? 'page' : undefined}
               onClick={() => setActiveTab(tab)}
-              className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -340,8 +340,8 @@ export default function DailyReportsPage() {
                   onClick={() => fetchReportDetail(report.id)}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="rounded-md bg-blue-50 p-2">
-                      <FileText size={18} className="text-blue-600" />
+                    <div className="rounded-md bg-brand-50 p-2">
+                      <FileText size={18} className="text-brand-600" />
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-gray-900">{report.title}</p>
@@ -403,7 +403,7 @@ export default function DailyReportsPage() {
                     <button
                       type="button"
                       onClick={() => handleToggleSchedule(schedule)}
-                      className={`${BADGE} focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      className={`${BADGE} focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                         schedule.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-700'
                       }`}
                     >
@@ -476,7 +476,7 @@ export default function DailyReportsPage() {
                 type="button"
                 aria-label="Close report detail"
                 onClick={() => setSelectedReport(null)}
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>

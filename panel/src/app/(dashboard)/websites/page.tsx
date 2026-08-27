@@ -70,7 +70,7 @@ export default function WebsitesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-b-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-b-brand-600" />
       </div>
     );
   }
@@ -85,7 +85,7 @@ export default function WebsitesPage() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
         >
           <Plus size={16} aria-hidden="true" />
           Add Website
@@ -164,7 +164,7 @@ export default function WebsitesPage() {
                     <td className="px-4 py-3 text-sm">
                       <button
                         type="button"
-                        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
                         Manage
                       </button>

@@ -51,11 +51,11 @@ const CARD_HEADER = 'px-5 py-4 border-b border-gray-200';
 const TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500';
 const TD = 'px-4 py-3 text-sm text-gray-700';
 const INPUT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 
 function formatDateTime(value?: string): string {
   if (!value) return '—';
@@ -226,9 +226,9 @@ export default function UsersPage() {
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -260,7 +260,7 @@ export default function UsersPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                          <Shield className="w-4 h-4 text-blue-600" /> {role.name}
+                          <Shield className="w-4 h-4 text-brand-600" /> {role.name}
                         </h3>
                         <p className="mt-1 text-sm text-gray-600">{role.description || 'No description'}</p>
                       </div>
@@ -276,7 +276,7 @@ export default function UsersPage() {
                       )}
                     </div>
                     {role.is_system && (
-                      <span className="mt-2 inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">System</span>
+                      <span className="mt-2 inline-flex items-center rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">System</span>
                     )}
                     <div className="mt-3 flex flex-wrap gap-1">
                       {(role.permissions ?? []).slice(0, 6).map((p) => (
@@ -382,7 +382,7 @@ export default function UsersPage() {
                       <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
                         a.action === 'create' ? 'bg-emerald-50 text-emerald-700' :
                         a.action === 'delete' ? 'bg-red-50 text-red-700' :
-                        a.action === 'login' ? 'bg-blue-50 text-blue-700' :
+                        a.action === 'login' ? 'bg-brand-50 text-brand-700' :
                         'bg-gray-100 text-gray-700'
                       }`}>{a.action || '—'}</span>
                     </td>
@@ -407,7 +407,7 @@ export default function UsersPage() {
                 type="button"
                 aria-label="Close dialog"
                 onClick={() => setShowRoleModal(false)}
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -450,8 +450,8 @@ export default function UsersPage() {
                             type="button"
                             aria-pressed={selected}
                             onClick={() => togglePermission(key)}
-                            className={`rounded-md px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                              selected ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            className={`rounded-md px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+                              selected ? 'bg-brand-600 text-white hover:bg-brand-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
                             {p.action}

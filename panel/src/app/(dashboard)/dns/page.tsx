@@ -88,15 +88,15 @@ const EMPTY_RECORD_FORM: RecordFormData = {
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'];
 
 const INPUT_CLASS =
-  'border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0';
+  'border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0';
 const SELECT_TRIGGER_CLASS =
-  'border-gray-300 bg-white text-gray-900 focus:ring-1 focus:ring-blue-500 focus:ring-offset-0';
+  'border-gray-300 bg-white text-gray-900 focus:ring-1 focus:ring-brand-500 focus:ring-offset-0';
 const PRIMARY_BUTTON_CLASS =
-  'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500';
+  'bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-500';
 const SECONDARY_BUTTON_CLASS =
-  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-blue-500';
+  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-brand-500';
 const ICON_BUTTON_CLASS =
-  'h-8 w-8 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-blue-500';
+  'h-8 w-8 p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-brand-500';
 const DANGER_ICON_BUTTON_CLASS =
   'h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-500';
 const TH_CLASS =
@@ -477,13 +477,13 @@ export default function DNSPage() {
 
   const getRecordTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
-      A: 'bg-blue-50 text-blue-700 border-blue-200',
+      A: 'bg-brand-50 text-brand-700 border-brand-200',
       AAAA: 'bg-sky-50 text-sky-700 border-sky-200',
       CNAME: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       MX: 'bg-amber-50 text-amber-700 border-amber-200',
       TXT: 'bg-gray-100 text-gray-700 border-gray-200',
       NS: 'bg-sky-50 text-sky-700 border-sky-200',
-      SRV: 'bg-blue-50 text-blue-700 border-blue-200',
+      SRV: 'bg-brand-50 text-brand-700 border-brand-200',
       CAA: 'bg-amber-50 text-amber-700 border-amber-200',
       PTR: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     };
@@ -516,7 +516,7 @@ export default function DNSPage() {
   if (zonesLoading && activeTab === 'zones') {
     return (
       <div className="flex h-64 items-center justify-center">
-        <RefreshCw className="h-6 w-6 animate-spin text-blue-600" aria-hidden="true" />
+        <RefreshCw className="h-6 w-6 animate-spin text-brand-600" aria-hidden="true" />
         <span className="sr-only">Loading DNS zones</span>
       </div>
     );
@@ -544,7 +544,7 @@ export default function DNSPage() {
             type="button"
             onClick={() => setToast(null)}
             aria-label="Dismiss notification"
-            className="ml-2 rounded-md p-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="ml-2 rounded-md p-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X size={14} />
           </button>
@@ -555,7 +555,7 @@ export default function DNSPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold text-gray-900">
-            <Globe size={20} className="text-blue-600" />
+            <Globe size={20} className="text-brand-600" />
             DNS Management
           </h1>
           <p className="mt-1 text-sm text-gray-600">
@@ -635,7 +635,7 @@ export default function DNSPage() {
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Total Records
               </span>
-              <FileText className="h-4 w-4 text-blue-600" />
+              <FileText className="h-4 w-4 text-brand-600" />
             </div>
             <div className="mt-2 text-2xl font-semibold text-gray-900">
               {zoneStats.totalRecords}
@@ -651,9 +651,9 @@ export default function DNSPage() {
           type="button"
           onClick={() => setActiveTab('zones')}
           aria-current={activeTab === 'zones' ? 'page' : undefined}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
             activeTab === 'zones'
-              ? 'bg-blue-50 text-blue-700'
+              ? 'bg-brand-50 text-brand-700'
               : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
           }`}
         >
@@ -669,9 +669,9 @@ export default function DNSPage() {
           }}
           disabled={!selectedZone}
           aria-current={activeTab === 'records' ? 'page' : undefined}
-          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+          className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
             activeTab === 'records'
-              ? 'bg-blue-50 text-blue-700'
+              ? 'bg-brand-50 text-brand-700'
               : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
           } ${!selectedZone ? 'cursor-not-allowed opacity-50' : ''}`}
         >
@@ -794,7 +794,7 @@ export default function DNSPage() {
                             <button
                               type="button"
                               onClick={() => viewZoneRecords(zone)}
-                              className="flex items-center gap-2 rounded-md text-sm font-medium text-blue-600 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              className="flex items-center gap-2 rounded-md text-sm font-medium text-brand-600 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               <Globe size={14} />
                               {zone.name}
@@ -813,7 +813,7 @@ export default function DNSPage() {
                             <button
                               type="button"
                               onClick={() => viewZoneRecords(zone)}
-                              className="flex items-center gap-1.5 rounded-md text-sm text-gray-700 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              className="flex items-center gap-1.5 rounded-md text-sm text-gray-700 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               <Hash size={14} className="text-gray-400" />
                               {zone.records_count ?? 0}
@@ -881,14 +881,14 @@ export default function DNSPage() {
                     variant="ghost"
                     size="sm"
                     onClick={backToZones}
-                    className="text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-blue-500"
+                    className="text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-brand-500"
                   >
                     <ArrowLeft size={16} className="mr-1" />
                     Back to Zones
                   </Button>
                   <div className="h-6 w-px bg-gray-200" />
                   <div className="flex items-center gap-2">
-                    <Globe size={16} className="text-blue-600" />
+                    <Globe size={16} className="text-brand-600" />
                     <span className="text-sm font-medium text-gray-900">
                       {selectedZone.name}
                     </span>
@@ -969,7 +969,7 @@ export default function DNSPage() {
             <CardContent className="p-0">
               {recordsLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-6 w-6 animate-spin text-blue-600" aria-hidden="true" />
+                  <RefreshCw className="h-6 w-6 animate-spin text-brand-600" aria-hidden="true" />
                   <span className="sr-only">Loading DNS records</span>
                 </div>
               ) : filteredRecords.length === 0 ? (
@@ -1082,14 +1082,14 @@ export default function DNSPage() {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                <Globe size={16} className="text-blue-600" />
+                <Globe size={16} className="text-brand-600" />
                 {editingZone ? 'Edit DNS Zone' : 'Add DNS Zone'}
               </h2>
               <button
                 type="button"
                 onClick={closeZoneForm}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={16} />
               </button>
@@ -1206,14 +1206,14 @@ export default function DNSPage() {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                <FileText size={16} className="text-blue-600" />
+                <FileText size={16} className="text-brand-600" />
                 {editingRecord ? 'Edit DNS Record' : 'Add DNS Record'}
               </h2>
               <button
                 type="button"
                 onClick={closeRecordForm}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={16} />
               </button>

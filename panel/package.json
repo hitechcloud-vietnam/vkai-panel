@@ -2,9 +2,9 @@
   "name": "vkai-panel-ui",
   "version": "0.2.1",
   "private": true,
-  "description": "Giao diện quản trị VKAI Panel (Next.js) - HiTech Cloud",
+  "description": "Giao diện quản trị VKAI Panel (Next.js) - HiTechCloud",
   "license": "MIT",
-  "author": "HiTech Cloud <contact@hitechcloud.vn> (https://hitechcloud.vn)",
+  "author": "HiTechCloud <contact@hitechcloud.vn> (https://hitechcloud.vn)",
   "scripts": {
     "dev": "next dev",
     "build": "next build && npm run postbuild:standalone",

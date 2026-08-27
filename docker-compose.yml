@@ -1,6 +1,6 @@
 version: '3.8'
 
-# VKAI Panel - production compose (HiTech Cloud)
+# VKAI Panel - production compose (HiTechCloud)
 #
 # THU MUC MA NGUON: core/ (Go API), panel/ (Next.js UI), agent/ (Go node agent).
 #

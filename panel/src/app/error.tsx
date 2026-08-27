@@ -18,11 +18,11 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4 py-10">
       <div className="w-full max-w-lg rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-start gap-3 border-b border-gray-200 px-5 py-4">
           <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
-            <AlertTriangle size={18} />
+            <AlertTriangle size={18} aria-hidden="true" />
           </span>
           <div>
             <h1 className="text-sm font-semibold text-gray-900">Đã xảy ra lỗi</h1>
@@ -37,7 +37,7 @@ export default function Error({
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
               Chi tiết lỗi
             </p>
-            <pre className="mt-1.5 max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+            <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
               {error?.message || 'Không có thông tin chi tiết.'}
             </pre>
           </div>
@@ -50,22 +50,33 @@ export default function Error({
               <p className="mt-1 font-mono text-xs text-gray-700">{error.digest}</p>
             </div>
           )}
+
+          <p className="text-sm text-gray-600">
+            Nếu lỗi lặp lại, vui lòng gửi mã lỗi tới{' '}
+            <a
+              href={`mailto:${brand.supportEmail}`}
+              className="rounded-md font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              {brand.supportEmail}
+            </a>
+            .
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 px-5 py-4">
           <button
             type="button"
             onClick={() => reset()}
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           >
-            <RotateCcw size={16} />
+            <RotateCcw size={16} aria-hidden="true" />
             Thử lại
           </button>
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           >
-            <Home size={16} />
+            <Home size={16} aria-hidden="true" />
             Về trang chủ
           </Link>
         </div>

@@ -1,5 +1,5 @@
 <!--
-  VKAI Panel - HiTech Cloud
+  VKAI Panel - HiTechCloud
   Cấm push thẳng vào `main`. Mọi thay đổi phải đi qua nhánh phụ + Pull Request.
   Workflow "Guard main" sẽ báo lỗi nếu phát hiện commit vào main không qua PR.
 -->

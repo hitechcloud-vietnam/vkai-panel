@@ -71,15 +71,15 @@ const CARD_HEADER_CLASS =
   'flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4';
 const CARD_TITLE_CLASS = 'text-sm font-semibold text-gray-900';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50';
 const INPUT_CLASS =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 const LABEL_CLASS = 'mb-1 block text-sm font-medium text-gray-700';
 const BADGE_BASE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const ICON_BTN =
-  'inline-flex items-center rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50';
+  'inline-flex items-center rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50';
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—';
@@ -264,7 +264,7 @@ export default function TamperProofPage() {
       case 'critical': return 'text-red-700 bg-red-50';
       case 'high': return 'text-orange-700 bg-orange-50';
       case 'medium': return 'text-amber-700 bg-amber-50';
-      case 'low': return 'text-blue-700 bg-blue-50';
+      case 'low': return 'text-brand-700 bg-brand-50';
       default: return 'text-gray-700 bg-gray-100';
     }
   };
@@ -273,7 +273,7 @@ export default function TamperProofPage() {
     switch (type) {
       case 'modified': return <AlertTriangle size={16} className="text-amber-600" aria-hidden="true" />;
       case 'deleted': return <XCircle size={16} className="text-red-600" aria-hidden="true" />;
-      case 'created': return <Plus size={16} className="text-blue-600" aria-hidden="true" />;
+      case 'created': return <Plus size={16} className="text-brand-600" aria-hidden="true" />;
       default: return <AlertTriangle size={16} className="text-gray-500" aria-hidden="true" />;
     }
   };
@@ -348,9 +348,9 @@ export default function TamperProofPage() {
               type="button"
               onClick={() => setActiveTab(tab)}
               aria-current={activeTab === tab ? 'page' : undefined}
-              className={`-mb-px border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`-mb-px border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -394,7 +394,7 @@ export default function TamperProofPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-mono text-sm text-gray-900">{p.path || '—'}</p>
                           <span className={`${BADGE_BASE} bg-gray-100 text-gray-700`}>{p.path_type || 'file'}</span>
-                          <span className={`${BADGE_BASE} bg-blue-50 text-blue-700`}>{p.algorithm || 'sha256'}</span>
+                          <span className={`${BADGE_BASE} bg-brand-50 text-brand-700`}>{p.algorithm || 'sha256'}</span>
                           {p.recursive && <span className={`${BADGE_BASE} bg-sky-50 text-sky-700`}>recursive</span>}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-gray-500">
@@ -489,7 +489,7 @@ export default function TamperProofPage() {
                       <button
                         type="button"
                         onClick={() => handleResolveAlert(alert.id)}
-                        className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
                         Resolve
                       </button>
@@ -538,7 +538,7 @@ export default function TamperProofPage() {
                       <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-gray-500">
                         <span>Files: {scan.scanned_files ?? 0}/{scan.total_files ?? 0}</span>
                         {scan.violations > 0 && <span className="text-red-700">Violations: {scan.violations}</span>}
-                        {scan.new_files > 0 && <span className="text-blue-700">New: {scan.new_files}</span>}
+                        {scan.new_files > 0 && <span className="text-brand-700">New: {scan.new_files}</span>}
                         {scan.modified_files > 0 && <span className="text-amber-700">Modified: {scan.modified_files}</span>}
                         {scan.deleted_files > 0 && <span className="text-red-700">Deleted: {scan.deleted_files}</span>}
                         <span>Duration: {scan.duration ?? 0}ms</span>
@@ -656,7 +656,7 @@ export default function TamperProofPage() {
                     type="checkbox"
                     checked={newPath.recursive}
                     onChange={(e) => setNewPath({ ...newPath, recursive: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                   />
                   Recursive (directories)
                 </label>
@@ -669,7 +669,7 @@ export default function TamperProofPage() {
                       type="checkbox"
                       checked={newPath.alert_on_change}
                       onChange={(e) => setNewPath({ ...newPath, alert_on_change: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                     />
                     Changes
                   </label>
@@ -678,7 +678,7 @@ export default function TamperProofPage() {
                       type="checkbox"
                       checked={newPath.alert_on_delete}
                       onChange={(e) => setNewPath({ ...newPath, alert_on_delete: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                     />
                     Deletions
                   </label>
@@ -687,7 +687,7 @@ export default function TamperProofPage() {
                       type="checkbox"
                       checked={newPath.alert_on_create}
                       onChange={(e) => setNewPath({ ...newPath, alert_on_create: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                     />
                     New Files
                   </label>

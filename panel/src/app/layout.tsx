@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
-import { brand, description as brandDescription } from '@/lib/brand';
+import { brand, fullName, description as brandDescription } from '@/lib/brand';
 import '@/styles/globals.css';
 
 const inter = Inter({
@@ -12,7 +12,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: brand.productName,
+    default: fullName,
     template: `%s · ${brand.productName}`,
   },
   description: brandDescription,
@@ -44,7 +44,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi" className={inter.variable}>
-      <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+      <body className="min-h-screen bg-[#F7F8FA] text-gray-900 antialiased">
         {children}
       </body>
     </html>

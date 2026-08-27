@@ -51,15 +51,15 @@ interface TaskStats {
 const CARD = 'bg-white border border-gray-200 rounded-lg shadow-sm';
 const CARD_HEADER = 'px-5 py-4 border-b border-gray-200';
 const INPUT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const LABEL = 'mb-1.5 block text-sm font-medium text-gray-700';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 disabled:opacity-50';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const ICON_BTN =
-  'rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  'rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
 const ICON_DANGER =
   'rounded-md p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500';
 
@@ -203,10 +203,10 @@ export default function ScheduledTasksPage() {
   const getPriorityLabel = (p: number) => {
     switch (p) {
       case 1: return { label: 'Low', color: 'bg-gray-100 text-gray-700' };
-      case 2: return { label: 'Normal', color: 'bg-blue-50 text-blue-700' };
+      case 2: return { label: 'Normal', color: 'bg-brand-50 text-brand-700' };
       case 3: return { label: 'High', color: 'bg-amber-50 text-amber-700' };
       case 4: return { label: 'Critical', color: 'bg-red-50 text-red-700' };
-      default: return { label: 'Normal', color: 'bg-blue-50 text-blue-700' };
+      default: return { label: 'Normal', color: 'bg-brand-50 text-brand-700' };
     }
   };
 
@@ -214,7 +214,7 @@ export default function ScheduledTasksPage() {
     switch (status) {
       case 'success': return 'text-emerald-600';
       case 'failed': return 'text-red-600';
-      case 'running': return 'text-blue-600';
+      case 'running': return 'text-brand-600';
       case 'timeout': return 'text-amber-600';
       default: return 'text-gray-600';
     }
@@ -261,7 +261,7 @@ export default function ScheduledTasksPage() {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total Tasks', value: stats.total_tasks ?? 0, icon: <Clock size={20} />, color: 'text-blue-600' },
+            { label: 'Total Tasks', value: stats.total_tasks ?? 0, icon: <Clock size={20} />, color: 'text-brand-600' },
             { label: 'Enabled', value: stats.enabled_tasks ?? 0, icon: <CheckCircle size={20} />, color: 'text-emerald-600' },
             { label: 'Success Rate', value: `${stats.success_rate ?? 0}%`, icon: <Zap size={20} />, color: 'text-sky-600' },
             { label: 'Failed Today', value: stats.failed_today ?? 0, icon: <XCircle size={20} />, color: 'text-red-600' },
@@ -288,9 +288,9 @@ export default function ScheduledTasksPage() {
               type="button"
               aria-current={activeTab === tab ? 'page' : undefined}
               onClick={() => setActiveTab(tab)}
-              className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -402,10 +402,10 @@ export default function ScheduledTasksPage() {
               executions.map((exec) => (
                 <div key={exec.id} className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 hover:bg-gray-50">
                   <div className="flex items-start gap-4">
-                    <div className={`rounded-md p-2 ${exec.status === 'success' ? 'bg-emerald-50' : exec.status === 'failed' ? 'bg-red-50' : 'bg-blue-50'}`}>
+                    <div className={`rounded-md p-2 ${exec.status === 'success' ? 'bg-emerald-50' : exec.status === 'failed' ? 'bg-red-50' : 'bg-brand-50'}`}>
                       {exec.status === 'success' ? <CheckCircle size={16} className="text-emerald-600" /> :
                        exec.status === 'failed' ? <XCircle size={16} className="text-red-600" /> :
-                       <Timer size={16} className="text-blue-600" />}
+                       <Timer size={16} className="text-brand-600" />}
                     </div>
                     <div>
                       <p className="font-mono text-sm text-gray-900">{exec.output?.substring(0, 80) || 'No output'}</p>
@@ -440,7 +440,7 @@ export default function ScheduledTasksPage() {
                 type="button"
                 aria-label="Close execution history"
                 onClick={() => { setSelectedTask(null); setTaskExecutions([]); }}
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>

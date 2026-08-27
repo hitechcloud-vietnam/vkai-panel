@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { brand, byline, copyright } from '@/lib/brand';
-import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { brand, byline, copyright, description as brandDescription } from '@/lib/brand';
+import { Eye, EyeOff, Loader2, AlertCircle, BookOpen, LifeBuoy } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,48 +31,39 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
+    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FA] px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Khoi thuong hieu - mau phang, khong gradient */}
-        <div className="text-center mb-6">
-          <span
-            className="inline-flex items-center justify-center w-12 h-12 rounded-md mb-4"
-            style={{ backgroundColor: brand.colors.navy }}
-          >
-            <svg
-              viewBox="0 0 64 64"
-              width="28"
-              height="28"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path
-                d="M46 18 L32 46"
-                fill="none"
-                stroke={brand.colors.cyan}
-                strokeWidth="8"
-                strokeLinecap="round"
-              />
-              <path
-                d="M18 18 L32 46"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
-          <h1 className="text-xl font-semibold text-gray-900">{brand.productName}</h1>
-          <p className="text-sm text-gray-600 mt-1">{byline}</p>
-        </div>
-
-        {/* Bieu mau dang nhap */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-200">
-            <h2 className="text-sm font-semibold text-gray-900">Đăng nhập vào hệ thống</h2>
+        {/* The dang nhap - nen trang, vien xam, bong nhe */}
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+          {/* Khoi thuong hieu: dau nhan + ten san pham + dong phu de */}
+          <div className="border-b border-gray-200 px-6 py-7 text-center">
+            <span className="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-brand-600">
+              <svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true" focusable="false">
+                <path
+                  d="M17.5 19.5 L32 44.5"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M46.5 19.5 L32 44.5"
+                  fill="none"
+                  stroke={brand.colors.cyan}
+                  strokeWidth="9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <h1 className="text-lg font-semibold text-gray-900">{brand.productName}</h1>
+            <p className="mt-1 text-sm text-gray-500">{byline}</p>
+            <p className="mt-3 text-sm text-gray-600">{brandDescription}</p>
           </div>
 
-          <div className="px-5 py-5">
+          {/* Bieu mau dang nhap */}
+          <div className="px-6 py-6">
             {error && (
               <div
                 role="alert"
@@ -87,7 +78,7 @@ export default function LoginPage() {
               <div>
                 <label
                   htmlFor="login-username"
-                  className="block text-sm font-medium text-gray-700 mb-1.5"
+                  className="mb-1.5 block text-sm font-medium text-gray-700"
                 >
                   Tên đăng nhập
                 </label>
@@ -98,7 +89,7 @@ export default function LoginPage() {
                   autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   placeholder="Nhập tên đăng nhập"
                   required
                 />
@@ -107,7 +98,7 @@ export default function LoginPage() {
               <div>
                 <label
                   htmlFor="login-password"
-                  className="block text-sm font-medium text-gray-700 mb-1.5"
+                  className="mb-1.5 block text-sm font-medium text-gray-700"
                 >
                   Mật khẩu
                 </label>
@@ -119,7 +110,7 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                     placeholder="Nhập mật khẩu"
                     required
                   />
@@ -127,9 +118,13 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    {showPassword ? (
+                      <EyeOff size={18} aria-hidden="true" />
+                    ) : (
+                      <Eye size={18} aria-hidden="true" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -140,13 +135,13 @@ export default function LoginPage() {
                     id="login-remember"
                     name="remember"
                     type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 bg-white text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 bg-white text-brand-600 focus:ring-brand-500"
                   />
                   <span className="text-sm text-gray-700">Ghi nhớ đăng nhập</span>
                 </label>
                 <a
                   href={`mailto:${brand.supportEmail}`}
-                  className="text-sm font-medium text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-md"
+                  className="rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
                   Quên mật khẩu?
                 </a>
@@ -155,7 +150,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isLoading ? (
                   <>
@@ -168,10 +163,30 @@ export default function LoginPage() {
               </button>
             </form>
           </div>
+
+          {/* Chan the: tai lieu va ho tro ky thuat */}
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t border-gray-200 bg-brand-50 px-6 py-3.5">
+            <a
+              href={brand.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              <BookOpen size={15} aria-hidden="true" />
+              Tài liệu hướng dẫn
+            </a>
+            <a
+              href={`mailto:${brand.supportEmail}`}
+              className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              <LifeBuoy size={15} aria-hidden="true" />
+              Hỗ trợ kỹ thuật
+            </a>
+          </div>
         </div>
 
         {/* Chan trang */}
-        <p className="text-center text-sm text-gray-500 mt-6">{copyright()}</p>
+        <p className="mt-6 text-center text-sm text-gray-500">{copyright()}</p>
       </div>
     </div>
   );

@@ -47,14 +47,14 @@ const TD = 'px-4 py-3 text-sm text-gray-700';
 const ROW = 'border-b border-gray-100 hover:bg-gray-50';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const FIELD =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const LABEL = 'mb-1.5 block text-sm font-medium text-gray-700';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const LINK_BTN =
-  'rounded-md px-2 py-1 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  'rounded-md px-2 py-1 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
 
 export default function ConfigPage() {
   const [snapshots, setSnapshots] = useState<ConfigSnapshot[]>([]);
@@ -387,7 +387,7 @@ export default function ConfigPage() {
                         <span className={`${BADGE} bg-gray-100 text-gray-700`}>Inactive</span>
                       )}
                       {snapshot.is_automatic && (
-                        <span className={`${BADGE} ml-2 bg-blue-50 text-blue-700`}>Auto</span>
+                        <span className={`${BADGE} ml-2 bg-brand-50 text-brand-700`}>Auto</span>
                       )}
                     </td>
                     <td className={TD} suppressHydrationWarning>{formatDate(snapshot.created_at)}</td>
@@ -397,7 +397,7 @@ export default function ConfigPage() {
                           <button
                             type="button"
                             onClick={() => handleRollback(snapshot.id)}
-                            className={`${LINK_BTN} text-blue-700 hover:bg-blue-50`}
+                            className={`${LINK_BTN} text-brand-700 hover:bg-brand-50`}
                           >
                             Rollback
                           </button>
@@ -440,7 +440,7 @@ export default function ConfigPage() {
                 type="button"
                 aria-label="Close snapshot detail"
                 onClick={() => setSelectedSnapshot(null)}
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>

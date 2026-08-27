@@ -116,7 +116,7 @@ export default function ServersPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-b-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-b-brand-600" />
       </div>
     );
   }
@@ -133,14 +133,14 @@ export default function ServersPage() {
           <button
             type="button"
             onClick={loadServers}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <RefreshCw size={16} aria-hidden="true" />
             Refresh
           </button>
           <Link
             href="/servers/add"
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           >
             <Plus size={16} aria-hidden="true" />
             Add Server
@@ -173,12 +173,12 @@ export default function ServersPage() {
               placeholder="Search servers..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-md border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              className="w-full rounded-md border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
             />
           </div>
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <Filter size={16} aria-hidden="true" />
             Filter
@@ -197,7 +197,7 @@ export default function ServersPage() {
           {!search && (
             <Link
               href="/servers/add"
-              className="mt-4 inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              className="mt-4 inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
               <Plus size={16} aria-hidden="true" />
               Add Server
@@ -210,7 +210,7 @@ export default function ServersPage() {
             <Link
               key={server?.id}
               href={`/servers/${server?.id}`}
-              className="block bg-white border border-gray-200 rounded-lg shadow-sm p-5 hover:border-gray-300 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="block bg-white border border-gray-200 rounded-lg shadow-sm p-5 hover:border-gray-300 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -268,7 +268,7 @@ export default function ServersPage() {
                   </div>
                   <div className="h-1.5 w-full rounded-md bg-gray-100 overflow-hidden">
                     <div
-                      className="h-full rounded-md bg-blue-600"
+                      className="h-full rounded-md bg-brand-600"
                       style={{ width: `${percent(server?.metrics?.cpu_percent ?? 0, 100)}%` }}
                     />
                   </div>

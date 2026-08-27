@@ -271,7 +271,7 @@ func (s *WebsiteService) GenerateDefaultIndex(rootDir, domain string) error {
     <div class="container">
         <h1>{{.Domain}}</h1>
         <p>This site is managed by VKAI Panel</p>
-        <div class="badge">HiTech Cloud</div>
+        <div class="badge">HiTechCloud</div>
     </div>
 </body>
 </html>`

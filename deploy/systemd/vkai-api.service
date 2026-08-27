@@ -1,5 +1,5 @@
 # =============================================================================
-# VKAI Panel - API (Go)  |  HiTech Cloud (hitechcloud.vn)
+# VKAI Panel - API (Go)  |  HiTechCloud (hitechcloud.vn)
 # Cai dat: /etc/systemd/system/vkai-api.service
 # =============================================================================
 [Unit]

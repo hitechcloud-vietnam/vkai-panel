@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # VKAI Panel - chuan bi moi truong PHAT TRIEN (khong phai cai dat may chu)
-# HiTech Cloud (hitechcloud.vn)
+# HiTechCloud (hitechcloud.vn)
 #
 # Cai dat len may chu that: sudo bash deploy/install.sh
 # =============================================================================
@@ -30,7 +30,7 @@ has() { command -v "$1" >/dev/null 2>&1; }
 
 echo "========================================="
 echo "  VKAI Panel - chuan bi moi truong dev"
-echo "  HiTech Cloud (hitechcloud.vn)"
+echo "  HiTechCloud (hitechcloud.vn)"
 echo "========================================="
 echo
 

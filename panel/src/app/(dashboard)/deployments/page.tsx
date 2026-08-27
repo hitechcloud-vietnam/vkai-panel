@@ -109,9 +109,9 @@ const EMPTY_FORM: DeploymentFormData = {
 };
 
 const INPUT_CLASS =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0 focus:outline-none';
 const TEXTAREA_CLASS =
-  'flex w-full resize-none rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  'flex w-full resize-none rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 const TH_CLASS =
   'text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500';
 const LABEL_CLASS = 'block text-sm font-medium text-gray-700 mb-1.5';
@@ -472,7 +472,7 @@ export default function DeploymentsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="animate-spin text-blue-600" size={32} aria-hidden="true" />
+        <Loader2 className="animate-spin text-brand-600" size={32} aria-hidden="true" />
         <span className="sr-only">Loading deployments</span>
       </div>
     );
@@ -518,7 +518,7 @@ export default function DeploymentsPage() {
           </Button>
           <Button
             onClick={openCreateForm}
-            className="rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             <Plus size={16} className="mr-2" />
             Add Deployment
@@ -548,8 +548,8 @@ export default function DeploymentsPage() {
         <Card className="border border-gray-200 bg-white shadow-sm">
           <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="rounded-md bg-blue-50 p-2">
-                <GitBranch className="text-blue-600" size={20} aria-hidden="true" />
+              <div className="rounded-md bg-brand-50 p-2">
+                <GitBranch className="text-brand-600" size={20} aria-hidden="true" />
               </div>
               <div>
                 <p className="text-sm text-gray-600">Total</p>
@@ -631,7 +631,7 @@ export default function DeploymentsPage() {
               {!search && (
                 <Button
                   onClick={openCreateForm}
-                  className="mt-4 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="mt-4 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
                 >
                   <Plus size={16} className="mr-2" />
                   Add Deployment
@@ -685,7 +685,7 @@ export default function DeploymentsPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                               aria-label={`Open repository for ${deployment?.name || 'deployment'}`}
-                              className="rounded text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              className="rounded text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               <ExternalLink size={12} />
                             </a>
@@ -729,7 +729,7 @@ export default function DeploymentsPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => openLogs(deployment)}
-                            className="text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                            className="text-brand-600 hover:bg-brand-50 hover:text-brand-700"
                             title="View Logs"
                             aria-label={`View logs for ${deployment?.name || 'deployment'}`}
                           >
@@ -792,7 +792,7 @@ export default function DeploymentsPage() {
                 type="button"
                 onClick={() => setShowForm(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>
@@ -816,7 +816,7 @@ export default function DeploymentsPage() {
                     onChange={(e) =>
                       setForm((prev) => ({ ...prev, server_id: e.target.value }))
                     }
-                    className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   >
                     <option value="">Select a server</option>
                     {safeServers.map((s) => (
@@ -965,7 +965,7 @@ export default function DeploymentsPage() {
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, auto_deploy: e.target.checked }))
                   }
-                  className="h-4 w-4 rounded border-gray-300 bg-white text-blue-600 focus:ring-1 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-gray-300 bg-white text-brand-600 focus:ring-1 focus:ring-brand-500"
                 />
                 <label htmlFor="auto_deploy" className="text-sm text-gray-700">
                   Enable auto-deploy on push
@@ -985,7 +985,7 @@ export default function DeploymentsPage() {
                 <Button
                   type="submit"
                   disabled={submitting}
-                  className="rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   {submitting ? (
                     <Loader2 size={16} className="mr-2 animate-spin" />
@@ -1102,7 +1102,7 @@ export default function DeploymentsPage() {
                   type="button"
                   onClick={() => setShowLogsModal(false)}
                   aria-label="Close dialog"
-                  className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
                   <X size={18} />
                 </button>
@@ -1112,7 +1112,7 @@ export default function DeploymentsPage() {
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {logsLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="animate-spin text-blue-600" size={32} aria-hidden="true" />
+                  <Loader2 className="animate-spin text-brand-600" size={32} aria-hidden="true" />
                   <span className="sr-only">Loading logs</span>
                 </div>
               ) : safeLogs.length === 0 ? (

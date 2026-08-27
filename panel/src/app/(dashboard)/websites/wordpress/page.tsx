@@ -57,15 +57,15 @@ interface WordPressTheme {
 const CARD = 'bg-white border border-gray-200 rounded-lg shadow-sm';
 const CARD_HEADER = 'px-5 py-4 border-b border-gray-200';
 const INPUT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const LABEL = 'mb-1.5 block text-sm font-medium text-gray-700';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_SMALL =
-  'inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  'inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
 const BTN_SMALL_DANGER =
   'inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500';
 
@@ -366,9 +366,9 @@ export default function WordPressToolkitPage() {
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -409,7 +409,7 @@ export default function WordPressToolkitPage() {
                     key={site.id}
                     onClick={() => setSelectedSite(site)}
                     className={`cursor-pointer border-b border-gray-100 px-5 py-4 hover:bg-gray-50 ${
-                      selectedSite?.id === site.id ? 'border-l-4 border-l-blue-600 bg-blue-50' : ''
+                      selectedSite?.id === site.id ? 'border-l-4 border-l-brand-600 bg-brand-50' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -465,7 +465,7 @@ export default function WordPressToolkitPage() {
                       href={`http://${selectedSite.domain}/wp-admin`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     >
                       <Settings size={14} />
                       WP Admin
@@ -499,7 +499,7 @@ export default function WordPressToolkitPage() {
                     <button
                       type="button"
                       onClick={() => handleToggleAutoUpdate(selectedSite)}
-                      className={`mt-1 rounded-md text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      className={`mt-1 rounded-md text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                         selectedSite.auto_update ? 'text-emerald-700' : 'text-gray-600'
                       }`}
                     >
@@ -606,7 +606,7 @@ export default function WordPressToolkitPage() {
                           <div
                             key={theme.id}
                             className={`rounded-md border p-4 ${
-                              theme.active ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'
+                              theme.active ? 'border-brand-200 bg-brand-50' : 'border-gray-200 bg-white'
                             }`}
                           >
                             <div className="mb-2 flex items-center justify-between gap-2">
@@ -615,7 +615,7 @@ export default function WordPressToolkitPage() {
                                 <p className="text-sm font-medium text-gray-900">{theme.name}</p>
                               </div>
                               {theme.active && (
-                                <span className={`${BADGE} bg-blue-50 text-blue-700`}>Active</span>
+                                <span className={`${BADGE} bg-brand-50 text-brand-700`}>Active</span>
                               )}
                             </div>
                             <p className="mb-3 text-sm text-gray-600">

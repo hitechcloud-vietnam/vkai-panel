@@ -1,5 +1,5 @@
 # =============================================================================
-# VKAI Panel - giao dien Next.js  |  HiTech Cloud (hitechcloud.vn)
+# VKAI Panel - giao dien Next.js  |  HiTechCloud (hitechcloud.vn)
 # Cai dat: /etc/systemd/system/vkai-ui.service
 #
 # Chay ban build "standalone". Buoc build BAT BUOC phai copy .next/static va

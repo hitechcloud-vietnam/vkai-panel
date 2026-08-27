@@ -75,12 +75,12 @@ const CARD_HEADER_CLASS =
 const CARD_TITLE_CLASS = "text-sm font-semibold text-gray-900";
 const TH_CLASS = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500";
 const BTN_PRIMARY =
-  "inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50";
+  "inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50";
 const BTN_SECONDARY =
-  "inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50";
+  "inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50";
 const BADGE_BASE = "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium";
 const ICON_BTN =
-  "inline-flex items-center rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
+  "inline-flex items-center rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500";
 
 function formatDateTime(value: string): string {
   if (!value) return "—";
@@ -228,7 +228,7 @@ export default function WAFPage() {
       case "block":
         return "bg-red-50 text-red-700";
       case "log":
-        return "bg-blue-50 text-blue-700";
+        return "bg-brand-50 text-brand-700";
       case "allow":
         return "bg-emerald-50 text-emerald-700";
       default:
@@ -299,9 +299,9 @@ export default function WAFPage() {
               type="button"
               onClick={() => setActiveTab(tab.id as any)}
               aria-current={activeTab === tab.id ? "page" : undefined}
-              className={`-mb-px flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`-mb-px flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? "border-blue-600 text-blue-700"
+                  ? "border-brand-600 text-brand-700"
                   : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-900"
               }`}
             >
@@ -329,7 +329,7 @@ export default function WAFPage() {
             aria-label="Search WAF records"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>
         <button type="button" onClick={fetchData} className={BTN_SECONDARY}>
@@ -403,7 +403,7 @@ export default function WAFPage() {
                               type="button"
                               onClick={() => handleToggleRule(rule.id, !rule.enabled)}
                               aria-label={rule.enabled ? `Disable rule ${rule.name}` : `Enable rule ${rule.name}`}
-                              className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               {rule.enabled ? (
                                 <ToggleRight className="h-5 w-5 text-emerald-600" aria-hidden="true" />
@@ -492,7 +492,7 @@ export default function WAFPage() {
                               className={`${BADGE_BASE} ${
                                 policy.mode === "prevention"
                                   ? "bg-red-50 text-red-700"
-                                  : "bg-blue-50 text-blue-700"
+                                  : "bg-brand-50 text-brand-700"
                               }`}
                             >
                               {policy.mode || "—"}

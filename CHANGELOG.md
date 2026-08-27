@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Changed - whitelabel to VKAI Panel (HiTech Cloud)
+### Changed - whitelabel to VKAI Panel (HiTechCloud)
 
-- Product name is **VKAI Panel**, vendor **HiTech Cloud** (hitechcloud.vn).
+- Product name is **VKAI Panel**, vendor **HiTechCloud** (hitechcloud.vn).
 - Source directories renamed: `backend/` is now `core/`, `frontend/` is now
   `panel/`. `agent/` is unchanged. **Go module paths are unchanged**
   (`github.com/hitechcloud-vietnam/vkai-panel`), so no import needs editing.

@@ -135,6 +135,10 @@ const menuGroups: MenuGroup[] = [
   },
 ];
 
+/** Vien focus dung chung cho moi phan tu tuong tac trong sidebar. */
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500';
+
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -183,11 +187,15 @@ export default function Sidebar() {
   const isItemActive = (item: MenuItem) =>
     item.href === pathname || Boolean(item.children?.some((child) => child.href === pathname));
 
+  /** Thanh chi bao 2px ben trai cho muc dang chon. */
+  const activeBar = <span className="absolute inset-y-0 left-0 w-0.5 bg-brand-600" aria-hidden />;
+
   const renderItem = (item: MenuItem) => {
     const active = isItemActive(item);
     const hasChildren = Boolean(item.children && item.children.length > 0);
     const isExpanded = Boolean(expanded[item.label]);
 
+    // Che do thu gon: chi hien icon, moi muc van la mot hang cao 44px.
     if (collapsed) {
       const href = item.href || item.children?.[0]?.href || '#';
       return (
@@ -195,14 +203,14 @@ export default function Sidebar() {
           key={item.label}
           href={href}
           title={item.label}
-          className={`relative flex items-center justify-center rounded-md py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-            active ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+          aria-label={item.label}
+          aria-current={active ? 'page' : undefined}
+          className={`relative flex h-11 items-center justify-center border-b border-gray-100 ${FOCUS_RING} ${
+            active ? 'bg-brand-50 text-brand-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
           }`}
         >
-          {active && (
-            <span className="absolute inset-y-1 left-0 w-0.5 rounded-r bg-blue-600" aria-hidden />
-          )}
-          <span className={active ? 'text-blue-600' : 'text-gray-500'}>{item.icon}</span>
+          {active && activeBar}
+          <span className={active ? 'text-brand-600' : 'text-gray-500'}>{item.icon}</span>
         </Link>
       );
     }
@@ -214,39 +222,37 @@ export default function Sidebar() {
             type="button"
             onClick={() => toggleExpand(item.label)}
             aria-expanded={isExpanded}
-            className={`relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-              active
-                ? 'bg-blue-50 font-medium text-blue-700'
-                : 'text-gray-700 hover:bg-gray-50'
+            className={`relative flex h-11 w-full items-center gap-2.5 border-b border-gray-100 px-4 text-sm ${FOCUS_RING} ${
+              active ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-700 hover:bg-gray-50'
             }`}
           >
-            {active && (
-              <span className="absolute inset-y-1 left-0 w-0.5 rounded-r bg-blue-600" aria-hidden />
-            )}
-            <span className={active ? 'text-blue-600' : 'text-gray-500'}>{item.icon}</span>
+            {active && activeBar}
+            <span className={active ? 'text-brand-600' : 'text-gray-500'}>{item.icon}</span>
             <span className="flex-1 truncate text-left">{item.label}</span>
             {isExpanded ? (
-              <ChevronDown size={14} className="text-gray-400" />
+              <ChevronDown size={14} className="shrink-0 text-gray-400" aria-hidden />
             ) : (
-              <ChevronRight size={14} className="text-gray-400" />
+              <ChevronRight size={14} className="shrink-0 text-gray-400" aria-hidden />
             )}
           </button>
 
           {isExpanded && item.children && (
-            <div className="ml-[1.375rem] mt-1 space-y-0.5 border-l border-gray-200 pl-3">
+            <div className="bg-gray-50/60">
               {item.children.map((child) => {
                 const childActive = child.href === pathname;
                 return (
                   <Link
                     key={child.href}
                     href={child.href}
-                    className={`block truncate rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    aria-current={childActive ? 'page' : undefined}
+                    className={`relative flex h-9 items-center border-b border-gray-100 pl-11 pr-4 text-sm ${FOCUS_RING} ${
                       childActive
-                        ? 'bg-blue-50 font-medium text-blue-700'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        ? 'bg-brand-50 font-medium text-brand-700'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
                   >
-                    {child.label}
+                    {childActive && activeBar}
+                    <span className="truncate">{child.label}</span>
                   </Link>
                 );
               })}
@@ -260,14 +266,13 @@ export default function Sidebar() {
       <Link
         key={item.label}
         href={item.href || '#'}
-        className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-          active ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+        aria-current={active ? 'page' : undefined}
+        className={`relative flex h-11 items-center gap-2.5 border-b border-gray-100 px-4 text-sm ${FOCUS_RING} ${
+          active ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-700 hover:bg-gray-50'
         }`}
       >
-        {active && (
-          <span className="absolute inset-y-1 left-0 w-0.5 rounded-r bg-blue-600" aria-hidden />
-        )}
-        <span className={active ? 'text-blue-600' : 'text-gray-500'}>{item.icon}</span>
+        {active && activeBar}
+        <span className={active ? 'text-brand-600' : 'text-gray-500'}>{item.icon}</span>
         <span className="truncate">{item.label}</span>
       </Link>
     );
@@ -275,47 +280,38 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex shrink-0 flex-col border-r border-gray-200 bg-white ${
-        collapsed ? 'w-16' : 'w-64'
+      className={`flex h-full shrink-0 flex-col border-r border-gray-200 bg-white ${
+        collapsed ? 'w-16' : 'w-[236px]'
       }`}
+      aria-label="Điều hướng chính"
     >
-      {/* Thuong hieu */}
+      {/* Khoi thuong hieu */}
       <div
-        className={`flex h-16 shrink-0 items-center border-b border-gray-200 ${
+        className={`flex h-14 shrink-0 items-center border-b border-gray-200 ${
           collapsed ? 'justify-center px-2' : 'px-4'
         }`}
       >
         <Link
           href="/dashboard"
-          className="flex items-center gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          aria-label={`${brand.productName} — về bảng điều khiển`}
+          className={`flex min-w-0 items-center gap-2.5 rounded-md ${FOCUS_RING}`}
         >
-          <span
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md"
-            style={{ backgroundColor: brand.colors.navy }}
-          >
-            <svg viewBox="0 0 64 64" width="20" height="20" aria-hidden="true" focusable="false">
-              <path
-                d="M46 18 L32 46"
-                fill="none"
-                stroke={brand.colors.cyan}
-                strokeWidth="8"
-                strokeLinecap="round"
-              />
-              <path
-                d="M18 18 L32 46"
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
+          {/* Logo lay tu /public/logo.svg; khi thu gon chi hien phan bieu trung ben trai. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.svg"
+            alt=""
+            aria-hidden="true"
+            width={32}
+            height={32}
+            className="h-8 w-8 max-w-none shrink-0 rounded-md object-cover object-left"
+          />
           {!collapsed && (
             <span className="min-w-0">
-              <span className="block text-sm font-semibold leading-tight text-gray-900">
+              <span className="block truncate text-sm font-semibold leading-tight text-gray-900">
                 {brand.productName}
               </span>
-              <span className="block text-[11px] leading-tight text-gray-500">
+              <span className="block truncate text-[11px] leading-tight text-gray-500">
                 {brand.company}
               </span>
             </span>
@@ -323,30 +319,30 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      {/* Dieu huong */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      {/* Dieu huong - vung cuon rieng */}
+      <nav className="min-h-0 flex-1 overflow-y-auto">
         {menuGroups.map((group) => (
-          <div key={group.label} className="mb-4 last:mb-0">
+          <div key={group.label}>
             {collapsed ? (
-              <div className="mx-2 mb-2 border-t border-gray-200 first:border-t-0" aria-hidden />
+              <div className="border-b-2 border-gray-200" aria-hidden />
             ) : (
-              <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <p className="border-b border-gray-100 bg-gray-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 {group.label}
               </p>
             )}
-            <div className="space-y-0.5">{group.items.map((item) => renderItem(item))}</div>
+            {group.items.map((item) => renderItem(item))}
           </div>
         ))}
       </nav>
 
-      {/* Chan sidebar */}
+      {/* Chan sidebar: phien ban + nut thu gon */}
       <div
-        className={`flex shrink-0 items-center gap-2 border-t border-gray-200 px-2 py-3 ${
-          collapsed ? 'justify-center' : 'justify-between px-3'
+        className={`flex h-12 shrink-0 items-center gap-2 border-t border-gray-200 px-2 ${
+          collapsed ? 'justify-center' : 'justify-between px-4'
         }`}
       >
         {!collapsed && (
-          <span className="text-xs text-gray-500">
+          <span className="truncate text-xs text-gray-500">
             {brand.productName} {versionLabel}
           </span>
         )}
@@ -355,7 +351,7 @@ export default function Sidebar() {
           onClick={toggleCollapsed}
           title={collapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
           aria-label={collapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
-          className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className={`rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 ${FOCUS_RING}`}
         >
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>

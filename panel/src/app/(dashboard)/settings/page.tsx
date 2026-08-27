@@ -23,7 +23,7 @@ export default function SettingsPage() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+          className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
         >
           <Save size={16} />
           Save Changes
@@ -39,9 +39,9 @@ export default function SettingsPage() {
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => setActiveTab(tab.id)}
-              className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -64,7 +64,7 @@ export default function SettingsPage() {
               <input
                 id="panel-name"
                 type="text"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
                 defaultValue={brand.productName}
               />
             </div>
@@ -75,7 +75,7 @@ export default function SettingsPage() {
               <input
                 id="panel-url"
                 type="text"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
                 defaultValue="https://panel.example.com"
               />
             </div>
@@ -85,7 +85,7 @@ export default function SettingsPage() {
               </label>
               <select
                 id="panel-language"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
                 defaultValue="en"
               >
                 <option value="en">English</option>

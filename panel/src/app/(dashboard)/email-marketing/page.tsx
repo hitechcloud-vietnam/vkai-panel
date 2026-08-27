@@ -69,12 +69,12 @@ interface EmailStats {
 const CARD = 'bg-white border border-gray-200 rounded-lg shadow-sm';
 const CARD_HEADER = 'px-5 py-4 border-b border-gray-200';
 const INPUT =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
 const LABEL = 'mb-1.5 block text-sm font-medium text-gray-700';
 const BTN_PRIMARY =
-  'inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BTN_SECONDARY =
-  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1';
+  'inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 const BADGE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const ICON_DANGER =
   'rounded-md p-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500';
@@ -282,7 +282,7 @@ export default function EmailMarketingPage() {
     switch (status) {
       case 'active': case 'sent': case 'delivered': return 'bg-emerald-50 text-emerald-700';
       case 'draft': case 'queued': return 'bg-gray-100 text-gray-700';
-      case 'sending': return 'bg-blue-50 text-blue-700';
+      case 'sending': return 'bg-brand-50 text-brand-700';
       case 'paused': return 'bg-amber-50 text-amber-700';
       case 'bounced': case 'cancelled': return 'bg-red-50 text-red-700';
       case 'unsubscribed': return 'bg-amber-50 text-amber-700';
@@ -291,7 +291,7 @@ export default function EmailMarketingPage() {
   };
 
   const statCards = stats ? [
-    { label: 'Campaigns', value: stats.total_campaigns ?? 0, icon: <Mail size={18} />, color: 'text-blue-600' },
+    { label: 'Campaigns', value: stats.total_campaigns ?? 0, icon: <Mail size={18} />, color: 'text-brand-600' },
     { label: 'Contacts', value: stats.total_contacts ?? 0, icon: <Users size={18} />, color: 'text-emerald-600' },
     { label: 'Emails Sent', value: stats.total_sent ?? 0, icon: <Send size={18} />, color: 'text-sky-600' },
     { label: 'Open Rate', value: toPercent(stats.avg_open_rate), icon: <Eye size={18} />, color: 'text-gray-600' },
@@ -361,9 +361,9 @@ export default function EmailMarketingPage() {
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900'
               }`}
             >
@@ -412,7 +412,7 @@ export default function EmailMarketingPage() {
                         <button
                           type="button"
                           onClick={() => handleSendCampaign(c.id)}
-                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                         >
                           <Send size={12} /> Send
                         </button>
@@ -421,7 +421,7 @@ export default function EmailMarketingPage() {
                         <button
                           type="button"
                           onClick={() => handlePauseCampaign(c.id)}
-                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                         >
                           <Pause size={12} /> Pause
                         </button>
@@ -456,7 +456,7 @@ export default function EmailMarketingPage() {
                 placeholder="Search contacts..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-64 rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="w-64 rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none"
               />
             </div>
           </div>
@@ -477,7 +477,7 @@ export default function EmailMarketingPage() {
                     {Array.isArray(c.tags) && c.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {c.tags.map((tag, i) => (
-                          <span key={i} className={`${BADGE} bg-blue-50 text-blue-700`}>{tag}</span>
+                          <span key={i} className={`${BADGE} bg-brand-50 text-brand-700`}>{tag}</span>
                         ))}
                       </div>
                     )}
@@ -587,7 +587,7 @@ export default function EmailMarketingPage() {
                 type="button"
                 aria-label="Close dialog"
                 onClick={() => setShowCreateModal(false)}
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>
@@ -659,7 +659,7 @@ export default function EmailMarketingPage() {
                   </div>
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={listForm.double_opt_in} onChange={(e) => setListForm({...listForm, double_opt_in: e.target.checked})}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
                     <span className="text-sm text-gray-700">Enable Double Opt-in</span>
                   </label>
                 </>

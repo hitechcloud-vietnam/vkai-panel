@@ -109,14 +109,14 @@ const CARD_HEADER_CLASS =
   'flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-5 py-4';
 const CARD_TITLE_CLASS = 'text-sm font-semibold text-gray-900';
 const TH_CLASS = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500';
-const BTN_PRIMARY = 'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500';
+const BTN_PRIMARY = 'bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-500';
 const BTN_SECONDARY =
-  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-blue-500';
+  'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-brand-500';
 const BTN_GHOST = 'text-gray-500 hover:bg-gray-100 hover:text-gray-900';
 const INPUT_CLASS =
-  'w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0';
+  'w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0';
 const SELECT_CLASS =
-  'border-gray-300 bg-white text-sm text-gray-900 focus:ring-1 focus:ring-blue-500 focus:ring-offset-0';
+  'border-gray-300 bg-white text-sm text-gray-900 focus:ring-1 focus:ring-brand-500 focus:ring-offset-0';
 const BADGE_BASE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium';
 const STATUS_PILL = 'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium';
 
@@ -153,7 +153,7 @@ const scanStatusConfig: Record<string, { color: string; icon: React.ReactNode }>
     icon: <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />,
   },
   running: {
-    color: 'bg-blue-50 text-blue-700',
+    color: 'bg-brand-50 text-brand-700',
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />,
   },
   pending: {
@@ -544,7 +544,7 @@ export default function SecurityPage() {
             type="button"
             onClick={() => setToast(null)}
             aria-label="Dismiss notification"
-            className="ml-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="ml-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -644,28 +644,28 @@ export default function SecurityPage() {
         <TabsList className="inline-flex h-auto items-center gap-1 rounded-md border border-gray-200 bg-white p-1 text-gray-600">
           <TabsTrigger
             value="scans"
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none"
           >
             <Search className="mr-2 h-4 w-4" aria-hidden="true" />
             Scans
           </TabsTrigger>
           <TabsTrigger
             value="vulnerabilities"
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none"
           >
             <Bug className="mr-2 h-4 w-4" aria-hidden="true" />
             Vulnerabilities
           </TabsTrigger>
           <TabsTrigger
             value="policies"
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none"
           >
             <FileText className="mr-2 h-4 w-4" aria-hidden="true" />
             Policies
           </TabsTrigger>
           <TabsTrigger
             value="checks"
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none"
+            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none"
           >
             <ShieldCheck className="mr-2 h-4 w-4" aria-hidden="true" />
             Checks
@@ -1351,7 +1351,7 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => setShowScanModal(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1443,7 +1443,7 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => setShowPolicyModal(false)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1509,7 +1509,7 @@ export default function SecurityPage() {
                   id="policy-rules"
                   value={policyForm.rules}
                   onChange={(e) => setPolicyForm((prev) => ({ ...prev, rules: e.target.value }))}
-                  className="flex min-h-[100px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex min-h-[100px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   placeholder='{"min_password_length": 12, "require_2fa": true}'
                 />
               </div>
@@ -1571,7 +1571,7 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => setShowVulnDetail(null)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1650,7 +1650,7 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => setShowCheckDetail(null)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>

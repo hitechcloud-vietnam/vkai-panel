@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # VKAI Panel - bo cai dat tu dong, ho tro nhieu he dieu hanh
-# HiTech Cloud (hitechcloud.vn)
+# HiTechCloud (hitechcloud.vn)
 #
 #   bash deploy/install.sh                      # cai mac dinh (cong 8888)
 #   bash deploy/install.sh --port 9001 --yes    # khong hoi, cong 9001
@@ -18,7 +18,7 @@ set -Eeuo pipefail
 # -----------------------------------------------------------------------------
 readonly VKAI_VERSION="1.0.0"
 readonly BRAND_NAME="VKAI Panel"
-readonly BRAND_ORG="HiTech Cloud (hitechcloud.vn)"
+readonly BRAND_ORG="HiTechCloud (hitechcloud.vn)"
 
 readonly PANEL_ROOT="/vkai-panel"
 readonly CORE_DIR="${PANEL_ROOT}/core"

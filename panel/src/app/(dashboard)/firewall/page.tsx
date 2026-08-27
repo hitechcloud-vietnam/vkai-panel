@@ -72,13 +72,13 @@ const EMPTY_FORM: RuleFormData = {
 
 // Shared control classes (light enterprise)
 const INPUT_CLASS =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:border-blue-500 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:border-brand-500 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0 focus-visible:outline-none';
 const SELECT_TRIGGER_CLASS =
-  'rounded-md border border-gray-300 bg-white text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
+  'rounded-md border border-gray-300 bg-white text-sm text-gray-900 focus:border-brand-500 focus:ring-1 focus:ring-brand-500';
 const SELECT_CONTENT_CLASS = 'bg-white border border-gray-200 shadow-lg';
 const SELECT_ITEM_CLASS = 'text-gray-900 focus:bg-gray-100 focus:text-gray-900';
 const BTN_PRIMARY =
-  'bg-blue-600 text-white hover:bg-blue-700 rounded-md text-sm font-medium';
+  'bg-brand-600 text-white hover:bg-brand-700 rounded-md text-sm font-medium';
 const BTN_SECONDARY =
   'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md text-sm font-medium';
 const BTN_DANGER =
@@ -325,7 +325,7 @@ export default function FirewallPage() {
 
   const getDirectionIcon = (direction: string) => {
     if (direction === 'in') {
-      return <ArrowDown size={14} className="text-blue-600" />;
+      return <ArrowDown size={14} className="text-brand-600" />;
     }
     return <ArrowUp size={14} className="text-amber-600" />;
   };
@@ -359,7 +359,7 @@ export default function FirewallPage() {
             type="button"
             onClick={() => setToast(null)}
             aria-label="Dismiss notification"
-            className="ml-2 rounded-md p-1 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="ml-2 rounded-md p-1 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X size={14} />
           </button>
@@ -432,7 +432,7 @@ export default function FirewallPage() {
         <Card className="bg-white border border-gray-200 rounded-lg shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 px-5 pt-5 pb-2">
             <CardTitle className="text-sm font-medium text-gray-500">Allow Rules</CardTitle>
-            <CheckCircle className="h-4 w-4 text-blue-600" />
+            <CheckCircle className="h-4 w-4 text-brand-600" />
           </CardHeader>
           <CardContent className="px-5 pb-5">
             <div className="text-2xl font-semibold text-gray-900">{stats.allow}</div>
@@ -503,7 +503,7 @@ export default function FirewallPage() {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+              <RefreshCw className="h-8 w-8 animate-spin text-brand-600" />
             </div>
           ) : filteredRules.length === 0 ? (
             <div className="text-center py-16 px-5">
@@ -574,7 +574,7 @@ export default function FirewallPage() {
                             onClick={() => openEditForm(rule)}
                             aria-label={`Edit ${rule.protocol} rule on port ${rule.port || 'any'}`}
                             title="Edit rule"
-                            className="text-gray-500 hover:text-blue-700 hover:bg-blue-50"
+                            className="text-gray-500 hover:text-brand-700 hover:bg-brand-50"
                           >
                             <Edit size={14} />
                           </Button>
@@ -627,7 +627,7 @@ export default function FirewallPage() {
                 type="button"
                 onClick={closeForm}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>

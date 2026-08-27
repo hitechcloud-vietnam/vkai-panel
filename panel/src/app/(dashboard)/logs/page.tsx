@@ -23,7 +23,7 @@ export default function LogsPage() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
         >
           <RefreshCw size={16} />
           Refresh
@@ -39,9 +39,9 @@ export default function LogsPage() {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`-mb-px border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              className={`-mb-px border-b-2 px-1 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-900'
               }`}
             >

@@ -77,13 +77,13 @@ const DEFAULT_FORM: CronJobFormData = {
 
 // Shared control classes (light enterprise)
 const INPUT_CLASS =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:border-blue-500 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus-visible:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:border-brand-500 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0 focus-visible:outline-none';
 const SELECT_TRIGGER_CLASS =
-  'rounded-md border border-gray-300 bg-white text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500';
+  'rounded-md border border-gray-300 bg-white text-sm text-gray-900 focus:border-brand-500 focus:ring-1 focus:ring-brand-500';
 const SELECT_CONTENT_CLASS = 'bg-white border border-gray-200 shadow-lg';
 const SELECT_ITEM_CLASS = 'text-gray-900 focus:bg-gray-100 focus:text-gray-900';
 const BTN_PRIMARY =
-  'bg-blue-600 text-white hover:bg-blue-700 rounded-md text-sm font-medium';
+  'bg-brand-600 text-white hover:bg-brand-700 rounded-md text-sm font-medium';
 const BTN_SECONDARY =
   'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md text-sm font-medium';
 const BTN_DANGER =
@@ -141,7 +141,7 @@ function typeBadgeColor(type: string) {
     case 'php':
       return 'bg-sky-50 text-sky-700 border-sky-200';
     case 'url':
-      return 'bg-blue-50 text-blue-700 border-blue-200';
+      return 'bg-brand-50 text-brand-700 border-brand-200';
     case 'nodejs':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     default:
@@ -164,8 +164,8 @@ function SummaryCards({ jobs }: { jobs: CronJob[] }) {
     {
       label: 'Total Jobs',
       value: total,
-      icon: <CalendarClock className="h-5 w-5 text-blue-600" />,
-      iconBg: 'bg-blue-50 border border-blue-200',
+      icon: <CalendarClock className="h-5 w-5 text-brand-600" />,
+      iconBg: 'bg-brand-50 border border-brand-200',
     },
     {
       label: 'Active',
@@ -258,7 +258,7 @@ function CronJobFormModal({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X className="h-5 w-5" />
           </button>
@@ -293,7 +293,7 @@ function CronJobFormModal({
               placeholder="e.g. /usr/bin/php /var/www/artisan schedule:run"
               required
               rows={3}
-              className="flex w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:border-blue-500 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:outline-none font-mono resize-none"
+              className="flex w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:border-brand-500 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:outline-none font-mono resize-none"
             />
           </div>
 
@@ -723,7 +723,7 @@ export default function CronPage() {
       {/* Loading state */}
       {loading && (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
         </div>
       )}
 
@@ -839,7 +839,7 @@ export default function CronPage() {
 
                       {/* Schedule */}
                       <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded">
+                        <span className="font-mono text-xs text-brand-700 bg-brand-50 border border-brand-200 px-2 py-1 rounded">
                           {job.schedule}
                         </span>
                       </td>
@@ -946,7 +946,7 @@ export default function CronPage() {
                               setEditingJob(job);
                               setShowForm(true);
                             }}
-                            className="h-8 w-8 text-gray-500 hover:text-blue-700 hover:bg-blue-50"
+                            className="h-8 w-8 text-gray-500 hover:text-brand-700 hover:bg-brand-50"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>

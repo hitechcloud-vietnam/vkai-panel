@@ -68,7 +68,7 @@ const EMPTY_FORM: APIKeyFormData = {
 // ---------------------------------------------------------------------------
 
 const INPUT_CLASS =
-  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-0 focus:outline-none';
+  'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-0 focus:outline-none';
 const TH_CLASS =
   'text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500';
 const LABEL_CLASS = 'block text-sm font-medium text-gray-700 mb-1.5';
@@ -394,7 +394,7 @@ export default function APIKeysPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" aria-hidden="true" />
+        <RefreshCw className="h-8 w-8 animate-spin text-brand-600" aria-hidden="true" />
         <span className="sr-only">Loading API keys</span>
       </div>
     );
@@ -422,7 +422,7 @@ export default function APIKeysPage() {
             type="button"
             onClick={() => setToast(null)}
             aria-label="Dismiss notification"
-            className="ml-2 rounded-md p-0.5 hover:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="ml-2 rounded-md p-0.5 hover:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X size={14} />
           </button>
@@ -448,7 +448,7 @@ export default function APIKeysPage() {
           </Button>
           <Button
             onClick={openCreateForm}
-            className="rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             <Plus size={16} className="mr-2" />
             Create API Key
@@ -540,7 +540,7 @@ export default function APIKeysPage() {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger
                 aria-label="Filter by status"
-                className="w-[160px] rounded-md border border-gray-300 bg-white text-sm text-gray-900 focus:ring-1 focus:ring-blue-500 focus:ring-offset-0"
+                className="w-[160px] rounded-md border border-gray-300 bg-white text-sm text-gray-900 focus:ring-1 focus:ring-brand-500 focus:ring-offset-0"
               >
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -580,7 +580,7 @@ export default function APIKeysPage() {
               {safeKeys.length === 0 && (
                 <Button
                   onClick={openCreateForm}
-                  className="mt-4 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="mt-4 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
                 >
                   <Plus size={16} className="mr-2" />
                   Create API Key
@@ -732,7 +732,7 @@ export default function APIKeysPage() {
                 type="button"
                 onClick={closeForm}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>
@@ -808,7 +808,7 @@ export default function APIKeysPage() {
                 <Button
                   type="submit"
                   disabled={submitting}
-                  className="rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
                   {submitting ? (
                     <RefreshCw size={16} className="mr-2 animate-spin" />
@@ -848,7 +848,7 @@ export default function APIKeysPage() {
                 type="button"
                 onClick={() => setCreatedKey(null)}
                 aria-label="Close dialog"
-                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <X size={18} />
               </button>
@@ -908,7 +908,7 @@ export default function APIKeysPage() {
               <div className="flex justify-end pt-2">
                 <Button
                   onClick={() => setCreatedKey(null)}
-                  className="rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
                 >
                   I&apos;ve saved my key
                 </Button>

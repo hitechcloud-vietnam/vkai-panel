@@ -1,6 +1,6 @@
 # VKAI Panel
 
-**Bảng điều khiển máy chủ & hosting đa máy chủ** — sản phẩm của **HiTech Cloud** ([hitechcloud.vn](https://hitechcloud.vn)).
+**Bảng điều khiển máy chủ & hosting đa máy chủ** — sản phẩm của **HiTechCloud** ([hitechcloud.vn](https://hitechcloud.vn)).
 
 VKAI Panel quản lý máy chủ, website, cơ sở dữ liệu, DNS, chứng chỉ SSL, container,
 tường lửa, sao lưu và giám sát từ một giao diện web duy nhất. Panel chạy trên
@@ -481,7 +481,7 @@ Chi tiết: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) và
 
 ## Giấy phép & hỗ trợ
 
-Phát hành theo giấy phép MIT. Bản quyền (c) 2024 HiTech Cloud Vietnam. Xem [LICENSE](LICENSE).
+Phát hành theo giấy phép MIT. Bản quyền (c) 2024 HiTechCloud Vietnam. Xem [LICENSE](LICENSE).
 
 - Website: https://hitechcloud.vn
 - Tài liệu: https://docs.vkai.vn

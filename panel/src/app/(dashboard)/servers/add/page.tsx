@@ -45,7 +45,7 @@ export default function AddServerPage() {
   };
 
   const inputClass =
-    'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none';
+    'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none';
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1.5';
 
   return (
@@ -55,7 +55,7 @@ export default function AddServerPage() {
         <Link
           href="/servers"
           aria-label="Back to servers"
-          className="rounded-md border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="rounded-md border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
@@ -203,14 +203,14 @@ export default function AddServerPage() {
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
               <Link
                 href="/servers"
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 Cancel
               </Link>
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? (
                   <Loader2 className="animate-spin" size={16} aria-hidden="true" />
