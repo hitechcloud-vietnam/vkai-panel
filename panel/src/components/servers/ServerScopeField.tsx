@@ -45,6 +45,17 @@ export interface ServerScopeCopy {
  */
 export const SERVER_SCOPE_COPY_EN: Partial<ServerScopeCopy> = {};
 
+/**
+ * The value that means "every server".
+ *
+ * A sentinel rather than the empty string, because Radix's Select refuses an
+ * empty item value outright - it reserves that for "nothing selected" and throws
+ * at render. It is deliberately not a UUID shape, so a caller that forgets to
+ * translate it sends something the API rejects immediately instead of a value
+ * that looks plausible.
+ */
+export const ALL_SERVERS = '*';
+
 export interface ServerScopeFieldProps {
   id: string;
   servers: ManagedServer[];
@@ -54,12 +65,25 @@ export interface ServerScopeFieldProps {
   copy?: Partial<ServerScopeCopy>;
   /** Set when the caller renders its own label above the field. */
   hideLabel?: boolean;
+  /**
+   * Offer an "every server" choice, whose value is the empty string.
+   *
+   * Off by default: most callers need one server, and a screen that silently
+   * accepted "all" where the backend wants one id would fail at submit rather
+   * than at selection. Only pass this where the caller has actually implemented
+   * what "all" means.
+   */
+  allowAll?: boolean;
+  /** Label for the "every server" choice. Ignored unless allowAll is set. */
+  allLabel?: string;
   className?: string;
 }
 
 export default function ServerScopeField({
   id,
   servers,
+  allowAll = false,
+  allLabel,
   value,
   onChange,
   copy,
@@ -125,6 +149,11 @@ export default function ServerScopeField({
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent className="border-gray-200 bg-white">
+          {allowAll && (
+            <SelectItem value={ALL_SERVERS}>
+              {allLabel ?? 'Every server'}
+            </SelectItem>
+          )}
           {list.map((server) => (
             <SelectItem key={server.id} value={server.id}>
               {serverLabel(server)}
