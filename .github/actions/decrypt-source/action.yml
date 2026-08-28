@@ -1,13 +1,13 @@
-name: Giải mã mã nguồn
+name: Decrypt source
 description: >
-  Giải mã mã nguồn đã được vkai-crypt mã hoá trong repository.
-  Nếu repository chưa bật mã hoá thì bước này không làm gì và vẫn thành công,
-  nhờ vậy dùng được cả trước và sau khi bật mã hoá.
+  Decrypt source that vkai-crypt encrypted in the repository.
+  If encryption is not switched on yet this step does nothing and still
+  succeeds, so it works both before and after encryption is enabled.
 
 runs:
   using: composite
   steps:
-    - name: Kiểm tra repository có mã hoá không
+    - name: Detect whether the source is encrypted
       id: detect
       shell: bash
       run: |
@@ -15,32 +15,39 @@ runs:
         if grep -rlq --binary-files=text '^VKAICRYPT1' \
              --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.next . 2>/dev/null; then
           echo "needed=true" >> "$GITHUB_OUTPUT"
-          echo "Phát hiện mã nguồn đã mã hoá."
+          echo "Encrypted source detected."
         else
           echo "needed=false" >> "$GITHUB_OUTPUT"
-          echo "Repository chưa bật mã hoá — bỏ qua bước giải mã."
+          echo "Encryption is not enabled here; skipping decryption."
         fi
 
-    # Bộ giải mã viết bằng Go thư viện chuẩn. Chỉ cài Go khi thật sự cần,
-    # để job không liên quan tới Go (panel, docker) không bị chậm đi vô ích.
-    - name: Chuẩn bị Go cho bộ giải mã
+    # The decryptor is Go with only the standard library. Go is installed only
+    # when it is actually needed, so a job that has nothing to do with Go (the
+    # panel build, for one) is not slowed down for nothing.
+    - name: Set up Go for the decryptor
       if: steps.detect.outputs.needed == 'true'
       uses: actions/setup-go@v5
       with:
         go-version: '1.22'
         cache: false
 
-    - name: Giải mã
+    - name: Decrypt
       if: steps.detect.outputs.needed == 'true'
       shell: bash
       run: |
         set -euo pipefail
         if [ -z "${VKAI_CRYPT_KEY:-}" ]; then
-          echo "::error::Mã nguồn đã mã hoá nhưng thiếu secret VKAI_CRYPT_KEY."
-          echo "Thêm tại Settings > Secrets and variables > Actions."
-          echo "Lưu ý: secret không được cấp cho workflow chạy từ fork — đó là chủ ý."
+          echo "::error::The source is encrypted but the VKAI_CRYPT_KEY secret is missing."
+          echo "Add it under Settings > Secrets and variables > Actions."
+          echo "Note: secrets are not given to workflows run from a fork. That is deliberate."
           exit 1
         fi
-        # tools/protect cố ý không bị mã hoá nên luôn chạy được ở đây.
-        go run ./tools/protect/cmd/vkai-crypt decrypt-tree .
-        echo "Đã giải mã mã nguồn."
+        # tools/protect is deliberately left unencrypted so it can always run
+        # here. It is also its OWN Go module: there is no go.mod at the
+        # repository root, so `go run ./tools/protect/...` from the root fails
+        # with "cannot find main module" and every job dies before it builds.
+        # The command has to be issued from inside that module, with the tree to
+        # decrypt named as an absolute path.
+        cd tools/protect
+        go run ./cmd/vkai-crypt decrypt-tree "$GITHUB_WORKSPACE"
+        echo "Source decrypted."
