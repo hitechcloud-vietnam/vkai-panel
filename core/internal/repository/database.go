@@ -64,7 +64,7 @@ func (r *DatabaseRepository) DeleteServer(ctx context.Context, tenantID, id uuid
 // Database Entry operations
 func (r *DatabaseRepository) CreateEntry(ctx context.Context, e *models.DatabaseEntry) error {
 	query := `
-		INSERT INTO database_entries (id, tenant_id, database_server_id, name, username, password, charset, collation, size, status, created_at, updated_at)
+		INSERT INTO database_entries (id, tenant_id, database_server_id, name, username, password, charset, collation_name, size, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
 		RETURNING created_at, updated_at`
 
@@ -103,7 +103,7 @@ func (r *DatabaseRepository) ListEntriesByTenant(ctx context.Context, tenantID u
 }
 
 func (r *DatabaseRepository) UpdateEntry(ctx context.Context, e *models.DatabaseEntry) error {
-	query := `UPDATE database_entries SET charset = $2, collation = $3, status = $4, updated_at = NOW() WHERE id = $1`
+	query := `UPDATE database_entries SET charset = $2, collation_name = $3, status = $4, updated_at = NOW() WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, e.ID, e.Charset, e.Collation, e.Status)
 	return err
 }

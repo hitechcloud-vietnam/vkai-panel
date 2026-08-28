@@ -1,7 +1,7 @@
--- Migration 013: Create Mail Server tables
+-- Migration 016: Create Mail Server tables
 -- Mail domains, accounts, aliases, queue, spam filters, server config
 
-CREATE TABLE IF NOT EXISTS mail_domains (
+CREATE TABLE mail_domains (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     domain VARCHAR(255) NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS mail_domains (
 CREATE INDEX idx_mail_domains_tenant ON mail_domains(tenant_id);
 CREATE UNIQUE INDEX idx_mail_domains_domain ON mail_domains(domain);
 
-CREATE TABLE IF NOT EXISTS mail_accounts (
+CREATE TABLE mail_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     domain_id UUID NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
@@ -39,7 +39,7 @@ CREATE INDEX idx_mail_accounts_tenant ON mail_accounts(tenant_id);
 CREATE INDEX idx_mail_accounts_domain ON mail_accounts(domain_id);
 CREATE UNIQUE INDEX idx_mail_accounts_email ON mail_accounts(email);
 
-CREATE TABLE IF NOT EXISTS mail_aliases (
+CREATE TABLE mail_aliases (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     domain_id UUID NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS mail_aliases (
 CREATE INDEX idx_mail_aliases_tenant ON mail_aliases(tenant_id);
 CREATE INDEX idx_mail_aliases_domain ON mail_aliases(domain_id);
 
-CREATE TABLE IF NOT EXISTS mail_dkim_keys (
+CREATE TABLE mail_dkim_keys (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
     selector VARCHAR(100) NOT NULL DEFAULT 'default',
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS mail_dkim_keys (
 
 CREATE INDEX idx_mail_dkim_domain ON mail_dkim_keys(domain_id);
 
-CREATE TABLE IF NOT EXISTS mail_queue (
+CREATE TABLE mail_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     from_address VARCHAR(255) NOT NULL,
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS mail_queue (
 CREATE INDEX idx_mail_queue_tenant ON mail_queue(tenant_id);
 CREATE INDEX idx_mail_queue_status ON mail_queue(status);
 
-CREATE TABLE IF NOT EXISTS mail_spam_filters (
+CREATE TABLE mail_spam_filters (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     enabled BOOLEAN DEFAULT true,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS mail_spam_filters (
 
 CREATE UNIQUE INDEX idx_mail_spam_filters_tenant ON mail_spam_filters(tenant_id);
 
-CREATE TABLE IF NOT EXISTS mail_server_configs (
+CREATE TABLE mail_server_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     hostname VARCHAR(255) DEFAULT 'mail.example.com',

@@ -2,7 +2,7 @@
 -- Creates tables for website analytics and visitor tracking
 
 -- Daily aggregated statistics per website
-CREATE TABLE IF NOT EXISTS website_stats (
+CREATE TABLE website_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     website_id UUID NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS website_stats (
 );
 
 -- Per-page statistics
-CREATE TABLE IF NOT EXISTS website_page_stats (
+CREATE TABLE website_page_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     website_id UUID NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS website_page_stats (
 );
 
 -- Individual visitor logs
-CREATE TABLE IF NOT EXISTS website_visitor_logs (
+CREATE TABLE website_visitor_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     website_id UUID NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS website_visitor_logs (
 );
 
 -- Referrer statistics
-CREATE TABLE IF NOT EXISTS website_referrer_stats (
+CREATE TABLE website_referrer_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     website_id UUID NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS website_referrer_stats (
 );
 
 -- Country statistics
-CREATE TABLE IF NOT EXISTS website_country_stats (
+CREATE TABLE website_country_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     website_id UUID NOT NULL,
@@ -72,9 +72,9 @@ CREATE TABLE IF NOT EXISTS website_country_stats (
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_website_stats_tenant_website_date ON website_stats(tenant_id, website_id, date);
-CREATE INDEX IF NOT EXISTS idx_website_page_stats_tenant_website_date ON website_page_stats(tenant_id, website_id, date);
-CREATE INDEX IF NOT EXISTS idx_website_visitor_logs_tenant_website ON website_visitor_logs(tenant_id, website_id);
-CREATE INDEX IF NOT EXISTS idx_website_visitor_logs_created_at ON website_visitor_logs(created_at);
-CREATE INDEX IF NOT EXISTS idx_website_referrer_stats_tenant_website_date ON website_referrer_stats(tenant_id, website_id, date);
-CREATE INDEX IF NOT EXISTS idx_website_country_stats_tenant_website_date ON website_country_stats(tenant_id, website_id, date);
+CREATE INDEX idx_website_stats_tenant_website_date ON website_stats(tenant_id, website_id, date);
+CREATE INDEX idx_website_page_stats_tenant_website_date ON website_page_stats(tenant_id, website_id, date);
+CREATE INDEX idx_website_visitor_logs_tenant_website ON website_visitor_logs(tenant_id, website_id);
+CREATE INDEX idx_website_visitor_logs_created_at ON website_visitor_logs(created_at);
+CREATE INDEX idx_website_referrer_stats_tenant_website_date ON website_referrer_stats(tenant_id, website_id, date);
+CREATE INDEX idx_website_country_stats_tenant_website_date ON website_country_stats(tenant_id, website_id, date);

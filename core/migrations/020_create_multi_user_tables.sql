@@ -1,6 +1,6 @@
--- Migration 015: Multi-user management tables
+-- Migration 020: Multi-user management tables
 -- User sessions for tracking active logins
-CREATE TABLE IF NOT EXISTS user_sessions (
+CREATE TABLE user_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES tenants(id),
@@ -12,12 +12,12 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_tenant ON user_sessions(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
+CREATE INDEX idx_user_sessions_user ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_tenant ON user_sessions(tenant_id);
+CREATE INDEX idx_user_sessions_expires ON user_sessions(expires_at);
 
 -- User activity log
-CREATE TABLE IF NOT EXISTS user_activities (
+CREATE TABLE user_activities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES tenants(id),
@@ -28,26 +28,17 @@ CREATE TABLE IF NOT EXISTS user_activities (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_activities_user ON user_activities(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_activities_tenant ON user_activities(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_user_activities_created ON user_activities(created_at DESC);
+CREATE INDEX idx_user_activities_user ON user_activities(user_id);
+CREATE INDEX idx_user_activities_tenant ON user_activities(tenant_id);
+CREATE INDEX idx_user_activities_created ON user_activities(created_at DESC);
 
--- API keys for programmatic access
-CREATE TABLE IF NOT EXISTS api_keys (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
-    name VARCHAR(200) NOT NULL,
-    key_hash VARCHAR(512) NOT NULL,
-    key_prefix VARCHAR(20) NOT NULL,
-    scopes TEXT[],
-    expires_at TIMESTAMP WITH TIME ZONE,
-    last_used_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
-CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+-- API keys for programmatic access.
+-- The api_keys table itself is defined in 001_initial_schema.sql and is not
+-- redefined here: internal/models/models.go (APIKey) and both repositories
+-- that read it expect the columns declared there, in particular last_used and
+-- status. Only the lookup index this module needs is added.
+-- MultiUserRepository.GetAPIKeyByHash looks a key up by its hash.
+CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 
 -- Seed default permissions if not exist
 INSERT INTO permissions (id, resource, action) VALUES

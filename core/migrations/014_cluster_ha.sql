@@ -2,7 +2,7 @@
 -- Phase 7: Cluster, High Availability, Load Balancing
 
 -- Clusters
-CREATE TABLE IF NOT EXISTS clusters (
+CREATE TABLE clusters (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS clusters (
 );
 
 -- Cluster Nodes
-CREATE TABLE IF NOT EXISTS cluster_nodes (
+CREATE TABLE cluster_nodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cluster_id UUID NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
     server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS cluster_nodes (
 );
 
 -- Load Balancers
-CREATE TABLE IF NOT EXISTS load_balancers (
+CREATE TABLE load_balancers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     cluster_id UUID REFERENCES clusters(id) ON DELETE SET NULL,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS load_balancers (
 );
 
 -- Load Balancer Backends
-CREATE TABLE IF NOT EXISTS load_balancer_backends (
+CREATE TABLE load_balancer_backends (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     load_balancer_id UUID NOT NULL REFERENCES load_balancers(id) ON DELETE CASCADE,
     node_id UUID REFERENCES cluster_nodes(id) ON DELETE SET NULL,
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS load_balancer_backends (
 );
 
 -- HA Pairs
-CREATE TABLE IF NOT EXISTS ha_pairs (
+CREATE TABLE ha_pairs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,

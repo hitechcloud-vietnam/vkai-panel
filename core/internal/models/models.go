@@ -225,7 +225,7 @@ type DatabaseEntry struct {
 	Username         string    `json:"username" db:"username"`
 	Password         string    `json:"-" db:"password"`
 	Charset          string    `json:"charset" db:"charset"`
-	Collation        string    `json:"collation" db:"collation"`
+	Collation        string    `json:"collation" db:"collation_name"`
 	Size             int64     `json:"size" db:"size"`
 	Status           string    `json:"status" db:"status"`
 	CreatedAt        time.Time `json:"created_at" db:"created_at"`
@@ -356,21 +356,11 @@ type BackupRecord struct {
 // ============================================================
 // JOB
 // ============================================================
-
-type Job struct {
-	ID          uuid.UUID  `json:"id" db:"id"`
-	TenantID    uuid.UUID  `json:"tenant_id" db:"tenant_id"`
-	Type        string     `json:"type" db:"type"`
-	Status      string     `json:"status" db:"status"` // queued, running, success, failed, cancelled
-	Payload     string     `json:"payload" db:"payload"`
-	Result      string     `json:"result" db:"result"`
-	ErrorMsg    string     `json:"error_msg" db:"error_msg"`
-	Progress    int        `json:"progress" db:"progress"`
-	StartedAt   *time.Time `json:"started_at" db:"started_at"`
-	CompletedAt *time.Time `json:"completed_at" db:"completed_at"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
-}
+//
+// The job queue record lives in internal/job (job.JobRecord). It is the only
+// mapping of the jobs table, whose schema is 017_job_queue.sql. An older Job
+// struct used to sit here describing a different, unused jobs table; it was
+// removed so there is a single shape for that table.
 
 // ============================================================
 // API KEY

@@ -218,7 +218,10 @@ CREATE TABLE database_entries (
     username VARCHAR(255) NOT NULL,
     password VARCHAR(255),
     charset VARCHAR(50) DEFAULT 'utf8mb4',
-    collation VARCHAR(100) DEFAULT 'utf8mb4_unicode_ci',
+    -- "collation" is a reserved word in PostgreSQL and cannot be an unquoted
+    -- column name. The value itself is a MySQL collation: this row describes a
+    -- database the panel manages on the customer's MySQL server, not this one.
+    collation_name VARCHAR(100) DEFAULT 'utf8mb4_unicode_ci',
     size BIGINT DEFAULT 0,
     status VARCHAR(50) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -361,24 +364,9 @@ CREATE INDEX idx_backup_records_tenant ON backup_records(tenant_id);
 -- ============================================================
 -- JOBS
 -- ============================================================
-CREATE TABLE jobs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
-    type VARCHAR(100) NOT NULL,
-    status VARCHAR(50) DEFAULT 'queued',
-    payload TEXT,
-    result TEXT,
-    error_msg TEXT,
-    progress INT DEFAULT 0,
-    started_at TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_jobs_tenant ON jobs(tenant_id);
-CREATE INDEX idx_jobs_status ON jobs(status);
-CREATE INDEX idx_jobs_type ON jobs(type);
+-- The jobs table is defined in 017_job_queue.sql together with
+-- job_schedules. That migration owns the job queue schema and its shape is
+-- the one internal/repository/job.go queries; do not redefine jobs here.
 
 -- ============================================================
 -- API KEYS
@@ -404,43 +392,17 @@ CREATE INDEX idx_api_keys_prefix ON api_keys(key_prefix);
 -- ============================================================
 -- AUDIT LOGS
 -- ============================================================
-CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
-    user_id UUID NOT NULL REFERENCES users(id),
-    action VARCHAR(100) NOT NULL,
-    resource VARCHAR(100) NOT NULL,
-    resource_id VARCHAR(255),
-    details TEXT,
-    ip_address VARCHAR(45),
-    user_agent TEXT,
-    result VARCHAR(50) DEFAULT 'success',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_audit_logs_tenant ON audit_logs(tenant_id);
-CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action);
-CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
+-- The audit_logs table is defined in 012_audit_logging.sql. That migration
+-- owns the audit schema and its shape is the one internal/models/audit.go and
+-- internal/repository/audit.go expect; do not redefine audit_logs here.
 
 -- ============================================================
 -- NOTIFICATIONS
 -- ============================================================
-CREATE TABLE notifications (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
-    user_id UUID REFERENCES users(id),
-    type VARCHAR(100) NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    message TEXT,
-    severity VARCHAR(50) DEFAULT 'info',
-    read BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_notifications_tenant ON notifications(tenant_id);
-CREATE INDEX idx_notifications_user ON notifications(user_id);
-CREATE INDEX idx_notifications_read ON notifications(read);
+-- The notifications table is defined in 011_notifications.sql alongside
+-- notification_templates, notification_channels and notification_preferences.
+-- That migration owns the notification schema; do not redefine notifications
+-- here.
 
 -- ============================================================
 -- DEPLOYMENTS
