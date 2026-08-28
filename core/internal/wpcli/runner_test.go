@@ -3,6 +3,7 @@ package wpcli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -263,8 +264,19 @@ func TestRunRefusesABadDirectory(t *testing.T) {
 // able to say it, so the string has to carry the name, the group and the
 // numeric ids - a name alone is ambiguous after a user is recreated.
 func TestIdentityStringIsTheAnswerToWhichUserDidThatRunAs(t *testing.T) {
-	got := nonRoot().String()
-	for _, part := range []string{"site-example", "uid 1201", "gid 1201"} {
+	id := nonRoot()
+	got := id.String()
+	// The expectation is derived from the identity rather than written out,
+	// because nonRoot() reports the running process when that process is already
+	// unprivileged. A literal "uid 1201" here would assert the identity of the
+	// machine the test happens to run on, which is how this suite came to pass
+	// only for someone running as root.
+	want := []string{
+		id.Name,
+		fmt.Sprintf("uid %d", id.UID),
+		fmt.Sprintf("gid %d", id.GID),
+	}
+	for _, part := range want {
 		if !strings.Contains(got, part) {
 			t.Errorf("the identity string %q does not contain %q", got, part)
 		}
