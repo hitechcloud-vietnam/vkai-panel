@@ -15,6 +15,7 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { LOCALE_TAG, useLocale, useT } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { brand } from '@/lib/brand';
 
@@ -43,7 +44,8 @@ type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 interface TerminalSession {
   id: string;
-  name: string;
+  /** Sequence number this session was opened with; its name is built from it. */
+  index: number;
   terminal: any | null;
   fitAddon: any | null;
   ws: WebSocket | null;
@@ -71,9 +73,14 @@ function getWsUrl(sessionId: string): string {
   return `${protocol}//${host}/api/ws?token=${encodeURIComponent(token)}&session=${sessionId}`;
 }
 
-function formatTime(date: Date): string {
+/**
+ * The clock beside a session. The locale decides the digits and separator; the
+ * 24-hour clock is kept in both, because a session list is read as a log and an
+ * AM/PM suffix would only make the rows longer.
+ */
+function formatTime(date: Date, localeTag: string): string {
   try {
-    return date.toLocaleTimeString('en-US', {
+    return date.toLocaleTimeString(localeTag, {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -116,23 +123,24 @@ const TERMINAL_THEME = {
 // StatusIndicator
 // ---------------------------------------------------------------------------
 function StatusIndicator({ status }: { status: ConnectionStatus }) {
+  const t = useT();
   const config = {
     connecting: {
       dot: 'bg-amber-500',
       icon: <Loader2 className="h-3 w-3 animate-spin text-amber-600" />,
-      label: 'Connecting',
+      label: t('terminal.status.connecting'),
       text: 'text-amber-700',
     },
     connected: {
       dot: 'bg-emerald-500',
       icon: <Wifi className="h-3 w-3 text-emerald-600" />,
-      label: 'Connected',
+      label: t('terminal.status.connected'),
       text: 'text-emerald-700',
     },
     disconnected: {
       dot: 'bg-red-500',
       icon: <WifiOff className="h-3 w-3 text-red-600" />,
-      label: 'Disconnected',
+      label: t('terminal.status.disconnected'),
       text: 'text-red-700',
     },
   };
@@ -151,6 +159,8 @@ function StatusIndicator({ status }: { status: ConnectionStatus }) {
 // TerminalPage
 // ---------------------------------------------------------------------------
 export default function TerminalPage() {
+  const t = useT();
+  const { locale } = useLocale();
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -161,6 +171,22 @@ export default function TerminalPage() {
   const terminalContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const sessionCounterRef = useRef(0);
   const sessionsRef = useRef<TerminalSession[]>([]);
+
+  /**
+   * The translator, reachable from the socket callbacks. Those callbacks live
+   * as long as the socket does, so they read the current translator through a
+   * ref instead of closing over one and going stale.
+   */
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  /** What a session is called on screen, rebuilt whenever the locale changes. */
+  const sessionName = useCallback(
+    (session: TerminalSession) => t('terminal.sessionName', { n: session.index }),
+    [t]
+  );
 
   // Keep ref in sync
   useEffect(() => {
@@ -177,7 +203,7 @@ export default function TerminalPage() {
       .catch((err: any) => {
         console.error('Failed to load terminal engine:', err);
         if (!cancelled) {
-          setLoadError(err?.message || 'Failed to load the terminal engine.');
+          setLoadError(err?.message || tRef.current('terminal.loadEngineFailed'));
         }
       });
     return () => {
@@ -192,7 +218,7 @@ export default function TerminalPage() {
 
       sessionCounterRef.current += 1;
       const id = generateId();
-      const name = `Session ${sessionCounterRef.current}`;
+      const index = sessionCounterRef.current;
 
       const term = new XTerminal({
         theme: TERMINAL_THEME,
@@ -216,7 +242,7 @@ export default function TerminalPage() {
 
       const session: TerminalSession = {
         id,
-        name,
+        index,
         terminal: term,
         fitAddon: fitAddonInstance,
         ws: null,
@@ -260,7 +286,7 @@ export default function TerminalPage() {
           s.id === sessionId ? { ...s, status: 'disconnected' as ConnectionStatus } : s,
         ),
       );
-      session.terminal.writeln('\x1b[1;31m[Connection error]\x1b[0m');
+      session.terminal.writeln(`\x1b[1;31m${tRef.current('terminal.connectionError')}\x1b[0m`);
       return;
     }
 
@@ -279,7 +305,7 @@ export default function TerminalPage() {
         }),
       );
 
-      const bannerText = `${brand.productName} Terminal — Đã kết nối phiên làm việc`;
+      const bannerText = tRef.current('terminal.banner', { product: brand.productName });
       const bannerRule = '═'.repeat(bannerText.length + 2);
       session.terminal.writeln(`\x1b[1;34m╔${bannerRule}╗\x1b[0m`);
       session.terminal.writeln(
@@ -296,7 +322,9 @@ export default function TerminalPage() {
           session.terminal.write(msg.payload.data);
         } else if (msg?.type === 'error') {
           session.terminal.writeln(
-            `\x1b[1;31mError: ${msg?.payload?.message || 'Unknown error'}\x1b[0m`,
+            `\x1b[1;31m${tRef.current('terminal.errorLine', {
+              message: msg?.payload?.message || tRef.current('terminal.unknownError'),
+            })}\x1b[0m`,
           );
         }
       } catch {
@@ -312,7 +340,7 @@ export default function TerminalPage() {
         ),
       );
       session.terminal.writeln('');
-      session.terminal.writeln('\x1b[1;31m[Connection closed]\x1b[0m');
+      session.terminal.writeln(`\x1b[1;31m${tRef.current('terminal.connectionClosed')}\x1b[0m`);
     };
 
     ws.onerror = () => {
@@ -321,7 +349,7 @@ export default function TerminalPage() {
           s.id === sessionId ? { ...s, status: 'disconnected' as ConnectionStatus } : s,
         ),
       );
-      session.terminal.writeln('\x1b[1;31m[Connection error]\x1b[0m');
+      session.terminal.writeln(`\x1b[1;31m${tRef.current('terminal.connectionError')}\x1b[0m`);
     };
 
     // Wire terminal input → WebSocket
@@ -486,7 +514,7 @@ export default function TerminalPage() {
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-brand-600" aria-hidden="true" />
-          <p className="text-sm text-gray-600">Loading terminal...</p>
+          <p className="text-sm text-gray-600">{t('terminal.loading')}</p>
         </div>
       </div>
     );
@@ -506,7 +534,7 @@ export default function TerminalPage() {
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2.5">
         <div className="flex items-center gap-3">
           <TerminalIcon className="h-4 w-4 text-gray-600" aria-hidden="true" />
-          <h1 className="text-sm font-semibold text-gray-900">Web Terminal</h1>
+          <h1 className="text-sm font-semibold text-gray-900">{t('terminal.title')}</h1>
           {activeSession && <StatusIndicator status={activeSession.status} />}
         </div>
 
@@ -518,7 +546,7 @@ export default function TerminalPage() {
             className="h-8 gap-1.5 border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-50"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            New Session
+            {t('terminal.newSession')}
           </Button>
           <div className="h-4 w-px bg-gray-200" />
           <Button
@@ -526,8 +554,12 @@ export default function TerminalPage() {
             size="sm"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="h-8 w-8 p-0 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            aria-label={sidebarOpen ? 'Hide session sidebar' : 'Show session sidebar'}
-            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            aria-label={
+              sidebarOpen
+                ? t('terminal.hideSessionSidebar')
+                : t('terminal.showSessionSidebar')
+            }
+            title={sidebarOpen ? t('terminal.hideSidebar') : t('terminal.showSidebar')}
           >
             {sidebarOpen ? (
               <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
@@ -540,8 +572,10 @@ export default function TerminalPage() {
             size="sm"
             onClick={toggleFullscreen}
             className="h-8 w-8 p-0 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            aria-label={
+              isFullscreen ? t('terminal.exitFullscreen') : t('terminal.enterFullscreen')
+            }
+            title={isFullscreen ? t('terminal.exitFullscreen') : t('terminal.fullscreen')}
           >
             {isFullscreen ? (
               <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -559,7 +593,7 @@ export default function TerminalPage() {
             <div className="px-3 py-2.5 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Sessions
+                  {t('terminal.sessions')}
                 </span>
                 <span className="text-xs text-gray-500">{sessions.length}</span>
               </div>
@@ -569,7 +603,7 @@ export default function TerminalPage() {
               {sessions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-gray-500">
                   <Monitor className="h-8 w-8 mb-2 text-gray-300" aria-hidden="true" />
-                  <p className="text-xs">No active sessions</p>
+                  <p className="text-xs">{t('terminal.noActiveSessions')}</p>
                 </div>
               ) : (
                 sessions.map((session) => (
@@ -594,9 +628,9 @@ export default function TerminalPage() {
                       )}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{session.name}</p>
+                      <p className="text-xs font-medium truncate">{sessionName(session)}</p>
                       <p className="text-[10px] text-gray-500" suppressHydrationWarning>
-                        {formatTime(session.createdAt)}
+                        {formatTime(session.createdAt, LOCALE_TAG[locale])}
                       </p>
                     </div>
                     <div className="flex items-center gap-1">
@@ -607,9 +641,11 @@ export default function TerminalPage() {
                             e.stopPropagation();
                             reconnectSession(session.id);
                           }}
-                          aria-label={`Reconnect ${session.name}`}
+                          aria-label={t('terminal.reconnectSession', {
+                            name: sessionName(session),
+                          })}
                           className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                          title="Reconnect"
+                          title={t('terminal.reconnect')}
                         >
                           <Wifi className="h-3 w-3" aria-hidden="true" />
                         </button>
@@ -620,9 +656,11 @@ export default function TerminalPage() {
                           e.stopPropagation();
                           closeSession(session.id);
                         }}
-                        aria-label={`Close ${session.name}`}
+                        aria-label={t('terminal.closeSession', {
+                          name: sessionName(session),
+                        })}
                         className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                        title="Close session"
+                        title={t('terminal.closeSessionTitle')}
                       >
                         <X className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -640,7 +678,7 @@ export default function TerminalPage() {
                 className="w-full h-8 text-xs border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
               >
                 <Plus className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
-                New Session
+                {t('terminal.newSession')}
               </Button>
             </div>
           </div>
@@ -672,14 +710,16 @@ export default function TerminalPage() {
                           : 'bg-red-500',
                     )}
                   />
-                  <span className="truncate flex-1">{session.name}</span>
+                  <span className="truncate flex-1">{sessionName(session)}</span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       closeSession(session.id);
                     }}
-                    aria-label={`Close ${session.name}`}
+                    aria-label={t('terminal.closeSession', {
+                      name: sessionName(session),
+                    })}
                     className="rounded-md p-0.5 text-gray-500 hover:bg-gray-200 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <X className="h-3 w-3" aria-hidden="true" />
@@ -694,14 +734,16 @@ export default function TerminalPage() {
             {sessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full bg-white text-gray-600">
                 <TerminalIcon className="h-12 w-12 mb-4 text-gray-300" aria-hidden="true" />
-                <p className="text-sm font-semibold text-gray-900 mb-1">No terminal sessions</p>
-                <p className="text-sm text-gray-600 mb-5">Create a new session to get started</p>
+                <p className="text-sm font-semibold text-gray-900 mb-1">
+                  {t('terminal.emptyTitle')}
+                </p>
+                <p className="text-sm text-gray-600 mb-5">{t('terminal.emptyHint')}</p>
                 <Button
                   onClick={() => createSession()}
                   className="gap-2 bg-brand-600 text-white hover:bg-brand-700"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
-                  New Session
+                  {t('terminal.newSession')}
                 </Button>
               </div>
             ) : (
@@ -731,7 +773,7 @@ export default function TerminalPage() {
               <div className="flex items-center gap-4 text-[11px] text-gray-500">
                 <span className="flex items-center gap-1.5">
                   <TerminalIcon className="h-3 w-3" aria-hidden="true" />
-                  {activeSession.name}
+                  {sessionName(activeSession)}
                 </span>
                 <span>
                   {activeSession.terminal
@@ -747,10 +789,10 @@ export default function TerminalPage() {
                     className="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-brand-700 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <Wifi className="h-3 w-3" aria-hidden="true" />
-                    Reconnect
+                    {t('terminal.reconnect')}
                   </button>
                 )}
-                <span>{brand.productName} Terminal</span>
+                <span>{t('terminal.footerLabel', { product: brand.productName })}</span>
               </div>
             </div>
           )}

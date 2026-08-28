@@ -2,20 +2,22 @@
 
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
+import { useT } from '@/i18n';
 import { Skeleton } from './StatCard';
 
 /**
- * Hang "Tong quan": cac o so lieu ngang nhau, ngan cach bang duong doc tren man lon,
- * xep chong tren man nho. Moi o la mot lien ket next/link co mui ten chevron.
+ * The "Overview" row: equal-width figure cells, separated by vertical rules on a
+ * wide screen and stacked on a narrow one. Each cell is a next/link with a
+ * chevron.
  */
 export interface OverviewItem {
-  /** Khoa React, nen la slug on dinh. */
+  /** React key; a stable slug is best. */
   key: string;
   label: string;
-  /** Truyen `null` khi API chua tra truong nay - o se hien "—" kem chu thich. */
+  /** Pass `null` when the API has not reported this field - the cell shows "—" with a note. */
   value: number | null;
   href: string;
-  /** Chu thich ngan hien duoi con so (vi du khi chua co du lieu). */
+  /** Short note under the figure, for example why it is missing. Already translated. */
   note?: string;
 }
 
@@ -25,6 +27,7 @@ export interface OverviewRowProps {
 }
 
 export default function OverviewRow({ items, loading = false }: OverviewRowProps) {
+  const t = useT();
   const list = Array.isArray(items) ? items : [];
 
   if (loading) {
@@ -41,7 +44,9 @@ export default function OverviewRow({ items, loading = false }: OverviewRowProps
   }
 
   if (list.length === 0) {
-    return <p className="px-5 py-6 text-sm text-gray-500">Chưa có mục tổng quan nào.</p>;
+    return (
+      <p className="px-5 py-6 text-sm text-gray-500">{t('dashboard.overview.empty')}</p>
+    );
   }
 
   return (

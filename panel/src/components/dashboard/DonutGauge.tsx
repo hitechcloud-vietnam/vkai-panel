@@ -1,15 +1,18 @@
 'use client';
 
 /**
- * Vong tien trinh (donut) ve bang SVG thuan - khong dung thu vien ngoai.
+ * A progress ring (donut) drawn as plain SVG - no external library.
  *
- * Mau theo nguong:  < 70%  -> emerald-600 (tot)
- *                  70-89%  -> amber-600  (canh bao)
- *                  >= 90%  -> red-600    (nguy hiem)
- * Khi API chua tra du lieu, truyen value = null: vong hien nen xam va chu "—".
+ * Colour by threshold:  < 70%  -> emerald-600 (healthy)
+ *                      70-89%  -> amber-600   (warning)
+ *                      >= 90%  -> red-600     (critical)
+ * When the API has not reported a figure, pass value = null: the ring stays
+ * grey and the centre reads "—".
  */
 
-/** Nen vong (gray-200 / #E5E7EB theo quy uoc giao dien). */
+import { useFormatters, useT } from '@/i18n';
+
+/** Ring track (gray-200 / #E5E7EB, the interface convention). */
 const TRACK_COLOR = '#E5E7EB';
 /** emerald-600 */
 const GOOD_COLOR = '#059669';
@@ -17,17 +20,17 @@ const GOOD_COLOR = '#059669';
 const WARN_COLOR = '#D97706';
 /** red-600 */
 const DANGER_COLOR = '#DC2626';
-/** gray-400 - dung khi chua co du lieu */
+/** gray-400 - used when there is no reading */
 const EMPTY_COLOR = '#9CA3AF';
 
 export interface DonutGaugeProps {
-  /** Phan tram 0-100. Truyen `null` khi API chua tra truong nay. */
+  /** Percentage 0-100. Pass `null` when the API has not reported this field. */
   value: number | null;
-  /** Nhan hien duoi vong, vi du "CPU". */
+  /** Label under the ring, already translated by the caller, for example "CPU". */
   label: string;
-  /** Dong chi tiet duoi nhan, vi du "8 nhân" hoac "5.2 GB / 15.6 GB". */
+  /** Detail line under the label, for example "8 cores" or "5.2 GB / 15.6 GB". */
   detail?: string;
-  /** Duong kinh vong, mac dinh 120px. */
+  /** Ring diameter, 120px by default. */
   size?: number;
   /**
    * Why there is no reading. Used only when `value` is null: it becomes the
@@ -37,7 +40,7 @@ export interface DonutGaugeProps {
   unavailableReason?: string;
 }
 
-/** Ep gia tri ve khoang 0-100, tra null khi khong phai so hop le. */
+/** Clamp to 0-100, or null when the input is not a usable number. */
 export function clampPercent(value: number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const num = typeof value === 'number' ? value : Number(value);
@@ -45,7 +48,7 @@ export function clampPercent(value: number | null | undefined): number | null {
   return Math.min(100, Math.max(0, num));
 }
 
-/** Mau vong theo nguong canh bao. */
+/** Ring colour for the warning thresholds. */
 export function gaugeColor(value: number | null | undefined): string {
   const percent = clampPercent(value);
   if (percent === null) return EMPTY_COLOR;
@@ -61,6 +64,8 @@ export default function DonutGauge({
   size = 120,
   unavailableReason,
 }: DonutGaugeProps) {
+  const t = useT();
+  const { formatNumber } = useFormatters();
   const percent = clampPercent(value);
   const stroke = Math.max(8, Math.round(size / 12));
   const radius = Math.max(1, (size - stroke) / 2);
@@ -68,13 +73,21 @@ export default function DonutGauge({
   const dashOffset = percent === null ? circumference : circumference * (1 - percent / 100);
   const center = size / 2;
   const color = gaugeColor(percent);
-  const centerText = percent === null ? '—' : `${Math.round(percent)}%`;
+  // The reading is an integer; Intl still owns it, so one rule covers every
+  // number the panel prints.
+  const reading = percent === null ? '' : formatNumber(Math.round(percent));
+  const centerText = percent === null ? '—' : t('common.percent', { n: reading });
   const ariaLabel =
     percent === null
-      ? `${label}: ${unavailableReason || 'chưa có dữ liệu'}`
-      : `${label}: ${Math.round(percent)} phần trăm${detail ? `, ${detail}` : ''}`;
+      ? t('dashboard.gauge.ariaUnavailable', {
+          label,
+          reason: unavailableReason || t('common.noData'),
+        })
+      : detail
+        ? t('dashboard.gauge.ariaValueDetail', { label, n: reading, detail })
+        : t('dashboard.gauge.ariaValue', { label, n: reading });
   const detailText =
-    percent === null ? detail || (unavailableReason ? 'Chưa có dữ liệu' : '') : detail;
+    percent === null ? detail || (unavailableReason ? t('common.noDataShort') : '') : detail;
 
   return (
     <div className="flex min-w-0 flex-col items-center text-center">
@@ -137,7 +150,7 @@ export default function DonutGauge({
   );
 }
 
-/** Khung xam nhat khi dang tai du lieu. */
+/** Pale frame shown while the figures are loading. */
 export function DonutGaugeSkeleton({ size = 120 }: { size?: number }) {
   return (
     <div className="flex flex-col items-center" aria-hidden="true">

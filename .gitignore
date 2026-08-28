@@ -9,9 +9,19 @@
 .env*.local
 
 # Logs
+#
+# These patterns are ANCHORED on purpose. An unanchored "logs/" matches any
+# directory of that name at any depth, and this product has a Logs section, so it
+# silently swallowed panel/src/components/logs/ - eight source files that git add
+# skipped without a word. The build failed in CI with "Module not found" and
+# nothing pointed at the cause.
 *.log
-logs/
-log/
+/logs/
+/log/
+/core/logs/
+/panel/logs/
+/agent/logs/
+/deploy/logs/
 
 # Temporary files
 tmp/

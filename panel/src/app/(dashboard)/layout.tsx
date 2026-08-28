@@ -8,7 +8,7 @@ import AppFooter from '@/components/AppFooter';
 import { useAuthStore } from '@/store/auth';
 import { brand } from '@/lib/brand';
 
-/** Khung cho trong khi xac thuc: giu dung ty le cua vo ung dung that. */
+/** Placeholder shown while the session is checked: same proportions as the real shell. */
 function DashboardSkeleton() {
   return (
     <div className="flex h-screen overflow-hidden bg-[#F7F8FA]">
@@ -75,8 +75,10 @@ export default function DashboardLayout({
 
     loadUser()
       .catch((err) => {
-        // loadUser da tu xu ly dang xuat; bat them de tranh unhandled rejection.
-        console.error(`[${brand.productName}] Không tải được thông tin người dùng:`, err);
+        // loadUser already signs the session out; this catch only stops the
+        // rejection going unhandled. Console output stays in English: it is
+        // read by whoever is debugging, not by the operator.
+        console.error(`[${brand.productName}] Could not load the signed-in user:`, err);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -103,7 +105,7 @@ export default function DashboardLayout({
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
-        {/* Vung noi dung cuon rieng, nen canvas #F7F8FA, dem 20px */}
+        {/* Content area, scrolls on its own; #F7F8FA canvas, 20px padding */}
         <main className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FA] p-5">{children}</main>
         <AppFooter />
       </div>

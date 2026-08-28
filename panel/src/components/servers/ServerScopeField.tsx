@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import LocalNodeBadge from './LocalNodeBadge';
+import { useT } from '@/i18n';
 import { isLocalNode, serverLabel } from '@/lib/servers';
 import type { ManagedServer } from '@/types/server';
 
@@ -37,33 +38,20 @@ export interface ServerScopeCopy {
   noNode: string;
 }
 
-/** Vietnamese wording, for the screens written in Vietnamese. */
-export const SERVER_SCOPE_COPY_VI: ServerScopeCopy = {
-  label: 'Máy chủ',
-  singleNodeHint:
-    'Panel đang quản lý duy nhất máy này, nên thao tác sẽ chạy ngay trên đó.',
-  placeholder: 'Chọn máy chủ',
-  localBadge: 'Máy cài panel',
-  localBadgeTitle: 'Đây là máy đang chạy panel. Panel quản lý chính máy này.',
-  noNode: 'Chưa có máy chủ nào được đăng ký, nên chưa thể thực hiện thao tác này.',
-};
-
-/** English wording, for the screens written in English. */
-export const SERVER_SCOPE_COPY_EN: ServerScopeCopy = {
-  label: 'Server',
-  singleNodeHint: 'This panel manages one machine, so the action runs there.',
-  placeholder: 'Select a server',
-  localBadge: 'Panel host',
-  localBadgeTitle: 'The machine this panel runs on. The panel manages it directly.',
-  noNode: 'No server is registered yet, so this action has nowhere to run.',
-};
+/**
+ * Deprecated. Every string now comes from the dictionary; this export remains
+ * only so the screens that still pass `copy` keep compiling, and passing it
+ * changes nothing. Drop the prop at the call site and this goes with it.
+ */
+export const SERVER_SCOPE_COPY_EN: Partial<ServerScopeCopy> = {};
 
 export interface ServerScopeFieldProps {
   id: string;
   servers: ManagedServer[];
   value: string;
   onChange: (serverId: string) => void;
-  copy: ServerScopeCopy;
+  /** Deprecated per-field override; omit it and the dictionary is used. */
+  copy?: Partial<ServerScopeCopy>;
   /** Set when the caller renders its own label above the field. */
   hideLabel?: boolean;
   className?: string;
@@ -78,17 +66,25 @@ export default function ServerScopeField({
   hideLabel = false,
   className,
 }: ServerScopeFieldProps) {
+  const t = useT();
   const list = Array.isArray(servers) ? servers : [];
+
+  const label = copy?.label ?? t('common.field.server');
+  const singleNodeHint = copy?.singleNodeHint ?? t('servers.scope.singleNodeHint');
+  const placeholder = copy?.placeholder ?? t('servers.scope.placeholder');
+  const localBadge = copy?.localBadge ?? t('servers.localBadge');
+  const localBadgeTitle = copy?.localBadgeTitle ?? t('servers.scope.localBadgeTitle');
+  const noNode = copy?.noNode ?? t('servers.scope.noNode');
 
   if (list.length === 0) {
     return (
       <div className={className}>
         {!hideLabel && (
-          <span className="mb-1.5 block text-sm font-medium text-gray-700">{copy.label}</span>
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">{label}</span>
         )}
         <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>{copy.noNode}</span>
+          <span>{noNode}</span>
         </p>
       </div>
     );
@@ -100,7 +96,7 @@ export default function ServerScopeField({
     return (
       <div className={className}>
         {!hideLabel && (
-          <span className="mb-1.5 block text-sm font-medium text-gray-700">{copy.label}</span>
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">{label}</span>
         )}
         <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -108,10 +104,10 @@ export default function ServerScopeField({
               {serverLabel(only)}
             </span>
             {isLocalNode(only) && (
-              <LocalNodeBadge label={copy.localBadge} title={copy.localBadgeTitle} />
+              <LocalNodeBadge label={localBadge} title={localBadgeTitle} />
             )}
           </div>
-          <p className="mt-0.5 text-xs text-gray-500">{copy.singleNodeHint}</p>
+          <p className="mt-0.5 text-xs text-gray-500">{singleNodeHint}</p>
         </div>
       </div>
     );
@@ -121,18 +117,18 @@ export default function ServerScopeField({
     <div className={className}>
       {!hideLabel && (
         <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-gray-700">
-          {copy.label}
+          {label}
         </label>
       )}
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} aria-label={copy.label}>
-          <SelectValue placeholder={copy.placeholder} />
+        <SelectTrigger id={id} aria-label={label}>
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent className="border-gray-200 bg-white">
           {list.map((server) => (
             <SelectItem key={server.id} value={server.id}>
               {serverLabel(server)}
-              {isLocalNode(server) ? ` (${copy.localBadge})` : ''}
+              {isLocalNode(server) ? ` (${localBadge})` : ''}
               {server.ip_address ? ` — ${server.ip_address}` : ''}
             </SelectItem>
           ))}

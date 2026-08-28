@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle, Plus, RefreshCw } from 'lucide-react';
 
-import AddNodeCallout, { ADD_NODE_COPY_VI } from '@/components/servers/AddNodeCallout';
+import AddNodeCallout from '@/components/servers/AddNodeCallout';
 import LocalNodeBadge from '@/components/servers/LocalNodeBadge';
 import { MetricText } from '@/components/Unavailable';
 import DonutGauge, { DonutGaugeSkeleton } from '@/components/dashboard/DonutGauge';
@@ -13,6 +13,7 @@ import ServersTable from '@/components/dashboard/ServersTable';
 import SoftwareGrid, { type SoftwareItem } from '@/components/dashboard/SoftwareGrid';
 import StatCard, { Skeleton } from '@/components/dashboard/StatCard';
 import TrafficPanel, { type TrafficSeries } from '@/components/dashboard/TrafficPanel';
+import { LOCALE_TAG, useFormatters, useLocale, useT, useTn } from '@/i18n';
 import { useServerMetrics } from '@/hooks/useServerMetrics';
 import { useServers } from '@/hooks/useServers';
 import { brand } from '@/lib/brand';
@@ -28,31 +29,44 @@ import {
 import { databaseApi, sslApi, unwrapList, websiteApi } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 
-/*
- * Why a figure on this page can be missing. Each reason names the link in the
- * chain that has not reported, so an operator who hovers a dash learns
- * something instead of only being told the value is absent. Nothing here ever
- * degrades to 0: a machine that is not reporting and a machine that is idle
- * must not look the same.
- */
-const NO_METRICS_REASON = 'Chưa có dữ liệu: agent trên máy này chưa gửi mẫu đo nào.';
-const NO_INVENTORY_REASON = 'Chưa có dữ liệu: máy này chưa báo cáo cấu hình phần cứng.';
-const NO_NODE_REASON = 'Chưa có dữ liệu: chưa có máy chủ nào được đăng ký trong panel.';
-const NO_SOFTWARE_ENDPOINT = `API hiện chưa trả về danh sách phần mềm đã cài đặt cho ${brand.productName}.`;
-const NO_SERIES_ENDPOINT = 'API hiện chưa trả về chuỗi số liệu lưu lượng theo thời gian.';
-
 /** Software inventory has no endpoint yet, so the grid stays empty rather than inventing rows. */
 const SOFTWARE_ITEMS: SoftwareItem[] = [];
 
-/** A count that failed to load, told apart from a count that is genuinely zero. */
+/**
+ * A count that failed to load, told apart from a count that is genuinely zero.
+ *
+ * The state holds keys rather than sentences: the fetch callback must not close
+ * over the translator, or a translator that is a fresh function on every render
+ * would make the callback fresh too and the effect that runs it would refetch
+ * forever.
+ */
 interface CountState {
   value: number | null;
-  reason: string;
+  status: 'loading' | 'loaded' | 'failed';
+  /** Dictionary key naming what was being listed, for the failure note. */
+  entityKey: string;
 }
 
-const LOADING_COUNT: CountState = { value: null, reason: 'Đang tải…' };
+const LOADING_COUNT: CountState = { value: null, status: 'loading', entityKey: '' };
+
+/** The "updated at" clock, in the operator's locale. Empty when Intl refuses. */
+function formatClock(at: Date, localeTag: string): string {
+  try {
+    return at.toLocaleTimeString(localeTag, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
 
 export default function DashboardPage() {
+  const t = useT();
+  const tn = useTn();
+  const { locale } = useLocale();
+  const { formatNumber } = useFormatters();
   const { user } = useAuthStore();
   const {
     servers,
@@ -62,8 +76,23 @@ export default function DashboardPage() {
     reload: reloadServers,
   } = useServers();
 
+  /*
+   * Why a figure on this page can be missing. Each reason names the link in the
+   * chain that has not reported, so an operator who hovers a dash learns
+   * something instead of only being told the value is absent. Nothing here ever
+   * degrades to 0: a machine that is not reporting and a machine that is idle
+   * must not look the same.
+   */
+  const noMetricsReason = t('common.reason.noMetrics');
+  const noInventoryReason = t('common.reason.noInventory');
+  const noNodeReason = t('common.reason.noNode');
+  const noSoftwareEndpoint = t('dashboard.software.noEndpoint', {
+    product: brand.productName,
+  });
+  const noSeriesEndpoint = t('dashboard.traffic.noSeriesEndpoint');
+
   const [selectedServerId, setSelectedServerId] = useState('');
-  const [lastUpdated, setLastUpdated] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [websiteCount, setWebsiteCount] = useState<CountState>(LOADING_COUNT);
   const [databaseCount, setDatabaseCount] = useState<CountState>(LOADING_COUNT);
   const [sslCount, setSslCount] = useState<CountState>(LOADING_COUNT);
@@ -89,15 +118,15 @@ export default function DashboardPage() {
 
     const settle = (
       result: PromiseSettledResult<unknown>,
-      what: string
+      entityKey: string
     ): CountState =>
       result.status === 'fulfilled'
-        ? { value: unwrapList(result.value).length, reason: '' }
-        : { value: null, reason: `Không tải được: API trả về lỗi khi lấy danh sách ${what}.` };
+        ? { value: unwrapList(result.value).length, status: 'loaded', entityKey }
+        : { value: null, status: 'failed', entityKey };
 
-    setWebsiteCount(settle(websitesRes, 'website'));
-    setDatabaseCount(settle(databasesRes, 'cơ sở dữ liệu'));
-    setSslCount(settle(sslRes, 'chứng chỉ SSL'));
+    setWebsiteCount(settle(websitesRes, 'common.entity.website'));
+    setDatabaseCount(settle(databasesRes, 'common.entity.database'));
+    setSslCount(settle(sslRes, 'common.entity.sslCertificate'));
   }, []);
 
   useEffect(() => {
@@ -110,22 +139,16 @@ export default function DashboardPage() {
     loadCounts();
   }, [reloadServers, reloadMetrics, loadCounts]);
 
-  // Formatted after the data settles, off the render path, so server and client
-  // never disagree about the clock.
+  // The instant is captured after the data settles, never during render, so
+  // server and client cannot disagree about the clock. It is formatted at
+  // render time instead, which lets a locale switch restate the same instant
+  // rather than move it.
   useEffect(() => {
     if (serversLoading) return;
-    try {
-      setLastUpdated(
-        new Date().toLocaleTimeString('vi-VN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      );
-    } catch {
-      setLastUpdated('');
-    }
+    setLastUpdatedAt(new Date());
   }, [serversLoading]);
+
+  const lastUpdated = lastUpdatedAt ? formatClock(lastUpdatedAt, LOCALE_TAG[locale]) : '';
 
   // The machine the panel runs on is the one an operator wants to see first.
   useEffect(() => {
@@ -144,12 +167,15 @@ export default function DashboardPage() {
   );
   const selectedMetrics = selected ? metrics[selected.id] || null : null;
   const hasServer = Boolean(selected);
-  const metricsReason = hasServer ? NO_METRICS_REASON : NO_NODE_REASON;
-  const inventoryReason = hasServer ? NO_INVENTORY_REASON : NO_NODE_REASON;
+  const metricsReason = hasServer ? noMetricsReason : noNodeReason;
+  const inventoryReason = hasServer ? noInventoryReason : noNodeReason;
+
+  /** "8 cores" - tn picks the plural branch; Vietnamese has one form. */
+  const coreCount = (cores: number) => tn('common.coreCount', cores);
 
   const cpuPercent = finiteOrNull(selectedMetrics?.cpu_percent);
   const cpuCores = finiteOrNull(selected?.cpu_cores);
-  const cpuDetail = cpuCores && cpuCores > 0 ? `${cpuCores} nhân` : undefined;
+  const cpuDetail = cpuCores && cpuCores > 0 ? coreCount(cpuCores) : undefined;
 
   const ramUsed = finiteOrNull(selectedMetrics?.ram_used);
   const ramTotal = finiteOrNull(selectedMetrics?.ram_total) ?? finiteOrNull(selected?.ram_total);
@@ -164,7 +190,13 @@ export default function DashboardPage() {
   const systemLoad = loadPercent(selectedMetrics, selected?.cpu_cores);
   const loadDetail =
     finiteOrNull(selectedMetrics?.load1) !== null && cpuCores
-      ? `Tải 1 phút ${Number(selectedMetrics?.load1).toFixed(2)} trên ${cpuCores} nhân`
+      ? t('dashboard.load1Detail', {
+          load: formatNumber(Number(selectedMetrics?.load1), {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+          cores: cpuCores,
+        })
       : undefined;
 
   const onlineCount = servers.filter(
@@ -175,91 +207,112 @@ export default function DashboardPage() {
     (s) => String(s.status || '').toLowerCase() === 'offline'
   ).length;
 
+  /** The line under a count: why it is loading, or why it is missing. */
+  const countNote = (count: CountState): string | undefined => {
+    if (count.status === 'loading') return t('common.loading');
+    if (count.status === 'failed') {
+      return t('common.reason.listLoadFailed', { what: t(count.entityKey) });
+    }
+    return undefined;
+  };
+
   const overviewItems: OverviewItem[] = useMemo(
     () => [
       {
         key: 'websites',
-        label: 'Website',
+        label: t('dashboard.overview.websites'),
         value: websiteCount.value,
         href: '/websites',
-        note: websiteCount.reason,
+        note: countNote(websiteCount),
       },
       {
         key: 'databases',
-        label: 'Cơ sở dữ liệu',
+        label: t('dashboard.overview.databases'),
         value: databaseCount.value,
         href: '/databases',
-        note: databaseCount.reason,
+        note: countNote(databaseCount),
       },
-      { key: 'ssl', label: 'SSL', value: sslCount.value, href: '/ssl', note: sslCount.reason },
+      {
+        key: 'ssl',
+        label: t('dashboard.overview.ssl'),
+        value: sslCount.value,
+        href: '/ssl',
+        note: countNote(sslCount),
+      },
       {
         key: 'servers',
-        label: 'Máy chủ',
+        label: t('dashboard.overview.servers'),
         value: serversError ? null : servers.length,
         href: '/servers',
-        note: serversError ? 'Không tải được: API trả về lỗi khi lấy danh sách máy chủ.' : undefined,
+        note: serversError
+          ? t('common.reason.listLoadFailed', { what: t('common.entity.server') })
+          : undefined,
       },
     ],
-    [websiteCount, databaseCount, sslCount, servers.length, serversError]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [websiteCount, databaseCount, sslCount, servers.length, serversError, t]
   );
 
   const networkSeries: TrafficSeries = useMemo(
     () => ({
       points: [],
-      upLabel: 'Gửi lên',
-      downLabel: 'Nhận về',
+      upLabel: t('dashboard.traffic.upload'),
+      downLabel: t('dashboard.traffic.download'),
       metrics: [
-        { label: 'Lên', value: null, reason: NO_SERIES_ENDPOINT },
-        { label: 'Xuống', value: null, reason: NO_SERIES_ENDPOINT },
+        { label: t('dashboard.traffic.up'), value: null, reason: noSeriesEndpoint },
+        { label: t('dashboard.traffic.down'), value: null, reason: noSeriesEndpoint },
         {
-          label: 'Tổng gửi',
+          label: t('dashboard.traffic.totalSent'),
           value: formatBytesOrNull(selectedMetrics?.net_out),
           reason: metricsReason,
         },
         {
-          label: 'Tổng nhận',
+          label: t('dashboard.traffic.totalReceived'),
           value: formatBytesOrNull(selectedMetrics?.net_in),
           reason: metricsReason,
         },
       ],
     }),
-    [selectedMetrics, metricsReason]
+    [selectedMetrics, metricsReason, noSeriesEndpoint, t]
   );
 
   const diskSeries: TrafficSeries = useMemo(
     () => ({
       points: [],
-      upLabel: 'Ghi',
-      downLabel: 'Đọc',
+      upLabel: t('dashboard.disk.write'),
+      downLabel: t('dashboard.disk.read'),
       metrics: [
-        { label: 'Ghi', value: null, reason: NO_SERIES_ENDPOINT },
-        { label: 'Đọc', value: null, reason: NO_SERIES_ENDPOINT },
+        { label: t('dashboard.disk.write'), value: null, reason: noSeriesEndpoint },
+        { label: t('dashboard.disk.read'), value: null, reason: noSeriesEndpoint },
         {
-          label: 'Đã dùng',
+          label: t('dashboard.disk.used'),
           value: formatBytesOrNull(diskUsed),
           reason: metricsReason,
         },
         {
-          label: 'Tổng dung lượng',
+          label: t('dashboard.disk.total'),
           value: formatBytesOrNull(diskTotal),
           reason: inventoryReason,
         },
       ],
     }),
-    [diskUsed, diskTotal, metricsReason, inventoryReason]
+    [diskUsed, diskTotal, metricsReason, inventoryReason, noSeriesEndpoint, t]
   );
 
-  const nodeTitle = selected ? serverLabel(selected) : 'Chưa có máy chủ';
+  const nodeTitle = selected ? serverLabel(selected) : t('dashboard.noServer');
 
   return (
     <div className="space-y-5">
-      {/* Tieu de trang */}
+      {/* Page heading */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-gray-900">Bảng điều khiển</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('dashboard.title')}</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Xin chào {user?.first_name || user?.username || 'bạn'}, đây là tình trạng hạ tầng của bạn.
-            {lastUpdated ? ` Cập nhật lúc ${lastUpdated}.` : ''}
+            {t('dashboard.greeting', {
+              name:
+                user?.first_name || user?.username || t('dashboard.greetingFallbackName'),
+            })}
+            {lastUpdated ? ` ${t('dashboard.updatedAt', { time: lastUpdated })}` : ''}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -270,14 +323,14 @@ export default function DashboardPage() {
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw size={16} aria-hidden="true" />
-            Làm mới
+            {t('common.refresh')}
           </button>
           <Link
             href="/websites"
             className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           >
             <Plus size={16} aria-hidden="true" />
-            Tạo website
+            {t('dashboard.createWebsite')}
           </Link>
         </div>
       </div>
@@ -296,18 +349,18 @@ export default function DashboardPage() {
             onClick={refreshAll}
             className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
           >
-            Thử lại
+            {t('common.retry')}
           </button>
         </div>
       )}
 
-      {/* 0. May dang xem - danh tinh cua node, truoc moi con so */}
+      {/* 0. The machine in view - the node's identity, before any figure */}
       <StatCard
-        title="Máy đang xem"
+        title={t('dashboard.currentMachine.title')}
         description={
           servers.length > 1
-            ? 'Chọn máy chủ để xem số liệu của máy đó.'
-            : 'Panel quản lý chính máy mà nó đang chạy.'
+            ? t('dashboard.currentMachine.pickHint')
+            : t('dashboard.currentMachine.selfHint')
         }
         action={
           selected ? (
@@ -315,7 +368,7 @@ export default function DashboardPage() {
               href="/servers"
               className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              Quản lý máy chủ
+              {t('dashboard.manageServers')}
             </Link>
           ) : undefined
         }
@@ -331,8 +384,7 @@ export default function DashboardPage() {
           </div>
         ) : !selected ? (
           <p className="py-6 text-center text-sm text-gray-500">
-            Máy cài panel chưa được đăng ký thành node quản lý, nên chưa có thông số nào để
-            hiển thị.
+            {t('dashboard.currentMachine.unregistered')}
           </p>
         ) : (
           <div className="space-y-4">
@@ -340,14 +392,18 @@ export default function DashboardPage() {
               <span className="truncate text-base font-semibold text-gray-900">{nodeTitle}</span>
               {isLocalNode(selected) && (
                 <LocalNodeBadge
-                  label="Máy cài panel"
-                  title="Máy đang chạy panel. Panel quản lý trực tiếp máy này, không cần máy thứ hai."
+                  label={t('servers.localBadge')}
+                  title={t('servers.localBadgeTitle.full')}
                 />
               )}
             </div>
 
             {servers.length > 1 && (
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Chọn máy chủ">
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-label={t('dashboard.currentMachine.pickerLabel')}
+              >
                 {servers.map((server) => {
                   const active = server.id === selected.id;
                   return (
@@ -371,55 +427,55 @@ export default function DashboardPage() {
 
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">Địa chỉ IP</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.ipAddress')}</dt>
                 <dd className="truncate font-mono text-sm text-gray-900">
                   <MetricText value={selected.ip_address || null} reason={inventoryReason} />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">Hệ điều hành</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.os')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText value={selected.os || null} reason={inventoryReason} />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">CPU</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.cpu')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText
-                    value={cpuCores && cpuCores > 0 ? `${cpuCores} nhân` : null}
+                    value={cpuCores && cpuCores > 0 ? coreCount(cpuCores) : null}
                     reason={inventoryReason}
                   />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">RAM</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.ram')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText value={formatBytesOrNull(ramTotal)} reason={inventoryReason} />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">Ổ đĩa</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.disk')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText value={formatBytesOrNull(diskTotal)} reason={inventoryReason} />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">Nhân hệ điều hành</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.kernel')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText value={selected.kernel || null} reason={inventoryReason} />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">Agent</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.agent')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText
                     value={selected.agent_status || null}
-                    reason="Chưa có dữ liệu: API chưa báo cáo trạng thái agent của máy này."
+                    reason={t('common.reason.noAgentStatus')}
                   />
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-xs text-gray-500">Máy chủ web</dt>
+                <dt className="text-xs text-gray-500">{t('common.field.webServer')}</dt>
                 <dd className="truncate text-sm text-gray-900">
                   <MetricText
                     value={
@@ -427,7 +483,7 @@ export default function DashboardPage() {
                         ? selected.web_servers.join(', ')
                         : selected.web_server_type || null
                     }
-                    reason="Chưa có dữ liệu: máy này chưa báo cáo máy chủ web nào đang chạy."
+                    reason={t('common.reason.noWebServer')}
                   />
                 </dd>
               </div>
@@ -436,11 +492,11 @@ export default function DashboardPage() {
         )}
       </StatCard>
 
-      {/* 1. Tinh trang he thong + O dia */}
+      {/* 1. System health + disk */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <StatCard
-          title="Tình trạng hệ thống"
-          description={selected ? serverLabel(selected) : 'Chưa có máy chủ'}
+          title={t('dashboard.systemHealth')}
+          description={selected ? serverLabel(selected) : t('dashboard.noServer')}
           className="lg:col-span-2"
         >
           {serversLoading ? (
@@ -455,19 +511,19 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
               <DonutGauge
                 value={systemLoad}
-                label="Tải hệ thống"
+                label={t('dashboard.systemLoad')}
                 detail={loadDetail}
                 unavailableReason={metricsReason}
               />
               <DonutGauge
                 value={cpuPercent}
-                label="CPU"
+                label={t('common.field.cpu')}
                 detail={cpuDetail}
                 unavailableReason={metricsReason}
               />
               <DonutGauge
                 value={ramPercent}
-                label="RAM"
+                label={t('common.field.ram')}
                 detail={ramDetail}
                 unavailableReason={ramTotal === null ? inventoryReason : metricsReason}
               />
@@ -475,7 +531,7 @@ export default function DashboardPage() {
           )}
         </StatCard>
 
-        <StatCard title="Ổ đĩa">
+        <StatCard title={t('common.field.disk')}>
           {serversLoading ? (
             <div className="space-y-4">
               <Skeleton className="h-8 w-full" />
@@ -488,67 +544,70 @@ export default function DashboardPage() {
               <div className="flex items-center justify-center">
                 <DonutGauge
                   value={diskPercent}
-                  label="Đã dùng"
+                  label={t('dashboard.disk.used')}
                   detail={diskDetail}
                   size={104}
                   unavailableReason={diskTotal === null ? inventoryReason : metricsReason}
                 />
               </div>
               <p className="border-t border-gray-200 pt-3 text-xs text-gray-500">
-                API chưa trả chi tiết theo từng điểm gắn kết (mount); số liệu trên là tổng dung
-                lượng ổ đĩa của máy đang xem.
+                {t('dashboard.diskMountNote')}
               </p>
             </div>
           )}
         </StatCard>
       </div>
 
-      {/* 2. Tong quan */}
-      <StatCard title="Tổng quan" flush>
+      {/* 2. Overview */}
+      <StatCard title={t('dashboard.overview.title')} flush>
         <OverviewRow items={overviewItems} loading={serversLoading} />
       </StatCard>
 
-      {/* 3. Phan mem + Luu luong */}
+      {/* 3. Software + traffic */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <StatCard title="Phần mềm">
+        <StatCard title={t('dashboard.software.title')}>
           <SoftwareGrid
             items={SOFTWARE_ITEMS}
             loading={serversLoading}
-            emptyHint={NO_SOFTWARE_ENDPOINT}
+            emptyHint={noSoftwareEndpoint}
           />
         </StatCard>
 
-        <StatCard title="Lưu lượng">
+        <StatCard title={t('dashboard.traffic.title')}>
           <TrafficPanel
             network={networkSeries}
             disk={diskSeries}
             loading={serversLoading}
-            emptyHint={NO_SERIES_ENDPOINT}
+            emptyHint={noSeriesEndpoint}
           />
         </StatCard>
       </div>
 
-      {/* 4. May chu */}
+      {/* 4. Servers */}
       <StatCard
-        title="Máy chủ"
+        title={t('common.field.servers')}
         description={
           serversLoading
             ? undefined
-            : `${servers.length} máy chủ · ${onlineCount} trực tuyến${
-                offlineCount > 0 ? ` · ${offlineCount} ngoại tuyến` : ''
-              }`
+            : [
+                tn('common.serverCount', servers.length),
+                t('dashboard.servers.onlineCount', { n: onlineCount }),
+                ...(offlineCount > 0
+                  ? [t('dashboard.servers.offlineCount', { n: offlineCount })]
+                  : []),
+              ].join(' · ')
         }
         action={
           <>
             <span className="hidden items-center gap-1.5 text-xs text-emerald-600 sm:inline-flex">
               <CheckCircle size={14} aria-hidden="true" />
-              {onlineCount} trực tuyến
+              {t('dashboard.servers.onlineCount', { n: onlineCount })}
             </span>
             <Link
               href="/servers"
               className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              Xem tất cả
+              {t('common.viewAll')}
             </Link>
           </>
         }
@@ -563,8 +622,8 @@ export default function DashboardPage() {
         />
       </StatCard>
 
-      {/* 5. Them may - lop tuy chon, noi ro la tuy chon */}
-      <AddNodeCallout copy={ADD_NODE_COPY_VI} docsHref={brand.docsUrl} />
+      {/* 5. Adding a machine - an optional layer, said to be optional */}
+      <AddNodeCallout docsHref={brand.docsUrl} />
     </div>
   );
 }

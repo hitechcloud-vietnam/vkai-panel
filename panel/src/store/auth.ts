@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { api, authApi, unwrap } from '@/services/api';
+import { sourceText } from '@/i18n';
 
 interface User {
   id: string;
@@ -40,18 +41,40 @@ export type TwoFactorFailure =
  * TwoFactorError carries the replacement challenge when there is one. Every
  * attempt spends the challenge it was made with, so a client that keeps using
  * the old token after a wrong code would be refused on the next try.
+ *
+ * A store is not a React component and cannot call useT(), so the error
+ * carries a translation key rather than finished text and the sign-in page
+ * translates it. `serverMessage` is set only when the API supplied its own
+ * wording, which is preferred over ours because it can say something more
+ * specific (how long a rate limit lasts, for instance). The native `message`
+ * is always English so that a console line or a stack trace stays readable to
+ * whoever is debugging.
  */
 export class TwoFactorError extends Error {
   reason: TwoFactorFailure;
+  /** Key into the dictionaries, e.g. 'auth.codeIncorrect'. */
+  messageKey: string;
+  /** Wording supplied by the API, if any. Shown ahead of the translation. */
+  serverMessage?: string;
   challengeToken?: string;
   challengeExpiresIn?: number;
 
-  constructor(reason: TwoFactorFailure, message: string, challengeToken?: string, challengeExpiresIn?: number) {
-    super(message);
+  constructor(
+    reason: TwoFactorFailure,
+    messageKey: string,
+    options: {
+      serverMessage?: string;
+      challengeToken?: string;
+      challengeExpiresIn?: number;
+    } = {},
+  ) {
+    super(options.serverMessage || sourceText(messageKey));
     this.name = 'TwoFactorError';
     this.reason = reason;
-    this.challengeToken = challengeToken;
-    this.challengeExpiresIn = challengeExpiresIn;
+    this.messageKey = messageKey;
+    this.serverMessage = options.serverMessage || undefined;
+    this.challengeToken = options.challengeToken;
+    this.challengeExpiresIn = options.challengeExpiresIn;
   }
 }
 
@@ -124,7 +147,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const data = unwrap<any>(response, null) || {};
 
       if (!data.access_token) {
-        throw new TwoFactorError('unknown', 'Máy chủ không trả về phiên đăng nhập.');
+        throw new TwoFactorError('unknown', 'auth.noSessionReturned');
       }
 
       storeTokens(data.access_token, data.refresh_token);
@@ -141,32 +164,25 @@ export const useAuthStore = create<AuthState>((set) => ({
         // The attempt spent the challenge; the replacement rides along with
         // the failure and inherits the original deadline.
         const payload = (error as { response?: { data?: { data?: any } } })?.response?.data?.data;
-        throw new TwoFactorError(
-          'retry',
-          'Mã xác thực không đúng. Kiểm tra lại ứng dụng xác thực và thử lại.',
-          payload?.challenge_token,
-          payload?.challenge_expires_in
-        );
+        throw new TwoFactorError('retry', 'auth.codeIncorrect', {
+          challengeToken: payload?.challenge_token,
+          challengeExpiresIn: payload?.challenge_expires_in,
+        });
       }
       if (failure === 'TWO_FACTOR_CHALLENGE_INVALID') {
-        throw new TwoFactorError(
-          'expired',
-          'Phiên xác thực đã hết hạn hoặc đã được dùng. Vui lòng đăng nhập lại.'
-        );
+        throw new TwoFactorError('expired', 'auth.challengeExpired');
       }
       if (status === 429) {
-        throw new TwoFactorError(
-          'rate_limited',
-          message || 'Bạn đã thử quá nhiều lần. Vui lòng đợi rồi đăng nhập lại.'
-        );
+        throw new TwoFactorError('rate_limited', 'auth.tooManyAttempts', {
+          serverMessage: message,
+        });
       }
       if (status === 503) {
-        throw new TwoFactorError(
-          'unavailable',
-          message || 'Máy chủ tạm thời không kiểm tra được xác thực hai lớp. Liên hệ quản trị viên.'
-        );
+        throw new TwoFactorError('unavailable', 'auth.twoFactorUnavailable', {
+          serverMessage: message,
+        });
       }
-      throw new TwoFactorError('unknown', message || 'Xác thực không thành công. Vui lòng đăng nhập lại.');
+      throw new TwoFactorError('unknown', 'auth.verificationFailed', { serverMessage: message });
     }
   },
 

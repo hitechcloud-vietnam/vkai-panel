@@ -12,25 +12,27 @@ import {
 } from 'recharts';
 import { LineChart as LineChartIcon } from 'lucide-react';
 import { colors } from '@/lib/brand';
+import { useT } from '@/i18n';
 import { Unavailable } from '@/components/Unavailable';
 import { Skeleton, StateMessage } from './StatCard';
 
 /**
- * Khoi "Luu luong": tab Luu luong mang / Doc ghi o dia,
- * hang so lieu tong hop va bieu do duong theo thoi gian.
+ * The "Traffic" block: a network / disk tab pair, a row of summary figures and a
+ * line chart over time.
  *
- * Bieu do dung recharts (da co san trong package.json - khong them thu vien moi).
- * Chuoi 1 dung mau navy thuong hieu, chuoi 2 dung mau cyan.
+ * The chart uses recharts, which package.json already carries - no new library.
+ * The first series is drawn in the brand navy, the second in cyan.
  */
 export interface TrafficPoint {
-  /** Nhan truc thoi gian, da dinh dang san (khong goi new Date() khi render). */
+  /** Time-axis label, already formatted (never call new Date() during render). */
   time: string;
-  /** `null` khi thieu diem do. */
+  /** `null` when the sample is missing. */
   up: number | null;
   down: number | null;
 }
 
 export interface TrafficMetric {
+  /** Already translated by the caller. */
   label: string;
   /** Formatted string; `null` when the API has not reported this field. */
   value: string | null;
@@ -40,6 +42,7 @@ export interface TrafficMetric {
 
 export interface TrafficSeries {
   points: TrafficPoint[];
+  /** Series names, already translated by the caller. */
   upLabel: string;
   downLabel: string;
   metrics: TrafficMetric[];
@@ -50,13 +53,14 @@ export interface TrafficPanelProps {
   disk: TrafficSeries;
   loading?: boolean;
   error?: string | null;
-  /** Chu thich hien khi chua co du lieu bieu do. */
+  /** Note shown when the chart has no data yet, already translated. */
   emptyHint?: string;
 }
 
+/** Tab ids are machine values; the labels come from the dictionary. */
 const TABS = [
-  { id: 'network', label: 'Lưu lượng mạng' },
-  { id: 'disk', label: 'Đọc ghi ổ đĩa' },
+  { id: 'network', labelKey: 'dashboard.traffic.tab.network' },
+  { id: 'disk', labelKey: 'dashboard.traffic.tab.disk' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -71,6 +75,7 @@ export default function TrafficPanel({
   error = null,
   emptyHint,
 }: TrafficPanelProps) {
+  const t = useT();
   const [tab, setTab] = useState<TabId>('network');
 
   const active: TrafficSeries = tab === 'disk' ? disk : network;
@@ -79,8 +84,12 @@ export default function TrafficPanel({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {/* Tab */}
-      <div role="tablist" aria-label="Loại lưu lượng" className="flex flex-wrap gap-2">
+      {/* Tabs */}
+      <div
+        role="tablist"
+        aria-label={t('dashboard.traffic.tablistLabel')}
+        className="flex flex-wrap gap-2"
+      >
         {TABS.map((item) => {
           const selected = tab === item.id;
           return (
@@ -98,7 +107,7 @@ export default function TrafficPanel({
                   : 'rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
               }
             >
-              {item.label}
+              {t(item.labelKey)}
             </button>
           );
         })}
@@ -110,7 +119,7 @@ export default function TrafficPanel({
         aria-labelledby={`traffic-tab-${tab}`}
         className="flex min-w-0 flex-col gap-4"
       >
-        {/* Hang so lieu */}
+        {/* Summary figures */}
         {loading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -129,9 +138,7 @@ export default function TrafficPanel({
                   {metric?.value ? (
                     metric.value
                   ) : (
-                    <Unavailable
-                      reason={metric?.reason || 'Chưa có dữ liệu: API chưa trả về số liệu này.'}
-                    />
+                    <Unavailable reason={metric?.reason || t('common.reason.noFigure')} />
                   )}
                 </p>
               </div>
@@ -139,16 +146,20 @@ export default function TrafficPanel({
           </div>
         )}
 
-        {/* Bieu do */}
+        {/* Chart */}
         {loading ? (
           <Skeleton className="h-56 w-full" />
         ) : error ? (
-          <StateMessage tone="error" title="Không tải được dữ liệu lưu lượng" hint={error} />
+          <StateMessage
+            tone="error"
+            title={t('dashboard.traffic.loadFailed')}
+            hint={error}
+          />
         ) : points.length === 0 ? (
           <StateMessage
             icon={<LineChartIcon size={32} aria-hidden="true" />}
-            title="Chưa có dữ liệu lưu lượng"
-            hint={emptyHint || 'API hiện chưa trả về chuỗi số liệu theo thời gian.'}
+            title={t('dashboard.traffic.emptyTitle')}
+            hint={emptyHint || t('dashboard.traffic.emptyHint')}
           />
         ) : (
           <>
