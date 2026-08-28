@@ -57,11 +57,13 @@ This guide covers production deployment on Ubuntu/Debian and RHEL-family systems
 │        domains/<domain>     │        └──────────────┬──────────────┘
 └─────────────────────────────┘                       │
                                        ┌──────────────┴──────────────┐
-                                       │                             │
+                                       │  past the access gate only  │
                                        ▼                             ▼
                          ┌─────────────────────────┐   ┌─────────────────────────┐
                          │   vkai-ui (Next.js)     │   │   vkai-api internal API │
                          │   127.0.0.1:3000        │   │   127.0.0.1:30110       │
+                         │   reached only through  │   │                         │
+                         │   vkai-api, never nginx │   │                         │
                          └─────────────────────────┘   └────────────┬────────────┘
                                                                     │
                                                   ┌─────────────────┼─────────────────┐
@@ -675,14 +677,19 @@ tail -f /vkai-panel/logs/sites/<domain>/error.log
 
 ### Kiểm tra sức khoẻ
 
-API có ba endpoint, nghe trên loopback cổng 30110 và **không** yêu cầu lối vào an
-toàn (để health check hoạt động mà không cần biết đường dẫn bí mật):
+API có các endpoint sau, nghe trên loopback cổng 30110 và **không** yêu cầu lối
+vào an toàn (để health check hoạt động mà không cần biết đường dẫn bí mật):
 
 | Endpoint | Ý nghĩa |
 |---|---|
-| `GET /health` | Tiến trình còn sống |
+| `GET /health` | Tiến trình còn sống. Đây là đường dẫn chính thức, dùng ở mọi nơi |
+| `GET /api/v1/health` | Bí danh của `/health`, giữ lại cho các script đã gọi nó |
 | `GET /ready` | Sẵn sàng phục vụ - đã nối được CSDL và Redis |
 | `GET /live` | Liveness, dùng cho trình giám sát |
+
+`/health` nằm ngoài `/api/v1` là có chủ ý: đường dẫn health check của hạ tầng
+không được đổi theo phiên bản API. Trường `version` trong câu trả lời là phiên
+bản của binary đang chạy, được đóng dấu lúc liên kết từ file `VERSION`.
 
 ```bash
 # API

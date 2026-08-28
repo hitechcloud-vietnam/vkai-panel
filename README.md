@@ -220,6 +220,11 @@ chủ đang chọn và thông báo, phần thân là nội dung từng màn hìn
         v                                    v
   /vkai-panel/www/domains/<domain>     +-----------------------------+
                                        |  vkai-api (Go, cong 30110)  |
+                                       |  cong duy nhat qua cong gac |
+                                       +--------------+--------------+
+                                                      | chi khi qua cong gac
+                                                      v
+                                       +-----------------------------+
                                        |  vkai-ui  (Next.js, 3000)   |
                                        +--------------+--------------+
                                                       |
@@ -233,7 +238,8 @@ chủ đang chọn và thông báo, phần thân là nội dung từng màn hìn
 ```
 
 Cổng `30110` (API) và `3000` (UI) chỉ lắng nghe nội bộ; mọi truy cập từ bên ngoài
-đi qua cổng panel `8888`.
+đi qua cổng panel `8888`. nginx chỉ có **một** upstream là `vkai-api`: lối vào an
+toàn được kiểm tra ở đó, rồi API mới chuyển tiếp phần giao diện sang Next.js.
 
 ### Công nghệ
 

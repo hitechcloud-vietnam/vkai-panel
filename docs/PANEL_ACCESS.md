@@ -50,9 +50,9 @@ Ba lớp bảo vệ trên cổng panel, theo thứ tự kiểm tra:
 Mọi trường hợp bị chặn đều nhận **404 trung tính** giống hệt một cổng trống:
 không chuyển hướng, không gợi ý, không lộ dấu vết là có panel ở đây.
 
-Ngoại lệ duy nhất: `/api/v1/health`, `/health`, `/ready`, `/live` luôn trả lời
-để trình giám sát và script kiểm tra sức khoẻ hoạt động được mà không cần biết
-lối vào an toàn.
+Ngoại lệ duy nhất: `/health` (đường dẫn chính thức), bí danh `/api/v1/health`,
+cùng `/ready` và `/live` luôn trả lời để trình giám sát và script kiểm tra sức
+khoẻ hoạt động được mà không cần biết lối vào an toàn.
 
 ---
 
@@ -311,13 +311,26 @@ sudo sed -i 's/8888/9001/g' /etc/nginx/conf.d/vkai-panel.conf   # nếu đổi c
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Trong file mẫu có sẵn (đang comment) các khối: TLS cho panel, `allow/deny` theo
-IP ở tầng nginx, và location cho lối vào an toàn.
+Trình cài đặt sinh ra hai khối trong file mẫu: TLS cho panel và `allow/deny`
+theo IP ở tầng nginx.
 
-> Ở mô hình này, lối vào an toàn được **API** kiểm tra cho `/api/` và `/ws/`.
-> Giao diện web không đăng nhập được nếu chưa đi qua lối vào, vì mọi lời gọi API
-> đều bị trả 404. Muốn chặn ngay từ nginx cho cả giao diện, bỏ comment khối
-> `location ^~ /vkai_.../` trong file mẫu và thay bằng lối vào thật.
+**One front door.** nginx on the panel port has exactly one upstream: the API.
+The API checks the host, the source address and the security entrance, and only
+then forwards what it does not serve itself to the Next.js service at
+`VKAI_UI_UPSTREAM`. nginx never proxies to Next.js.
+
+That is what makes the entrance a real control rather than a decoration. Every
+request on the panel port - the login page, `/_next/...`, every static asset,
+every API call - meets the same gate, and a client that has not been through the
+entrance gets the same neutral 404 for all of them. It also means the entrance
+lives in exactly one place: rotating it is an edit to `VKAI_PANEL_ENTRANCE` plus
+`systemctl restart vkai-api`, with no nginx rewrite and no UI rebuild.
+
+Do not add an entrance `location` to the nginx template. nginx cannot verify the
+HMAC-signed `vkai_entrance` cookie, so it would have to trust any request that
+merely carries one, the rule would then exist in two places that must be kept in
+step, and a request nginx rejects looks different from a request the panel
+rejects - which is exactly the fingerprint the neutral 404 exists to deny.
 
 ---
 

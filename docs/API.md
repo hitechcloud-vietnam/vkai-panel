@@ -16,8 +16,19 @@ From the server itself the internal listener can be called directly:
 
 **Authentication**: JWT Bearer Token
 
-**Health endpoints**: `/api/v1/health`, `/health`, `/ready` and `/live` always
-answer, entrance or not, so container health checks work without the secret.
+**Health endpoints**: `/health` is the canonical liveness probe, with
+`/api/v1/health` as an alias of it; `/ready` and `/live` complete the set. All of
+them answer without the security entrance, so a load balancer or a container
+health check never needs the secret. The probe path deliberately sits outside
+`/api/v1` so it does not move when the API version does.
+
+```json
+GET /health
+{"success":true,"data":{"status":"healthy","service":"vkai-panel","version":"0.5.0","time":"..."},"request_id":"..."}
+```
+
+`version` is the release of the running binary, stamped at link time from the
+repository `VERSION` file.
 
 ---
 

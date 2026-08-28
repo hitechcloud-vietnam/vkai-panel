@@ -95,8 +95,22 @@ deleted after a successful upgrade.
 9. Health check **both** the API and the UI, retrying for about 30 seconds.
 10. On failure: repoint `current` at the previous release and health check again
     (see [When an upgrade fails](#when-an-upgrade-fails)).
-11. On success: rewrite `/vkai-panel/etc/version.json` and delete releases older
-    than the five kept.
+11. On success: rewrite `/vkai-panel/etc/version.json`, reconcile the panel
+    vhost (below) and delete releases older than the five kept.
+
+The nginx vhost is not part of a release, so it does not move with the symlink.
+Step 11 therefore repairs one thing in it, and only when it is actually wrong: a
+host installed before the panel gained its single front door still has
+`location /` proxying straight to the Next.js service, which serves the whole
+interface - the login form included - to anyone who finds the panel port,
+because the security entrance is enforced in `vkai-api` and nowhere else. Those
+`proxy_pass` lines are pointed at the API, `nginx -t` has to pass, and the vhost
+is kept at `/etc/nginx/conf.d/vkai-panel.conf.pre-frontdoor.bak`. Nothing else in
+the file is touched, and a host that is already correct is left alone.
+
+Because of that, rolling back to a release from before the front door leaves a
+vhost the old code cannot serve the interface through; the rollback says so and
+tells you to re-run `deploy/install.sh` to render a matching vhost.
 
 The panel is unreachable for the few seconds of step 8. **Customer websites are
 served by nginx from `/vkai-panel/www/domains/` and stay up throughout** - they

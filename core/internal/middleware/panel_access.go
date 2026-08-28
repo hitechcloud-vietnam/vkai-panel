@@ -193,7 +193,7 @@ func (g *PanelGuard) Wrap(next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !g.check(w, r) {
-			writeNeutralNotFound(w)
+			WriteNeutralNotFound(w)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -433,9 +433,14 @@ func (g *PanelGuard) deny(r *http.Request, client, reason string) {
 	)
 }
 
-// writeNeutralNotFound is byte-for-byte what net/http returns for an unknown
+// WriteNeutralNotFound is byte-for-byte what net/http returns for an unknown
 // route, so a probe cannot distinguish a guarded panel from an empty port.
-func writeNeutralNotFound(w http.ResponseWriter) {
+//
+// It is exported because the guard is not the only place that has to answer
+// this way: anything the guard lets through that has nothing to serve must
+// answer identically, or the difference becomes the fingerprint the neutral 404
+// exists to deny. See internal/uiproxy.
+func WriteNeutralNotFound(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusNotFound)

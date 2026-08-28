@@ -215,9 +215,7 @@ func (r *Router) Setup() *gin.Engine {
 	r.engine.Use(middleware.RateLimit())
 
 	// Health endpoints (no auth). These report up/down only.
-	r.engine.GET("/health", r.healthHandler.Health)
-	r.engine.GET("/ready", r.healthHandler.Ready)
-	r.engine.GET("/live", r.healthHandler.Live)
+	registerHealthRoutes(r.engine, r.healthHandler)
 
 	// API v1
 	v1 := r.engine.Group("/api/v1")

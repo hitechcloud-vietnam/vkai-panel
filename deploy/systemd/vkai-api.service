@@ -38,6 +38,12 @@ Environment=VKAI_PANEL_BIND=127.0.0.1
 Environment=VKAI_PANEL_PORT=30110
 Environment=VKAI_PANEL_ENTRANCE_ENABLED=true
 Environment=VKAI_PANEL_CONFIG_FILE=/vkai-panel/etc/panel_access.json
+# The panel has ONE front door and it is this process: nginx forwards the whole
+# panel port here, this process checks the security entrance, and only then does
+# a request reach the Next.js service below. That is what puts the login form
+# behind the entrance instead of beside it. Loopback only, and it must match the
+# port vkai-ui.service listens on.
+Environment=VKAI_UI_UPSTREAM=http://127.0.0.1:3000
 EnvironmentFile=/vkai-panel/etc/.env
 
 # --- Hardening ---------------------------------------------------------------

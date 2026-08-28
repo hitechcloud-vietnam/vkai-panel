@@ -53,6 +53,50 @@ publishes nothing.
 
 ## [Unreleased]
 
+### Security
+
+- **The security entrance protected nothing.** `deploy/nginx/vkai-panel.conf`
+  sent `/` straight to Next.js and only `/api/` to the Go API, and the entrance
+  check nginx could have performed shipped commented out for an operator to
+  enable. Every installation therefore served the whole interface - the login
+  form included - to anyone who found the panel port, while the guard in
+  `core/internal/middleware/panel_access.go` only ever saw API traffic, and the
+  URL the installer prints as the way in returned 404 because Next.js knows
+  nothing about the entrance.
+
+  The panel now has ONE front door. nginx has a single upstream, `vkai-api`;
+  `vkai-api` checks the host, the source address and the entrance, then forwards
+  what it does not serve itself to the Next.js service on `VKAI_UI_UPSTREAM`
+  (new; `core/internal/uiproxy`). Pages, `/_next/` assets and API calls all meet
+  the same gate and the same neutral 404. Nothing is left commented out, and
+  `deploy/install.sh` refuses to install a rendered configuration that proxies
+  to the UI directly.
+
+  Rotating the entrance is now an `.env` edit plus `systemctl restart vkai-api`:
+  no nginx rewrite, no UI rebuild.
+
+### Fixed
+
+- **The version never reached the binary.** `deploy/install.sh` built the Go
+  binaries with `-ldflags "-s -w"`, so every field
+  `core/internal/version` expects at link time fell back to its compiled-in
+  default and the whole versioning mechanism was inert in the shipped product.
+  The installer now reads the one `LDFLAGS` definition out of the `Makefile`
+  (`make print-ldflags`) instead of keeping a second copy that can drift, and
+  takes the product version from the `VERSION` file rather than a `1.0.0`
+  literal of its own. `vkai-api --version` reports what is installed.
+
+- **`/health` reported a version that did not exist.** The handler returned the
+  string literal `"1.0.0"`, so the live panel claimed 1.0.0 while `VERSION` said
+  0.5.0 - and the in-panel upgrade check compared against it. It now reports
+  `version.Version`.
+
+- **`/api/v1/health` answered 404.** The access gate listed it among the paths
+  it lets through without the entrance and `docs/API.md` offered it, but no
+  route was ever registered. `/health` is now the documented canonical path -
+  infrastructure probes must not move when the API version does - and
+  `/api/v1/health` is registered as an alias of it.
+
 ## [0.5.0] - 2026-08-28
 
 ### Fixed

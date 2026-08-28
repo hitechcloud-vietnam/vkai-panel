@@ -100,6 +100,16 @@ VKAI_SERVER_WRITE_TIMEOUT=30s
 VKAI_SERVER_IDLE_TIMEOUT=120s
 
 # ===========================================
+# User interface upstream
+# ===========================================
+# Where vkai-api forwards requests for the interface. The panel has one front
+# door: nginx sends the whole panel port to vkai-api, vkai-api checks the
+# security entrance, and only then does anything reach Next.js. Loopback only,
+# and it must match the port vkai-ui listens on. Empty = no interface attached
+# (an API-only deployment).
+VKAI_UI_UPSTREAM=http://127.0.0.1:3000
+
+# ===========================================
 # Database
 # ===========================================
 VKAI_DB_HOST=localhost
@@ -598,6 +608,11 @@ server {
 
 A ready-made file ships as `deploy/nginx/vkai-panel.conf`. Set
 `VKAI_PANEL_BIND=127.0.0.1` on the node when a proxy on the same host fronts it.
+
+Whatever fronts the panel port must send **everything** to `vkai-api`, including
+`/` and `/_next/`. It must never proxy to the Next.js service directly: the
+entrance is checked in `vkai-api`, so a route that goes around it serves the
+login page to anyone who finds the port.
 
 ### Enable Site
 
