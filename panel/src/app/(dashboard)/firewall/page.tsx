@@ -31,6 +31,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { firewallApi } from '@/services/api';
+import ServerScopeField, { ALL_SERVERS } from '@/components/servers/ServerScopeField';
+import { useServers } from '@/hooks/useServers';
+import { errorMessage } from '@/lib/apiError';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +92,9 @@ const BTN_DANGER =
 // ---------------------------------------------------------------------------
 
 export default function FirewallPage() {
+  // The field used to ask the operator to type a server UUID. Nobody knows one,
+  // so every rule was either copied from somewhere else or wrong.
+  const { servers } = useServers();
   // Data
   const [rules, setRules] = useState<FirewallRule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -227,12 +233,42 @@ export default function FirewallPage() {
       setFormError('Action is required');
       return;
     }
+    if (!formData.server_id) {
+      setFormError('Choose the server this rule applies to');
+      return;
+    }
 
     try {
       setSubmitting(true);
       if (editingRule) {
         await firewallApi.update(editingRule.id, formData);
         setToast({ type: 'success', message: 'Firewall rule updated successfully' });
+      } else if (formData.server_id === ALL_SERVERS) {
+        // The schema makes server_id NOT NULL and the request binds it as
+        // required, so there is no such thing as one rule covering every server.
+        // Creating one per server is what "every server" can honestly mean here;
+        // pretending otherwise would fail at submit with a validation error the
+        // operator could not act on.
+        const failures: string[] = [];
+        for (const server of servers) {
+          try {
+            await firewallApi.create({ ...formData, server_id: server.id });
+          } catch (err) {
+            failures.push(`${server.hostname || server.id}: ${errorMessage(err, 'failed')}`);
+          }
+        }
+        if (failures.length > 0) {
+          setFormError(
+            `${servers.length - failures.length} of ${servers.length} created. ` +
+              failures.join('; '),
+          );
+          setSubmitting(false);
+          return;
+        }
+        setToast({
+          type: 'success',
+          message: `Firewall rule created on ${servers.length} servers`,
+        });
       } else {
         await firewallApi.create(formData);
         setToast({ type: 'success', message: 'Firewall rule created successfully' });
@@ -642,19 +678,27 @@ export default function FirewallPage() {
                 </div>
               )}
 
-              {/* Server ID */}
+              {/* Server */}
               <div>
                 <label htmlFor="fw-server-id" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Server ID <span className="text-red-600">*</span>
+                  Server <span className="text-red-600">*</span>
                 </label>
-                <Input
+                <ServerScopeField
                   id="fw-server-id"
-                  placeholder="Enter server UUID"
+                  hideLabel
+                  servers={servers}
                   value={formData.server_id}
-                  onChange={(e) => handleFormChange('server_id', e.target.value)}
-                  className={INPUT_CLASS}
-                  required
+                  onChange={(v) => handleFormChange('server_id', v)}
+                  allowAll={!editingRule}
+                  allLabel="Every server"
                 />
+                {formData.server_id === ALL_SERVERS && !editingRule && (
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    A firewall rule belongs to one server, so this creates the same rule on each of
+                    the {servers.length} servers separately. Editing or removing it later is per
+                    server.
+                  </p>
+                )}
               </div>
 
               {/* Protocol & Port */}
