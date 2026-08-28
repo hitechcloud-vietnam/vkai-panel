@@ -340,5 +340,57 @@
       "disconnected": "Đã ngắt kết nối"
     },
     "footerLabel": "{product} Terminal"
+  },
+  "appStore": {
+    "title": "Kho ứng dụng",
+    "versions": "Phiên bản",
+    "version": "Phiên bản",
+    "chooseVersion": "Chọn phiên bản",
+    "chooseVersionFor": "Cài đặt {app}",
+    "chooseVersionLead": "Chọn phiên bản cần cài. Mỗi phiên bản nêu rõ các gói sẽ được chuyển cho trình quản lý gói và kho phần mềm cung cấp chúng.",
+    "recommended": "Khuyến nghị",
+    "fixedVersion": "Phiên bản cố định",
+    "fixedVersionLead": "{distribution} chỉ phát hành một phiên bản {app}, nên không có gì để chọn. Bảng điều khiển cài đúng bản mà bản phân phối của bạn cung cấp, thay vì đưa ra một danh sách nó không thể thực hiện.",
+    "distributionDefault": "Bản do bản phân phối cung cấp",
+    "installedNow": "Đang được cài",
+    "notAvailableHere": "Không khả dụng trên máy chủ này",
+    "packages": "Các gói",
+    "repository": "Kho phần mềm",
+    "noRepositoryAdded": "Không thêm kho phần mềm nào vào máy chủ này.",
+    "addsRepository": "Thêm một kho phần mềm",
+    "addsRepositoryLead": "Cài phiên bản này sẽ thêm {repository} vào máy chủ trước. Mọi bước đều được liệt kê trong kế hoạch trước khi chạy, và tác vụ sẽ xoá những gì nó đã ghi nếu kho phần mềm không nạp được.",
+    "repositorySteps": "Kho phần mềm tác vụ này sẽ thêm",
+    "continueToPlan": "Tiếp tục",
+    "versionChoiceCount": {
+      "one": "{count} phiên bản",
+      "other": "{count} phiên bản"
+    },
+    "sideBySide": "Chạy song song",
+    "sideBySideHint": "Phiên bản này chạy cùng lúc với các phiên bản khác; cài nó không thay thế gì cả.",
+    "phpSettings": "Thiết lập",
+    "installsWithoutStarting": "Được cài nhưng không khởi động",
+    "oneClickTitle": "Không cài từ màn hình này",
+    "requiresPhp": "PHP {version} trở lên",
+    "requiresExtensions": "Phần mở rộng PHP",
+    "requiresDatabase": "Cơ sở dữ liệu",
+    "requiresComposer": "Cài bằng Composer, không phải từ tệp nén",
+    "officialImage": "Ảnh container chính thức: {image}",
+    "upstream": "Nguồn chính thức",
+    "webAppLead": "Một ứng dụng PHP được triển khai vào một website, không phải một gói phần mềm. Bảng điều khiển liệt kê các yêu cầu để bạn thấy máy chủ này đã sẵn sàng hay chưa.",
+    "installedVersionUnknown": "chưa đọc được",
+    "forbiddenTitle": "Màn hình này chỉ dành cho người vận hành hệ thống",
+    "forbiddenBody": "Kho ứng dụng cài đặt và gỡ bỏ phần mềm trên máy chủ dùng chung, nên nó chỉ dành cho người vận hành nền tảng chứ không dành cho quản trị viên của từng khách hàng. Cài hay gỡ một web server, một cơ sở dữ liệu hay một phiên bản PHP tại đây sẽ ảnh hưởng tới mọi website trên máy chủ này, không chỉ của bạn. Hãy liên hệ người vận hành bảng điều khiển nếu bạn cần cài thêm phần mềm."
+  },
+  "docker": {
+    "title": "Docker",
+    "subtitle": "Container, image, network và volume trên máy chủ này.",
+    "scopeNoticeTitle": "Bạn chỉ thấy container của chính mình",
+    "scopeNoticeBody": "Máy chủ này được dùng chung. Mọi danh sách trên màn hình này chỉ hiển thị container, image, network, volume và dự án Compose thuộc về tài khoản của bạn; những gì được tạo bên ngoài bảng điều khiển không thuộc về ai và không được hiển thị.",
+    "paneContainers": "Các container của bạn trên máy chủ này, đang chạy hoặc đã dừng.",
+    "paneImages": "Các image tài khoản của bạn dùng trên máy chủ này, kèm những container được tạo từ mỗi image.",
+    "paneNetworks": "Các network Docker của bạn, kèm những gì đang kết nối vào mỗi network.",
+    "paneVolumes": "Các volume có tên của bạn, kèm những container đang gắn mỗi volume.",
+    "paneCompose": "Các dự án nhiều container của bạn, đọc từ nhãn Compose ghi và từ thư mục dự án của bạn.",
+    "paneOverview": "Những gì tài khoản của bạn có trên máy chủ này và bao nhiêu trong đó có thể giải phóng."
   }
 }
