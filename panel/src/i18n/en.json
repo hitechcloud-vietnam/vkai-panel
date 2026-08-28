@@ -340,5 +340,57 @@
       "disconnected": "Disconnected"
     },
     "footerLabel": "{product} Terminal"
+  },
+  "appStore": {
+    "title": "App Store",
+    "versions": "Versions",
+    "version": "Version",
+    "chooseVersion": "Choose a version",
+    "chooseVersionFor": "Install {app}",
+    "chooseVersionLead": "Pick the version to install. Each one names the packages it hands the package manager and the repository they come from.",
+    "recommended": "Recommended",
+    "fixedVersion": "Fixed version",
+    "fixedVersionLead": "{distribution} publishes one version of {app}, so there is nothing to choose. The panel installs what your distribution ships rather than offering a list it cannot deliver.",
+    "distributionDefault": "As shipped by this distribution",
+    "installedNow": "Installed now",
+    "notAvailableHere": "Not available on this host",
+    "packages": "Packages",
+    "repository": "Repository",
+    "noRepositoryAdded": "No repository is added to this host.",
+    "addsRepository": "Adds a repository",
+    "addsRepositoryLead": "Installing this version adds {repository} to this host first. Every step is listed in the plan before anything runs, and the job removes what it wrote if the repository will not load.",
+    "repositorySteps": "Repository this job adds",
+    "continueToPlan": "Continue",
+    "versionChoiceCount": {
+      "one": "{count} version",
+      "other": "{count} versions"
+    },
+    "sideBySide": "Runs side by side",
+    "sideBySideHint": "This version coexists with the others; installing it replaces nothing.",
+    "phpSettings": "Settings",
+    "installsWithoutStarting": "Installed but not started",
+    "oneClickTitle": "Not installed from here",
+    "requiresPhp": "PHP {version} or newer",
+    "requiresExtensions": "PHP extensions",
+    "requiresDatabase": "Database",
+    "requiresComposer": "Installed with Composer, not from an archive",
+    "officialImage": "Official container image: {image}",
+    "upstream": "Upstream",
+    "webAppLead": "A PHP application deployed into a website, not a package. The panel lists what it needs so you can see whether this host is ready.",
+    "installedVersionUnknown": "not read",
+    "forbiddenTitle": "This screen is for platform operators only",
+    "forbiddenBody": "The App Store installs and removes software on the shared host, so it is restricted to the platform operators who run this machine rather than to a tenant's own administrators. Installing or removing a web server, a database or a PHP version here would affect every site on this server, not only yours. Ask whoever operates this panel if you need software installed."
+  },
+  "docker": {
+    "title": "Docker",
+    "subtitle": "Containers, images, networks and volumes on this host.",
+    "scopeNoticeTitle": "You see only your own containers",
+    "scopeNoticeBody": "This host is shared. Every list on this screen is limited to the containers, images, networks, volumes and Compose projects belonging to your account, and anything created outside the panel belongs to nobody and is not shown.",
+    "paneContainers": "Your containers on this host, running or not.",
+    "paneImages": "The images your account uses on this host, with the containers built from each.",
+    "paneNetworks": "Your Docker networks, with what is attached to each.",
+    "paneVolumes": "Your named volumes, with the containers that mount each.",
+    "paneCompose": "Your multi-container projects, from the labels Compose writes and from your project directory.",
+    "paneOverview": "What your account has on this host and how much of it can be freed."
   }
 }
