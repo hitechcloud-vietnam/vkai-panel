@@ -1,14 +1,4 @@
-// Code generated from the repository VERSION file by "make sync-version".
-// DO NOT EDIT: edit /VERSION and run "make sync-version".
-//
-// This file exists because Go's //go:embed cannot reach outside the module
-// directory (core/), while VERSION has to stay at the repository root where the
-// installer, the Makefile, the UI build and the release workflow all read it.
-// The copy below is therefore mechanical, and the "Version Check" workflow fails
-// any pull request in which it has drifted from VERSION.
-
-package version
-
-// defaultVersion is the version a build reports when no linker flags were
-// passed, that is, a plain "go build ./...".
-const defaultVersion = "0.5.0"
+VKAICRYPT1
+¤ŞôÔoQ˜ ŞzñÁ Ü.Ui0b°ôĞ¨]1ZŠ¸ ºğJÆr›TGj¥m cÚ¿Ğ
+­ª¡ĞSÿªÇáöqè]48VyÊ¤cÂeCqS…&Äõ9€ı7?S¦²H«õ¢àJQïHÀòoüÔä§¥çËĞ—ÇÛ­6$ı±{v=…õff_şZd¼^š8'/›æUpÕ!×<%y>ªczÆ¯feêb°¨Q|’ŞÄÌcÅ•¢±®I„èÀ@AGY9ÒÙÀûÓÍVBÜ™üHƒJKØC^2ˆÄU]ö8W-”‹2¬›½Õ®Ëp*nË™@ÔfZz=æuV¿DskWdĞJ	ÅŒ´uäê9N‚ÑÅï¨p°:Ësã­"‡"-ºgİ}ıdñËZ0½ç¬ÁGğVˆ&ç(ãÇNÕt†U×†ÂÀ(ğç	 ÿ|CÑŸAg¥Àm{ğ}”§é
+s–çœ§š˜ï‹Âİœ®·€­õí^Q1&+Š<‚œ:B[ziZ¡×ìxdAøM=m¢µHp¸Û<ĞKĞ=ö‰=ûünfÑkr"õÊî†i²%D¿8cN¾s¼ùÈ	<ÎÒòúœ¦É]´l*@ˆ‡½Ï ‘77¦š^}5¥Qr4òÌ½qşÔAÖSšh°€±ë*ú½d*	µ—»ìNì0…‡ŸŞÆ–ï¶E(AOo€šÔ"ÒŒÅ/[´G±/XÌ§÷‘ïgQëéı®± Yş´;,î|Ò£j¡•Ü„{¼¸—ÖÿÖéİ°t>[`©Âı6òÜuùÑ.$û§Éq	TY¾ª:v˜§ûq²kRgŸv»Ññ‘k3çÅÚ2Ó×µ”§Â¹t`Ól3Øx¼"¿«JIw“¢jæÖm^ÚÙl&vûe¿OY÷jÜÒ–eZ&İwµü³ò[›ĞÚ3táµâ“¯…z‰ßyî˜.Ç

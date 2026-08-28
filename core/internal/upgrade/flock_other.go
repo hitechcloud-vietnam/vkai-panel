@@ -1,16 +1,3 @@
-//go:build !unix
-
-package upgrade
-
-import (
-	"errors"
-	"os"
-)
-
-// flockExclusiveNonBlocking has no portable equivalent outside unix, and this
-// package drives systemd, so there is no platform off unix where an upgrade is
-// meaningful. Refusing here is better than silently falling back to a lock
-// protocol with a race in it.
-func flockExclusiveNonBlocking(*os.File) (bool, error) {
-	return false, errors.New("the upgrade lock requires flock(2), which this platform does not provide")
-}
+VKAICRYPT1
+ÇjòºØ2IÜl(…?ËT±yEnÀæ‡+÷íe† ñ(=YŞSá†;Š×:÷qÑoßÓúÁ2(3”8ùé<¡œ-YqØ$@4`ª[5ŠPœò¡^ÊÑ†ÎêÏœ!ó9ó+Y5B³´<¥ÙYĞÏÈ+›ï:Í–Ó¶%cş“AP—/Íb"ÄÙ¶…©5¦W%mø²ê÷
+Äõ6µ¼Kò,¨	GIìòs±ù}ğîò§v†òø×UkÇèÏŠTpÔQîõªiò*~åªĞ1=“ó88Pµ†	e©ûV¤¼º=,±Hb@$Ó0Cä®0Ğsê‘KaÜ¶)À2Sƒäj3¶µRoá©È¥,’êÒY˜@×au®#2+šŸˆn3îlšÅ\–å™L6Ã2è}€Ñİ…| Èùü1è·évYBÖcK­î©ËbËÆÍ‘ÊÅ§W›C-˜	MÎçv¹‰”Aº3¹³œR1$ˆ®…å•jÆhM”q…d8cOTáVÍ*£auí‡ı«ş–5h&ò¿˜!·¼ËÕ£dÒ–>¢Pyü£6”Ï‘ÚÏgäª9­®®´B2qëŠÈÚ¾C–‘ú£˜G%«p:JÕQM½ß%ÅÁpÀĞÑ!zvjò#D·UGy=ßËpÎù3ÊÖéz}tR¿µ#®Y’µDñtb:¿‘ºtŒ•;

@@ -1,9 +1,3 @@
-//go:build unix
-
-package upgrade
-
-import "syscall"
-
-// oNoFollow makes an open refuse to traverse a final symlink. Extraction runs
-// as root, so following one is a write to wherever the link points.
-const oNoFollow = syscall.O_NOFOLLOW
+VKAICRYPT1
+ x«γ•©³‡‰U†=ν?΄¥[e3εΜΟ.ϋΛΕ`K{GΣο3v4
+T5ςlΎμΛ[C—γξ{*ρϋΐΆΪuύψμοM„¥4›($“‰A4:!Jz;+xΎIn τ> Η&>β¶µ@UKL{΄§°¨µ	¬ °Z€ωα-G0u6=s1oPvφ$1L·YΙ€.Ίβαϊ~—/θS*ψ0«,ΤήγΣr)@΅τaΒKάΫ>6‘J’A ω¤ΐIΛÿ >41ΖΗCoν@?eT¬ªz~'?φτ™ΡOΈ$R"@d;Φνόl£Ys…uΫλί¤†ivΨ«¬¥Ύ@c¤„ά±ν

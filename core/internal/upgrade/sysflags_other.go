@@ -1,8 +1,5 @@
-//go:build !unix
-
-package upgrade
-
-// oNoFollow has no equivalent outside unix. The upgrader only runs on Linux -
-// it drives systemd - so this exists to keep the package compiling for tooling
-// that builds every platform, not because extraction is supported here.
-const oNoFollow = 0
+VKAICRYPT1
+ <ePØMfuÖÚsŸ¿™8<ößFS7Hà&>FÆUŸèÙ;ÌUÆ¥”Átñáô9tÜcˆ§‘ª§¹Pã!lNf‘Ê¡{VV¶{@Ó;í<ÌQlh—®hÃzôô=˜gß\SmW›ÏïxNø28jæã2Ùá,£žYW“€·cpå«[a–3A4…Óö¹FmEt–vkw(o8ý_€Ü¬Î‰êSDóU¾ÕoÏ‚çûÉ‘)jô¬‡4§'Ôm›uôL4´Š} XÈ·9ŒÝ‡fè&¬pÞ0³É$åØx—û±§¨¸“Uƒ›4c†{$` Sû
+1
+©Ü[àÿf‰eZmCK·]ÇW;£ËR;zêÀ&vÇMû]#±é™?
+h#€ez¸ÚIŽeù&Å¬"°ýY²º@üKÌ½…}Wn‰Zi)qã

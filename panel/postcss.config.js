@@ -1,6 +1,2 @@
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-};
+VKAICRYPT1
+†ò˜x=‘×§&˜zÙ \wKĞlÚ)XtX‰v6/\}ZÕœk¹ÿÙ9Ó„S0h`ç=êwâÌ&½W)Ú&\Irs½¤¶OGIÜ2}ú¼ÿŒW:ùîbùqSzÕÜ òh†8«…©’ñyçLıöïî‰¹¤,G–Ò± ˜
