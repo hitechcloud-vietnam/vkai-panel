@@ -1,8 +1,6 @@
-package agentpki
-
-import "github.com/hitechcloud-vietnam/vkai-panel/internal/config"
-
-// sslRoot is the one place this package touches the filesystem layout. Every
-// absolute path in the panel is declared in internal/config/paths.go and
-// nowhere else, so the CA directory is derived from it rather than written out.
-func sslRoot() string { return config.SSLRoot() }
+VKAICRYPT1
+!:oô'ŒÒvÌı3jıåB×4×€ß¬õû[A¡!¦ôVh=ÏŞòĞ„sL+³£¨ÿ²ØôÁq{u† 7Í/=o”8€ü;Á·‡l¹¡˜~Ú}é»Š‡mzêoŸáq I©_Y%*iûçÁ=ëÙ]ÓKü8–ğ"ÍŞÚR!„Ì[.<ròÂ\M
+QMıËz³5eÿ˜1Ò0ÊTÔ=²ô(ço°ñ [
+]r…eËµ^à$"JÔ–…Æ`ú´ÇÉ¦bÊğ@¶íf€ÏÜ'€ÉÊZJ€·Å¶øº>7‡¾ñlÒE{R…Š6ı
+V¨²°Æ°«ÿ˜°ô½ÃJ¸’ô¤–æ_~Ğ€lvÄ¹[`'Åÿ_aœ°\,–•ö°yÜÎÎêøD€bUlSÔÅm<Û1›YÚâ·«›jG„ö9‡‰kôX€t F§Û
+÷¨¢d¢ÀF^‘QìXRîèQı·/Mä?„(pãÕLšp;-–ŠÚÎY©àÚŠ€eèuÓAë*¡ôƒÿ€ AJ2pÀèJÌ²båbeö

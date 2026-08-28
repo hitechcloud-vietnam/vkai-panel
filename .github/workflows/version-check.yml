@@ -35,6 +35,17 @@ jobs:
           # Every tag and both sides of the pull request.
           fetch-depth: 0
 
+      # This job reads Go source (core/internal/version/version_default.go) and
+      # the Makefile to check that every copy of the version agrees. With source
+      # encryption on, reading them without decrypting first yields ciphertext,
+      # and the check reports the version as empty - which looks like a missing
+      # bump rather than an unreadable file. The action is a no-op on a
+      # repository that has not enabled encryption.
+      - name: Decrypt source
+        uses: ./.github/actions/decrypt-source
+        env:
+          VKAI_CRYPT_KEY: ${{ secrets.VKAI_CRYPT_KEY }}
+
       # The path filter lives here rather than in "on:" because a workflow
       # skipped by a path filter never reports a status, and this is meant to be
       # a required check: it has to run, and say "skipped", for every pull

@@ -1,9 +1,3 @@
-import DataCopy from '@/components/wp-toolkit/DataCopy';
-
-export const metadata = {
-  title: 'Data Copy',
-};
-
-export default function DataCopyPage() {
-  return <DataCopy />;
-}
+VKAICRYPT1
+µ4¿ İÄŒÎÁ«M67S«Å°ÁïA/4«âÉã\³pFEa¶¡Y¶èÇş\¶¬M¥'ºğm»~5ûÑº²#$iı%Rº×*z7ÛÖ†n/ ­j“ºØ«OşèJEˆÉrN>'6pÑtiø9PzÕóÊj@È+x[/!	öï*ùVZn&‘şˆVcŸïîİö'@qÔï¬ïi¡¢Â¾Üı›°¾òˆèáıŒÖ’
+]r±ÚòZô<¡ ¨V(¢îñi»:D5ÎJŸÃ‘†R5

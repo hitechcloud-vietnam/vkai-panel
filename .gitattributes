@@ -33,13 +33,18 @@
 *.sh        filter=vkai-crypt diff=vkai-crypt
 *.conf      filter=vkai-crypt diff=vkai-crypt
 *.service   filter=vkai-crypt diff=vkai-crypt
-Makefile    filter=vkai-crypt diff=vkai-crypt
 Dockerfile  filter=vkai-crypt diff=vkai-crypt
 docker-compose*.yml filter=vkai-crypt diff=vkai-crypt
 
 # ── Ngoại lệ: phải giữ nguyên văn ───────────────────────────────────────────
 tools/protect/**        !filter !diff text=auto eol=lf
 .github/**              !filter !diff
+# The Makefile is build plumbing, not intellectual property, and tooling has to
+# read it BEFORE anything can be decrypted: the version-check workflow runs
+# `make check-version-sync` in a job with no decrypt step, and an encrypted
+# Makefile makes that "missing separator" rather than anything diagnosable.
+# Same reasoning as the manifests below.
+Makefile                !filter !diff
 go.mod                  !filter !diff
 go.sum                  !filter !diff
 package.json            !filter !diff
