@@ -45,6 +45,16 @@ interface MenuItem {
   icon: React.ReactNode;
   href?: string;
   children?: { label: string; href: string }[];
+  /**
+   * Short qualifier shown beside the label, for a section that is not part of
+   * the ordinary path through the product. "Tùy chọn" on Cụm & HA is the only
+   * user of this today: clustering is a layer an operator adds when a fleet
+   * grows, not a step towards a working install, and an unqualified menu item
+   * reads as a requirement.
+   */
+  badge?: string;
+  /** Longer explanation, shown on hover. */
+  badgeTitle?: string;
 }
 
 interface MenuGroup {
@@ -70,7 +80,14 @@ const menuGroups: MenuGroup[] = [
           { label: 'Thêm máy chủ', href: '/servers/add' },
         ],
       },
-      { label: 'Cụm & HA', icon: <Network size={18} />, href: '/clusters' },
+      {
+        label: 'Cụm & HA',
+        icon: <Network size={18} />,
+        href: '/clusters',
+        badge: 'Tùy chọn',
+        badgeTitle:
+          'Lớp tùy chọn cho nhiều máy. Panel đã quản lý sẵn máy mà nó đang chạy, nên bạn không cần cụm để tạo website.',
+      },
       { label: 'Docker', icon: <Container size={18} />, href: '/docker' },
       { label: 'Giám sát', icon: <Gauge size={18} />, href: '/monitoring' },
     ],
@@ -202,8 +219,8 @@ export default function Sidebar() {
         <Link
           key={item.label}
           href={href}
-          title={item.label}
-          aria-label={item.label}
+          title={item.badge ? `${item.label} (${item.badge})` : item.label}
+          aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
           aria-current={active ? 'page' : undefined}
           className={`relative flex h-11 items-center justify-center border-b border-gray-100 ${FOCUS_RING} ${
             active ? 'bg-brand-50 text-brand-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
@@ -274,6 +291,14 @@ export default function Sidebar() {
         {active && activeBar}
         <span className={active ? 'text-brand-600' : 'text-gray-500'}>{item.icon}</span>
         <span className="truncate">{item.label}</span>
+        {item.badge && (
+          <span
+            title={item.badgeTitle}
+            className="ml-auto shrink-0 rounded-md border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600"
+          >
+            {item.badge}
+          </span>
+        )}
       </Link>
     );
   };

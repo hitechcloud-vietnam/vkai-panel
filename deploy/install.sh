@@ -68,6 +68,14 @@ readonly SUMMARY_FILE="${ETC_DIR}/install-summary.txt"
 # know what it is upgrading FROM, which matters most on a machine where somebody
 # replaced a binary by hand and the running code no longer matches any release.
 readonly VERSION_FILE="${ETC_DIR}/version.json"
+# The machine the panel is installed on is the first managed node. These two
+# files are what makes that true across reinstalls: agent.env is the agent's own
+# configuration (kept apart from .env, which this script rewrites wholesale), and
+# node.json records which servers row is this machine. Both are written by
+# "vkai node register" and both live in ${ETC_DIR}, which an uninstall without
+# --purge keeps.
+readonly AGENT_ENV_FILE="${ETC_DIR}/agent.env"
+readonly NODE_RECORD_FILE="${ETC_DIR}/node.json"   # written by internal/localnode
 readonly DEFAULT_CHANNEL="stable"
 readonly MIGRATIONS_STATE="${ETC_DIR}/migrations.applied"
 readonly INSTALL_LOG="${LOG_DIR}/install.log"
@@ -196,6 +204,9 @@ NPM_BIN=""
 REDIS_SERVICE=""
 PG_SERVICE=""
 SERVER_IP=""
+NODE_STATUS="not attempted"
+NODE_ID="(none)"
+NODE_HOSTNAME=""
 FIREWALL_TOOL="none"
 FIREWALL_PORTS=""
 LOGGING_STARTED="false"
@@ -913,6 +924,16 @@ preflight_ports() {
             log_warn "Internal port ${p} is in use. If it is not ${BRAND_NAME}, the service will fail to start."
         fi
     done
+
+    # The agent on this machine listens on ${AGENT_PORT} for the mutual-TLS
+    # control channel. On a reinstall that port is held by the agent this
+    # installer is about to restart, which is not a conflict - hence the check
+    # for the running unit.
+    if port_in_use "$AGENT_PORT" && ! systemctl is-active --quiet vkai-agent 2>/dev/null; then
+        log_warn "Port ${AGENT_PORT} is in use by '$(port_owner "$AGENT_PORT" || echo 'an unknown process')'."
+        log_warn "That is the agent control channel. This machine will register as a node but its agent"
+        log_warn "will not start until the port is free, or VKAI_AGENT_PORT names another one."
+    fi
 }
 
 detect_install_mode() {
@@ -1184,6 +1205,11 @@ setup_directories() {
     # etc/ holds .env and the secrets -> 700.
     install -d -o "$VKAI_USER" -g "$VKAI_GROUP" -m 700 "$ETC_DIR"
     install -d -o "$VKAI_USER" -g "$VKAI_GROUP" -m 700 "$SSL_DIR"
+    # The agent's private key and certificate. Owned by root, not by the panel
+    # account: the agent runs as root and the panel has no business reading the
+    # key of the thing it authenticates. It has to exist before the unit starts
+    # because vkai-agent.service lists it under ReadWritePaths.
+    install -d -o root -g root -m 700 "${SSL_DIR}/agent"
     install -d -o "$VKAI_USER" -g "$VKAI_GROUP" -m 750 "$TMP_DIR"
     install -d -o "$VKAI_USER" -g "$VKAI_GROUP" -m 750 "$RELEASES_DIR"
 
@@ -1422,6 +1448,23 @@ setup_config() {
 
     local allowed_ips="$OPT_ALLOW_IPS"
     [[ -n "$allowed_ips" ]] || allowed_ips="$(env_get VKAI_PANEL_ALLOWED_IPS || true)"
+
+    # An allow list that leaves out loopback locks this machine out of its own
+    # panel, and the agent that runs here is the first thing that stops working.
+    # Loopback is not a hole: only a process already on this host can present it
+    # as a source, and 127.0.0.1 is also the only address trusted to set
+    # X-Forwarded-For. An empty list still means "any source address".
+    if [[ -n "$allowed_ips" ]]; then
+        case ",${allowed_ips}," in
+            *,127.0.0.1,*|*,127.0.0.0/8,*) : ;;
+            *) allowed_ips="127.0.0.1,${allowed_ips}" ;;
+        esac
+        case ",${allowed_ips}," in
+            *,::1,*|*,::1/128,*) : ;;
+            *) allowed_ips="${allowed_ips},::1" ;;
+        esac
+        log_info "Panel allow list: ${allowed_ips} (loopback added so this machine can manage itself)."
+    fi
 
     local panel_host="$SERVER_IP"
     [[ -n "$PANEL_DOMAIN" ]] && panel_host="$PANEL_DOMAIN"
@@ -1802,22 +1845,67 @@ run_migrations() {
     touch "$MIGRATIONS_STATE"
     chmod 600 "$MIGRATIONS_STATE"
 
-    local f name applied=0
-    while IFS= read -r f; do
-        name="$(basename "$f")"
-        if grep -qxF "$name" "$MIGRATIONS_STATE"; then
-            continue
-        fi
-        log_info "  -> ${name}"
-        if psql_vkai -f "$f" >/dev/null; then
-            echo "$name" >>"$MIGRATIONS_STATE"
-            applied=$((applied + 1))
-        else
-            die "Migration '${name}' failed. The database is half migrated - see ${INSTALL_LOG}."
-        fi
-    done < <(find "$dir" -maxdepth 1 -name '*.sql' -type f | sort)
+    local applied=0
+    apply_migration_files "$applied" fatal "" < <(find "$dir" -maxdepth 1 -name '*.sql' -type f | sort)
+    applied="$MIGRATIONS_APPLIED"
+
+    # migrations/pending holds schema that is written but not yet numbered into
+    # the contiguous 001-023 sequence, which is verified against a real
+    # PostgreSQL and must not be renumbered. It is applied here, AFTER the
+    # sequence, because the alternative is shipping features whose tables never
+    # exist on any installed panel: the panel host cannot be a managed node
+    # without server_local_node, and it would say so at every start.
+    #
+    # Every file there creates tables with IF NOT EXISTS and adds nothing to an
+    # existing one, so applying it twice is a no-op and applying it before it is
+    # numbered costs nothing when it later is. The state file records it under
+    # its "pending/" name so that folding it into the sequence and re-running it
+    # is still harmless.
+    local pending="${dir}/pending"
+    if [[ -d "$pending" ]]; then
+        apply_migration_files "$applied" tolerant pending < <(find "$pending" -maxdepth 1 -name '*.sql' -type f | sort)
+        applied="$MIGRATIONS_APPLIED"
+    fi
 
     log_info "Applied ${applied} new migration(s)."
+}
+
+# apply_migration_files <already-applied-count> <fatal|tolerant> <prefix>
+#
+# Reads file paths on stdin. The running total comes back in MIGRATIONS_APPLIED,
+# because the loop runs in this shell and a subshell could not report it.
+#
+# The two modes are the difference between the two directories. The numbered
+# sequence is contiguous and verified against a real PostgreSQL: a failure there
+# leaves a half migrated database and the install must stop. migrations/pending
+# is a staging area for schema that has not been folded into the sequence yet;
+# every file in it creates its tables additively, and a panel runs without them
+# by degrading the feature that wanted them. A syntax error in a file somebody is
+# still writing must therefore cost that one feature, not the whole install.
+MIGRATIONS_APPLIED=0
+apply_migration_files() {
+    local applied="$1" mode="$2" prefix="${3:-}"
+    local f name recorded
+    while IFS= read -r f; do
+        name="$(basename "$f")"
+        recorded="$name"
+        [[ -z "$prefix" ]] || recorded="${prefix}/${name}"
+        if grep -qxF "$recorded" "$MIGRATIONS_STATE"; then
+            continue
+        fi
+        log_info "  -> ${recorded}"
+        if psql_vkai -f "$f" >/dev/null; then
+            echo "$recorded" >>"$MIGRATIONS_STATE"
+            applied=$((applied + 1))
+        elif [[ "$mode" == "fatal" ]]; then
+            die "Migration '${recorded}' failed. The database is half migrated - see ${INSTALL_LOG}."
+        else
+            log_warn "Staged migration '${recorded}' did not apply. It is not recorded, so it will be tried"
+            log_warn "again on the next install or upgrade. Whatever needs its tables is unavailable until"
+            log_warn "then; see ${INSTALL_LOG} for the error PostgreSQL gave."
+        fi
+    done
+    MIGRATIONS_APPLIED="$applied"
 }
 
 setup_redis() {
@@ -2247,7 +2335,10 @@ install_systemd_units() {
 
     systemctl daemon-reload
     systemctl enable vkai-api vkai-ui >/dev/null 2>&1
-    # The agent is optional: enabled by the operator, never by the installer.
+    # The agent is NOT enabled here. It is enabled and started by
+    # register_local_node, after the API is up, because it can only be useful
+    # once it has an enrolment token and something to enrol with - and a unit
+    # enabled before that would restart-loop until it got one.
     if [[ "$TLS_MODE" == "letsencrypt" && -f /etc/systemd/system/vkai-cert-renew.timer ]]; then
         systemctl enable --now vkai-cert-renew.timer >/dev/null 2>&1 ||
             log_warn "Could not enable vkai-cert-renew.timer; renew manually with 'vkai cert renew'."
@@ -2738,6 +2829,80 @@ start_services() {
     fi
 }
 
+# =============================================================================
+# 18c. The panel host becomes the first managed node
+#
+# Until this step the panel is a control plane with nothing under it: the
+# services run, an administrator can sign in, and there is not one machine to
+# create a website on - not even this one. aaPanel, which this product is
+# measured against, installs onto a VPS and manages THAT VPS. This step is what
+# makes that true here.
+#
+# It is deliberately NON FATAL. Everything above has already produced a working
+# panel; refusing to finish the install because the node could not be registered
+# would trade a panel that works and says what is missing for one that does not
+# exist. Every failure path below records why in ${NODE_STATUS}, which the final
+# table prints along with the single command that resumes the work.
+#
+# It runs AFTER start_services on purpose. The registration mints a single-use
+# enrolment token through the running API, because the API process owns the
+# certificate authority's state: it holds it in memory and rewrites the file on
+# every change, so a token written underneath it would be invisible to it and
+# then overwritten. The panel has to be up for the token to exist at all.
+# =============================================================================
+register_local_node() {
+    log_step "Registering this machine as the first managed node"
+
+    # The same value the node row holds: internal/localnode reads os.Hostname(),
+    # which is what "hostname" prints and not what "hostname -f" resolves to.
+    NODE_HOSTNAME="$(hostname 2>/dev/null || echo unknown)"
+
+    local bin="" candidate
+    for candidate in /usr/local/bin/vkai-cli "${CORE_DIR}/bin/vkai-cli"; do
+        if [[ -x "$candidate" ]]; then bin="$candidate"; break; fi
+    done
+    if [[ -z "$bin" ]]; then
+        NODE_STATUS="NOT REGISTERED - vkai-cli was not built on this machine"
+        log_warn "vkai-cli is missing, so this machine was not registered."
+        log_warn "Register it later with: sudo vkai node register"
+        return 0
+    fi
+
+    local out="" rc=0
+    out="$("$bin" node register --timeout 120s 2>&1)" || rc=$?
+
+    # The command's own output is the record of what happened; it goes into the
+    # install log line by line so a failure a week later can be read there.
+    local line
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then log_info "  ${line}"; fi
+    done <<<"$out"
+
+    NODE_ID="$(json_field_from_file "$NODE_RECORD_FILE" node_id)"
+    [[ -n "$NODE_ID" ]] || NODE_ID="(none)"
+
+    case "$rc" in
+        0)
+            NODE_STATUS="registered and its agent is enrolled"
+            log_info "This machine is under management (server ${NODE_ID})."
+            ;;
+        3)
+            # The row exists, the agent does not hold a certificate yet. That is
+            # the one half worth separating: the row is what an operator cannot
+            # safely reproduce by hand, the enrolment is a retry.
+            NODE_STATUS="registered, agent NOT enrolled - run: sudo vkai node register"
+            log_warn "This machine is registered but its agent has not enrolled."
+            log_warn "Retry with: sudo vkai node register"
+            ;;
+        *)
+            NODE_STATUS="NOT REGISTERED - run: sudo vkai node register"
+            log_warn "This machine could not be registered (exit ${rc})."
+            log_warn "The panel is installed and usable; register the node with: sudo vkai node register"
+            ;;
+    esac
+    return 0
+}
+
 install_vkai_cli() {
     local src="${SRC_DIR}/deploy/vkai.sh"
     [[ -f "$src" ]] || die "${src} not found"
@@ -2852,6 +3017,9 @@ DATA PATHS
   Backups           : ${WWW_BACKUP_DIR}
   Default site      : ${WWW_DEFAULT_DIR}
   Configuration     : ${ENV_FILE}
+  Agent settings    : ${AGENT_ENV_FILE}     (this node's agent: panel URL, state dir)
+  Node identity     : ${NODE_RECORD_FILE}     (which servers row is this machine)
+  Agent identity    : ${SSL_DIR}/agent      (this node's key and certificate)
   Version record    : ${VERSION_FILE}      (version ${VKAI_VERSION}, channel ${OPT_CHANNEL})
   Panel logs        : ${LOG_DIR}
   Per site logs     : ${LOG_SITES_DIR}/<domain>
@@ -2859,10 +3027,25 @@ DATA PATHS
   Temporary         : ${TMP_DIR}
   Install log       : ${INSTALL_LOG}
 
+THIS MACHINE IS THE FIRST MANAGED NODE
+  Node       : ${NODE_HOSTNAME} (${SERVER_IP})
+  Server ID  : ${NODE_ID}
+  State      : ${NODE_STATUS}
+  Role       : panel       (the machine this panel runs on)
+  Create a website, a database or a certificate here now - no second machine
+  is needed. Inspect or repair the node with:
+      vkai node list
+      sudo vkai node register
+  Add ANOTHER machine later (optional, this is not a precondition for anything):
+      1. In the panel: Servers -> Add agent, which mints a single-use token.
+      2. On that machine: install the agent, put the token in
+         VKAI_AGENT_ENROLMENT_TOKEN and start vkai-agent.
+      See docs/INSTALL.md and docs/AGENT_CHANNEL.md.
+
 SERVICES
   vkai-api   -> ${CURRENT_LINK}/core/bin/vkai-api   (loopback:${API_BIND_PORT})
   vkai-ui    -> ${CURRENT_LINK}/panel/.next/standalone/server.js (loopback:${UI_BIND_PORT})
-  vkai-agent -> ${CURRENT_LINK}/agent/bin/vkai-agent (optional, not enabled)
+  vkai-agent -> ${CURRENT_LINK}/agent/bin/vkai-agent (this node's agent, port ${AGENT_PORT})
   nginx      -> reverse proxy on port ${PANEL_PORT}, ACME challenge on port 80
   Database   : ${DB_NAME} / role ${DB_USER}
   Redis      : ${REDIS_SERVICE:-unknown}
@@ -2885,6 +3068,8 @@ THE "vkai" COMMAND
   vkai version             Installed version, channel and running release
   vkai upgrade --check     Is a newer release available? (changes nothing)
   vkai upgrade             Upgrade the panel, after showing what it will do
+  vkai node list           The machines this panel manages
+  vkai node register       Register/repair THIS machine as a managed node
   vkai backup              Back up the database and the configuration
   vkai update              Rebuild and restart
   vkai uninstall           Remove the panel
@@ -3049,6 +3234,9 @@ main() {
     setup_firewall
     request_acme_certificate
     start_services
+
+    # The panel is up. Now make the machine it runs on a node it manages.
+    register_local_node
 
     print_summary
     cleanup_bootstrap

@@ -49,14 +49,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/audit"
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/metrics"
 	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/ops"
 	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/pki"
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/reporter"
 	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/server"
 )
 
 const (
 	// AgentVersion is the agent protocol and build version.
-	AgentVersion = "2.0.0"
+	AgentVersion = "2.1.0"
 
 	// AgentName is the binary and systemd unit name of the node agent.
 	AgentName = "vkaid"
@@ -93,6 +96,11 @@ type Config struct {
 	EnrolmentToken string
 	Hostname       string
 	StatusInterval time.Duration
+	StatusJitter   float64
+	BufferSamples  int
+	AuditPath      string
+	LogRoots       []string
+	DiskRoots      []string
 	AllowRawExec   bool
 	PanelCAFile    string
 	PanelInsecure  bool
@@ -214,9 +222,32 @@ func run(logger *log.Logger) error {
 		manager.AgentID(), manager.Serial(), manager.NotAfter().Format(time.RFC3339),
 		manager.TrustAnchorFingerprint())
 
+	// The node's own record of what it was asked to do. It is opened before
+	// anything can be asked, and its failures never stop the agent: see
+	// audit.Open.
+	operationLog := audit.Open(audit.Options{
+		Path:     cfg.AuditPath,
+		AgentID:  manager.AgentID(),
+		Fallback: logger,
+	})
+	defer func() { _ = operationLog.Close() }()
+	if path := operationLog.Path(); path != "" {
+		logger.Printf("every operation is recorded locally in %s", path)
+	}
+
+	// One collector, shared between the periodic report and the panel's
+	// on-demand system.metrics call. CPU utilisation and network throughput are
+	// rates, and a shared collector means each is measured against the previous
+	// sample rather than against a sleep taken inside a request.
+	collector := metrics.NewCollector()
+
 	registry := ops.New(ops.Deps{
 		AllowRawExec: cfg.AllowRawExec,
 		Logger:       logger,
+		Collector:    collector,
+		Audit:        operationLog,
+		LogRoots:     cfg.LogRoots,
+		DiskRoots:    cfg.DiskRoots,
 		ApplyDenyList: func(serials []string) {
 			manager.ApplyDenyList(serials)
 		},
@@ -232,6 +263,7 @@ func run(logger *log.Logger) error {
 			}
 		},
 	})
+	logger.Printf("operations offered: %s", strings.Join(registry.Names(), ", "))
 
 	tlsConfig, err := manager.ServerTLSConfig()
 	if err != nil {
@@ -242,7 +274,7 @@ func run(logger *log.Logger) error {
 		TLSConfig: tlsConfig,
 		Registry:  registry,
 		Logger:    logger,
-		PeerName:  peerName,
+		Audit:     operationLog,
 	})
 	if err != nil {
 		return err
@@ -253,7 +285,7 @@ func run(logger *log.Logger) error {
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx) }()
-	go statusLoop(ctx, cfg, manager, logger)
+	go statusReporter(cfg, manager, collector, logger).Run(ctx)
 	go renewalLoop(ctx, cfg, manager, logger)
 
 	quit := make(chan os.Signal, 1)
@@ -293,33 +325,76 @@ func ensureIdentity(cfg Config, manager *pki.Manager, logger *log.Logger) error 
 	return nil
 }
 
-// statusLoop reports in on a timer. The report is signed with the agent's
-// private key; there is no shared secret in it and none in the headers.
-func statusLoop(ctx context.Context, cfg Config, manager *pki.Manager, logger *log.Logger) {
-	ticker := time.NewTicker(cfg.StatusInterval)
-	defer ticker.Stop()
+// statusPayload is what the agent sends to the panel on every cadence tick.
+//
+// The shape is additive: agent_version, hostname, timestamp, system_info and
+// metrics are the fields the panel has been reading, and everything new sits
+// beside them. The two that matter to an operator reading a dashboard are
+// "unavailable", which names the metric groups this node could not collect,
+// and "buffer", which says how much of this node's history is sitting
+// undelivered on the node and how much of it has already been lost.
+type statusPayload struct {
+	AgentVersion string         `json:"agent_version"`
+	Hostname     string         `json:"hostname"`
+	Timestamp    time.Time      `json:"timestamp"`
+	SystemInfo   ops.SystemInfo `json:"system_info"`
+	Metrics      ops.Metrics    `json:"metrics"`
+	Unavailable  []string       `json:"unavailable,omitempty"`
+	Buffer       reporter.Stats `json:"buffer"`
+}
 
-	report := func() {
-		payload := map[string]any{
-			"agent_version": AgentVersion,
-			"hostname":      cfg.Hostname,
-			"timestamp":     time.Now().UTC(),
-			"system_info":   ops.CollectSystemInfo(ctx, nil),
-			"metrics":       ops.CollectMetrics(ctx, nil),
-		}
-		if err := manager.StatusReport(payload); err != nil {
-			logger.Printf("status report failed: %v", err)
-		}
-	}
-	report()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			report()
-		}
-	}
+// statusReporter builds the loop that samples this host and delivers the
+// samples to the panel.
+//
+// It replaces a bare ticker whose failed reports were logged and thrown away.
+// Two things are different. The cadence is jittered, so a fleet installed by
+// one script does not report on the same second of every interval for the rest
+// of its life. And a report that cannot be delivered is queued rather than
+// discarded, up to a bound, so a panel that was down for an hour does not leave
+// an hour-shaped hole in the history of every node it manages.
+func statusReporter(cfg Config, manager *pki.Manager, collector *metrics.Collector, logger *log.Logger) *reporter.Reporter {
+	// What was missing from the previous sample, so a host that has been unable
+	// to read /proc/net/dev for a week does not write the same line into the
+	// journal twice a minute for a week.
+	lastMissing := ""
+	return reporter.New(reporter.Options{
+		Interval:   cfg.StatusInterval,
+		Jitter:     cfg.StatusJitter,
+		BufferSize: cfg.BufferSamples,
+		Logger:     logger,
+		Collect: func(ctx context.Context, stats reporter.Stats) any {
+			// One sample feeds both halves of the payload. Sampling twice would
+			// leave the second reading with no elapsed CPU time to measure
+			// against, and it would report - correctly, and uselessly - that it
+			// could not derive a percentage.
+			sample := collector.Sample(ctx)
+			if missing := strings.Join(sample.Unavailable(), ", "); missing != lastMissing {
+				switch {
+				case missing == "":
+					logger.Printf("every metric is being collected again")
+				default:
+					logger.Printf("this node cannot collect: %s. "+
+						"These are reported to the panel as unavailable, not as zero.", missing)
+				}
+				lastMissing = missing
+			}
+			return statusPayload{
+				AgentVersion: AgentVersion,
+				Hostname:     cfg.Hostname,
+				Timestamp:    time.Now().UTC(),
+				// The host description is rebuilt from the same sample on every
+				// tick rather than cached at startup, so a kernel upgrade or a
+				// resize is reflected without waiting for a restart.
+				SystemInfo:  ops.SystemInfoFrom(collector.CollectHost(), sample),
+				Metrics:     ops.FromSample(sample),
+				Unavailable: sample.Unavailable(),
+				Buffer:      stats,
+			}
+		},
+		Send: func(_ context.Context, payload any) error {
+			return manager.StatusReport(payload)
+		},
+	})
 }
 
 // renewalLoop rotates the certificate well before it expires. A failed
@@ -355,15 +430,6 @@ func renewalLoop(ctx context.Context, cfg Config, manager *pki.Manager, logger *
 			}
 		}
 	}
-}
-
-// peerName names the verified caller for the operation log.
-func peerName(r *http.Request) string {
-	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-		return ""
-	}
-	leaf := r.TLS.PeerCertificates[0]
-	return fmt.Sprintf("%s serial=%s", leaf.Subject.CommonName, strings.ToLower(leaf.SerialNumber.Text(16)))
 }
 
 // panelHTTPClient builds the client used for enrolment, renewal and status.
@@ -419,6 +485,18 @@ func envBool(names ...string) bool {
 	}
 }
 
+// splitRoots reads a colon separated list of directories, the way PATH is
+// written, so an operator setting one does not have to learn a new syntax.
+func splitRoots(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ":") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, filepath.Clean(part))
+		}
+	}
+	return out
+}
+
 func loadConfig() (Config, error) {
 	cfg := Config{
 		PanelURL:       strings.TrimRight(env("VKAI_PANEL_URL", "PANEL_URL"), "/"),
@@ -457,6 +535,56 @@ func loadConfig() (Config, error) {
 			return cfg, fmt.Errorf("VKAI_AGENT_STATUS_INTERVAL=%q is not a duration of at least 5s", raw)
 		}
 		cfg.StatusInterval = parsed
+	}
+
+	// The cadence is deliberately not exact. Every node in a fleet is installed
+	// by the same script and started within the same minute, and a ticker would
+	// keep them reporting on the same second of every interval forever, so the
+	// panel takes the whole fleet's work in one burst and then idles.
+	cfg.StatusJitter = reporter.DefaultJitter
+	if raw := env("VKAI_AGENT_STATUS_JITTER"); raw != "" {
+		parsed, err := strconv.ParseFloat(raw, 64)
+		if err != nil || parsed < 0 || parsed > 0.5 {
+			return cfg, fmt.Errorf("VKAI_AGENT_STATUS_JITTER=%q is not a fraction between 0 and 0.5", raw)
+		}
+		cfg.StatusJitter = parsed
+	}
+
+	// How many undelivered samples this node holds while the panel is
+	// unreachable. It is bounded because the alternative - keeping every sample
+	// until the panel returns - turns a panel outage into an out-of-memory kill
+	// on every managed server.
+	cfg.BufferSamples = reporter.DefaultBufferSize
+	if raw := env("VKAI_AGENT_BUFFER_SAMPLES"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100000 {
+			return cfg, fmt.Errorf("VKAI_AGENT_BUFFER_SAMPLES=%q is not a sample count between 1 and 100000", raw)
+		}
+		cfg.BufferSamples = parsed
+	}
+
+	cfg.AuditPath = env("VKAI_AGENT_AUDIT_LOG")
+	if cfg.AuditPath == "" {
+		cfg.AuditPath = audit.DefaultPath
+	}
+	if !filepath.IsAbs(cfg.AuditPath) {
+		return cfg, fmt.Errorf("VKAI_AGENT_AUDIT_LOG=%q is not an absolute path", cfg.AuditPath)
+	}
+
+	// The directories log.read and disk.usage are confined to. Widening them is
+	// a deployment decision - a panel that keeps sites somewhere unusual cannot
+	// read their logs otherwise - and "/" is refused, here and again in
+	// internal/ops, so a configuration mistake cannot turn "read a log file"
+	// back into "read any file on the host".
+	cfg.LogRoots = splitRoots(env("VKAI_AGENT_LOG_ROOTS"))
+	cfg.DiskRoots = splitRoots(env("VKAI_AGENT_DISK_ROOTS"))
+	for _, root := range append(append([]string{}, cfg.LogRoots...), cfg.DiskRoots...) {
+		if root == "/" {
+			return cfg, errors.New(`"/" cannot be a log or disk root: it would let the panel read every file on this host`)
+		}
+		if !filepath.IsAbs(root) {
+			return cfg, fmt.Errorf("%q is not an absolute path and cannot be a log or disk root", root)
+		}
 	}
 
 	cfg.Hostname = env("VKAI_AGENT_HOSTNAME")

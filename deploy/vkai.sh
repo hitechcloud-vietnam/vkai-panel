@@ -29,6 +29,11 @@ readonly BIN_DEPLOY="${PANEL_ROOT}/bin/vkai-deploy"
 readonly LOG_DIR="${PANEL_ROOT}/logs"
 readonly SSL_DIR="${PANEL_ROOT}/ssl"
 readonly ENV_FILE="${ETC_DIR}/.env"
+# Which servers row is this machine, and the agent's own settings. Both are
+# written by "vkai node register" and both survive a reinstall, because a
+# reinstall rewrites .env and leaves the rest of ${ETC_DIR} alone.
+readonly NODE_RECORD_FILE="${ETC_DIR}/node.json"
+readonly AGENT_ENV_FILE="${ETC_DIR}/agent.env"
 readonly SUMMARY_FILE="${ETC_DIR}/install-summary.txt"
 # What is installed, on which channel, since when. Written by deploy/install.sh
 # and rewritten by every successful upgrade, so it stays true even when the
@@ -150,12 +155,20 @@ ${BRAND_ORG}
 Usage: vkai <command> [arguments]
 
 Services
-  start                 Start ${SVC_API}, ${SVC_UI} and nginx
-  stop                  Stop ${SVC_UI} and ${SVC_API}
+  start                 Start ${SVC_API}, ${SVC_UI}, nginx, and ${SVC_AGENT}
+                        when this machine is registered as a node
+  stop                  Stop ${SVC_UI}, ${SVC_API} and ${SVC_AGENT}. nginx keeps
+                        running so the customer websites stay up
   restart               Restart everything
   status                Service status and machine resources
   logs <api|ui|agent|nginx|install> [-n N]
                         Follow a log (live by default)
+
+Managed nodes
+  node list             The machines this panel manages, and which one is this
+  node register         Register/repair THIS machine as a managed node: writes
+                        its row, enables ${SVC_AGENT} and enrols it. Idempotent.
+                        Add another machine from the panel: Servers -> Add agent.
 
 Panel access
   info                  Print the panel URL, port, entrance and data paths
@@ -219,11 +232,20 @@ redis_service() {
     printf 'redis'
 }
 
+# agent_is_enabled - the agent is part of the installation on the machine the
+# panel runs on, and absent on a panel that has not been registered as a node.
+# The service commands follow that: they move it when it is enabled and leave it
+# alone when it is not, rather than starting a unit that can only fail.
+agent_is_enabled() {
+    systemctl is-enabled --quiet "$SVC_AGENT" 2>/dev/null
+}
+
 cmd_start() {
     need_root start
     info "Starting ${BRAND_NAME}..."
     systemctl start "$SVC_API"
     systemctl start "$SVC_UI"
+    if agent_is_enabled; then systemctl start "$SVC_AGENT"; fi
     systemctl reload nginx 2>/dev/null || systemctl start nginx 2>/dev/null || warn "nginx did not start."
     cmd_status
 }
@@ -231,6 +253,7 @@ cmd_start() {
 cmd_stop() {
     need_root stop
     info "Stopping ${BRAND_NAME}..."
+    if agent_is_enabled; then systemctl stop "$SVC_AGENT" || true; fi
     systemctl stop "$SVC_UI"  || true
     systemctl stop "$SVC_API" || true
     info "Stopped. nginx keeps running so the customer websites stay up."
@@ -241,6 +264,7 @@ cmd_restart() {
     info "Restarting ${BRAND_NAME}..."
     systemctl restart "$SVC_API"
     systemctl restart "$SVC_UI"
+    if agent_is_enabled; then systemctl restart "$SVC_AGENT"; fi
     systemctl reload nginx 2>/dev/null || true
     cmd_status
 }
@@ -343,9 +367,23 @@ cmd_info() {
     printf '  Customer sites   : %s/<domain>\n' "$WWW_DOMAINS_DIR"
     printf '  Backups          : %s\n' "$WWW_BACKUP_DIR"
     printf '  Configuration    : %s\n' "$ENV_FILE"
+    printf '  Node identity    : %s\n' "$NODE_RECORD_FILE"
+    printf '  Agent settings   : %s\n' "$AGENT_ENV_FILE"
     printf '  Certificates     : %s\n' "$SSL_DIR"
     printf '  ACME webroot     : %s\n' "$ACME_CHALLENGE_DIR"
     printf '  Logs             : %s\n' "$LOG_DIR"
+    printf '\n%sThis machine as a managed node%s\n' "$C_BLUE" "$C_OFF"
+    local node_id=""
+    node_id="$(json_get "$NODE_RECORD_FILE" node_id || true)"
+    if [[ -n "$node_id" ]]; then
+        printf '  Node ID          : %s\n' "$node_id"
+        printf '  Agent            : %s\n' "$(svc_state "$SVC_AGENT")"
+        printf '  Nodes            : vkai node list\n'
+    else
+        printf '  %sNot registered%s - this panel manages nothing on this machine yet.\n' "$C_YELLOW" "$C_OFF"
+        printf '  Register it with : sudo vkai node register\n'
+    fi
+
     if [[ -f "$SUMMARY_FILE" ]]; then
         printf '\n  Installation summary: %s\n' "$SUMMARY_FILE"
     fi
@@ -1031,6 +1069,49 @@ cmd_uninstall() {
 }
 
 # -----------------------------------------------------------------------------
+# Managed nodes
+#
+# The machine the panel is installed on is the first managed node: installing
+# the panel is meant to be all it takes to create a website here, with no second
+# machine involved. These two commands are how an operator inspects that and
+# repairs it by hand when the install could not finish it.
+#
+# The work is in the Go binary, because registration has to measure this machine
+# and talk to the panel's certificate authority. This wrapper exists so that the
+# command is spelled the same as every other "vkai ..." and so that "register"
+# is refused early when it is not run as root.
+# -----------------------------------------------------------------------------
+cmd_node() {
+    local sub="${1:-list}"
+    if (( $# > 0 )); then shift; fi
+
+    case "$sub" in
+        list)
+            delegate_cli node list "$@"
+            ;;
+        register)
+            need_root "node register"
+            delegate_cli node register "$@"
+            ;;
+        -h|--help|help)
+            printf 'Usage: vkai node <list|register> [options]\n\n'
+            printf '  list        The machines this panel manages. The last column marks this one.\n'
+            printf '  register    Register/repair THIS machine: write its row, enable %s and\n' "$SVC_AGENT"
+            printf '              enrol it. Safe to run again; it never creates a second row.\n'
+            printf '              Exit 3 means the row is in place but the agent is not enrolled.\n\n'
+            printf 'Options for register (pass --help to the binary for the full list):\n'
+            printf '  --enrolment-token <t>  Use a token minted in the panel instead of minting one\n'
+            printf '  --panel-url <url>      Override the URL the local agent uses\n'
+            printf '  --skip-agent           Write the row only\n'
+            printf '  --rebind               Re-bind the identity after a restore onto new hardware\n'
+            ;;
+        *)
+            die "Unknown node command: ${sub}. Try: vkai node list | vkai node register"
+            ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
 # Domain commands are delegated to vkai-cli (the Go binary)
 # -----------------------------------------------------------------------------
 delegate_cli() {
@@ -1077,6 +1158,7 @@ main() {
             # backup commands of vkai-cli.
             delegate_cli backup "$@"
             ;;
+        node)       cmd_node "$@" ;;
         site|db|ssl|firewall|server|service)
             delegate_cli "$cmd" "$@"
             ;;

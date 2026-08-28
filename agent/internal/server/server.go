@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/audit"
 	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/ops"
 )
 
@@ -32,9 +33,12 @@ type Options struct {
 	TLSConfig *tls.Config
 	Registry  *ops.Registry
 	Logger    *log.Logger
-	// PeerName names the verified caller in the log. It is a function so the
-	// log line reports whichever certificate was actually presented.
-	PeerName func(*http.Request) string
+
+	// Audit is the node's own record of every operation. Every request that
+	// reaches the dispatcher produces an entry here - including the ones that
+	// were refused, which are usually the more interesting lines - naming the
+	// client certificate that asked.
+	Audit *audit.Log
 }
 
 // Server is the agent's HTTPS control listener.
@@ -99,30 +103,75 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) handleOperation(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	actor := actorOf(r)
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
 	if err != nil {
+		s.record(audit.Entry{
+			Actor: actor, Operation: name, Outcome: audit.OutcomeRefused,
+			Error: "the request body could not be read",
+		})
 		writeResponse(w, http.StatusBadRequest, ops.Response{OK: false, Error: "cannot read the request body"})
 		return
 	}
 
+	// The verified caller travels with the request, so an operation that runs a
+	// command or reads a file records who asked for it without being handed the
+	// identity separately - and without being able to claim a different one.
+	ctx := audit.WithActor(r.Context(), actor)
+
 	start := time.Now()
-	result, err := s.opts.Registry.Dispatch(r.Context(), name, body)
+	result, err := s.opts.Registry.Dispatch(ctx, name, body)
 	elapsed := time.Since(start)
 
+	entry := audit.Entry{
+		Actor:      actor,
+		Operation:  name,
+		Arguments:  string(body),
+		DurationMS: elapsed.Milliseconds(),
+	}
 	switch {
 	case errors.Is(err, ops.ErrUnknownOperation):
-		s.opts.Logger.Printf("operation refused: %s from %s: unknown", name, s.peer(r))
+		entry.Outcome, entry.Error = audit.OutcomeRefused, err.Error()
+		s.opts.Logger.Printf("operation refused: %s from %s: unknown", name, actor)
 		writeResponse(w, http.StatusNotFound, ops.Response{OK: false, Error: err.Error()})
 	case errors.Is(err, ops.ErrInvalidArgument):
-		s.opts.Logger.Printf("operation refused: %s from %s: %v", name, s.peer(r), err)
+		entry.Outcome, entry.Error = audit.OutcomeRefused, err.Error()
+		s.opts.Logger.Printf("operation refused: %s from %s: %v", name, actor, err)
 		writeResponse(w, http.StatusBadRequest, ops.Response{OK: false, Error: err.Error()})
 	case err != nil:
-		s.opts.Logger.Printf("operation failed: %s from %s after %s: %v", name, s.peer(r), elapsed, err)
+		entry.Outcome, entry.Error = audit.OutcomeFailed, err.Error()
+		s.opts.Logger.Printf("operation failed: %s from %s after %s: %v", name, actor, elapsed, err)
 		writeResponse(w, http.StatusInternalServerError, ops.Response{OK: false, Error: err.Error()})
 	default:
-		s.opts.Logger.Printf("operation ok: %s from %s in %s", name, s.peer(r), elapsed)
+		entry.Outcome = audit.OutcomeOK
+		s.opts.Logger.Printf("operation ok: %s from %s in %s", name, actor, elapsed)
 		writeResponse(w, http.StatusOK, ops.Response{OK: true, Result: result})
 	}
+	s.record(entry)
+}
+
+func (s *Server) record(entry audit.Entry) {
+	if s.opts.Audit == nil {
+		return
+	}
+	s.opts.Audit.Record(entry)
+}
+
+// actorOf names the caller from the certificate that completed the handshake.
+// Nothing reaches this handler without one, because the listener requires a
+// client certificate and the verification callback refuses anything not issued
+// by the panel CA with the panel role.
+func actorOf(r *http.Request) audit.Actor {
+	actor := audit.Actor{Address: r.RemoteAddr}
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		actor.Name = "unauthenticated"
+		return actor
+	}
+	leaf := r.TLS.PeerCertificates[0]
+	actor.Name = leaf.Subject.CommonName
+	actor.Serial = strings.ToLower(leaf.SerialNumber.Text(16))
+	return actor
 }
 
 func (s *Server) handleList(w http.ResponseWriter, _ *http.Request) {
@@ -137,21 +186,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // including the /execute path this agent used to serve.
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSuffix(r.URL.Path, "/") == "/execute" {
-		s.opts.Logger.Printf("SECURITY: a caller asked for the removed /execute endpoint from %s", s.peer(r))
+		actor := actorOf(r)
+		s.opts.Logger.Printf("SECURITY: a caller asked for the removed /execute endpoint from %s", actor)
+		s.record(audit.Entry{
+			Actor: actor, Operation: "execute", Outcome: audit.OutcomeRefused,
+			Error: "the arbitrary-command endpoint was removed in agent 2.0",
+		})
 	}
 	writeResponse(w, http.StatusNotFound, ops.Response{OK: false, Error: "no such endpoint"})
-}
-
-func (s *Server) peer(r *http.Request) string {
-	if s.opts.PeerName != nil {
-		if name := s.opts.PeerName(r); name != "" {
-			return name
-		}
-	}
-	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-		return r.TLS.PeerCertificates[0].Subject.CommonName
-	}
-	return "unknown"
 }
 
 func writeResponse(w http.ResponseWriter, status int, body ops.Response) {

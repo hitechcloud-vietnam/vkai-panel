@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -17,6 +19,9 @@ type ServerHandler struct {
 }
 
 func NewServerHandler(serverService *service.ServerService, logger *zap.Logger) *ServerHandler {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &ServerHandler{serverService: serverService, logger: logger}
 }
 
@@ -41,9 +46,8 @@ func (h *ServerHandler) Create(c *gin.Context) {
 func (h *ServerHandler) Get(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		utils.BadRequest(c, "Invalid server ID")
+	id, ok := h.resolveServerID(c)
+	if !ok {
 		return
 	}
 
@@ -53,7 +57,7 @@ func (h *ServerHandler) Get(c *gin.Context) {
 		return
 	}
 
-	utils.Success(c, server)
+	utils.Success(c, h.withLocalNode(c, []models.Server{*server})[0])
 }
 
 func (h *ServerHandler) List(c *gin.Context) {
@@ -72,15 +76,14 @@ func (h *ServerHandler) List(c *gin.Context) {
 		return
 	}
 
-	utils.Paginated(c, servers, total, params.Page, params.PerPage)
+	utils.Paginated(c, h.withLocalNode(c, servers), total, params.Page, params.PerPage)
 }
 
 func (h *ServerHandler) Update(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		utils.BadRequest(c, "Invalid server ID")
+	id, ok := h.resolveServerID(c)
+	if !ok {
 		return
 	}
 
@@ -138,9 +141,17 @@ func (h *ServerHandler) Update(c *gin.Context) {
 func (h *ServerHandler) Delete(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		utils.BadRequest(c, "Invalid server ID")
+	id, ok := h.resolveServerID(c)
+	if !ok {
+		return
+	}
+
+	// The machine the panel is running on cannot be removed from its own
+	// inventory. Deleting the row would not stop the panel running there; it
+	// would only leave the sites, databases and certificates on this host with
+	// no node to hang off, and the next start would register it again anyway.
+	if localID, err := h.serverService.LocalNodeID(c.Request.Context()); err == nil && localID == id {
+		utils.Conflict(c, "This node is the machine the panel is installed on and cannot be deleted")
 		return
 	}
 
@@ -153,9 +164,8 @@ func (h *ServerHandler) Delete(c *gin.Context) {
 }
 
 func (h *ServerHandler) GetMetrics(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		utils.BadRequest(c, "Invalid server ID")
+	id, ok := h.resolveServerID(c)
+	if !ok {
 		return
 	}
 
@@ -166,4 +176,86 @@ func (h *ServerHandler) GetMetrics(c *gin.Context) {
 	}
 
 	utils.Success(c, metrics)
+}
+
+// ============================================================
+// THE PANEL HOST AMONG THE SERVERS
+//
+// The machine the panel is installed on is a node like any other, so it is
+// listed and fetched through the same routes. Two things are added here and
+// nothing is changed:
+//
+//   - the identifier "local" in place of a UUID, so a client that does not yet
+//     know the node id can ask for the machine it is talking to;
+//   - a "local_node" object alongside the server, present only on that node.
+//
+// Both are additive. The server object keeps every field it had, in the same
+// place, so an existing client sees exactly what it saw before. That is also
+// why no new route was introduced: a path segment beside /servers/:id would
+// have to be registered in the router, and the alias needs nothing.
+// ============================================================
+
+// localServerAlias is the identifier that means "the machine this panel is
+// installed on" wherever a server id is accepted.
+const localServerAlias = "local"
+
+// serverView is a server plus, when it is the panel host, what is known about
+// that claim. The embedded pointer promotes every field of models.Server into
+// the same JSON object it produced before, so this is an added key rather than
+// a changed shape.
+type serverView struct {
+	*models.Server
+	LocalNode *service.LocalNodeStatus `json:"local_node,omitempty"`
+}
+
+// resolveServerID reads the :id parameter, accepting the "local" alias. It
+// writes the error response itself and returns false when it did, so callers
+// stay a single early return.
+func (h *ServerHandler) resolveServerID(c *gin.Context) (uuid.UUID, bool) {
+	raw := strings.TrimSpace(c.Param("id"))
+	if strings.EqualFold(raw, localServerAlias) {
+		id, err := h.serverService.LocalNodeID(c.Request.Context())
+		if err != nil {
+			utils.NotFound(c, "This panel host is not registered as a managed node")
+			return uuid.Nil, false
+		}
+		return id, true
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		utils.BadRequest(c, "Invalid server ID")
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// withLocalNode attaches the local-node status to whichever of these servers is
+// the machine this panel runs on.
+//
+// The status is fetched once for the whole page rather than per row, because at
+// most one row can be it. A panel that cannot answer - no local node, an
+// unmigrated database, an unreadable identity - attaches nothing: the local
+// node is extra information about a server, never a precondition for listing
+// it.
+func (h *ServerHandler) withLocalNode(c *gin.Context, servers []models.Server) []serverView {
+	views := make([]serverView, len(servers))
+	for i := range servers {
+		views[i] = serverView{Server: &servers[i]}
+	}
+
+	status, err := h.serverService.LocalNodeStatus(c.Request.Context())
+	if err != nil {
+		h.logger.Debug("Servers: the local node could not be described", zap.Error(err))
+		return views
+	}
+	if status == nil || !status.Registered {
+		return views
+	}
+	for i := range views {
+		if views[i].Server.ID == status.NodeID {
+			views[i].LocalNode = status
+			break
+		}
+	}
+	return views
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Server, Plus, RefreshCw, Settings, Trash2, Edit } from 'lucide-react';
 import { clusterApi } from '@/services/api';
 
@@ -181,6 +182,39 @@ export default function ClustersPage() {
             <Plus className="h-4 w-4" />
             Create Cluster
           </button>
+        </div>
+      </div>
+
+      {/*
+        Clustering is a layer, not a prerequisite. An operator who arrives here
+        from the menu should learn that before reading four empty tables, or
+        they will conclude the panel needs a cluster before it can host
+        anything - which is exactly backwards.
+      */}
+      <div className={`${CARD} px-5 py-4`}>
+        <h2 className="text-sm font-semibold text-gray-900">
+          An optional layer for several machines
+        </h2>
+        <p className="mt-1 max-w-3xl text-sm text-gray-600">
+          This panel already manages the machine it runs on, and every hosting feature -
+          websites, databases, certificates - works on that one machine. Clusters, load
+          balancers and HA pairs are what you add once you have more than one machine and
+          want to spread load or fail over between them. Nothing here is required to run a
+          site.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Link
+            href="/servers"
+            className="rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            Manage servers
+          </Link>
+          <Link
+            href="/servers/add"
+            className="rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            Add a machine first
+          </Link>
         </div>
       </div>
 

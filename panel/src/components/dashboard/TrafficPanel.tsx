@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { LineChart as LineChartIcon } from 'lucide-react';
 import { colors } from '@/lib/brand';
+import { Unavailable } from '@/components/Unavailable';
 import { Skeleton, StateMessage } from './StatCard';
 
 /**
@@ -31,8 +32,10 @@ export interface TrafficPoint {
 
 export interface TrafficMetric {
   label: string;
-  /** Chuoi da dinh dang, `null` khi API chua tra truong nay. */
+  /** Formatted string; `null` when the API has not reported this field. */
   value: string | null;
+  /** Why the figure is missing. Shown in a tooltip in place of the value. */
+  reason?: string;
 }
 
 export interface TrafficSeries {
@@ -123,7 +126,13 @@ export default function TrafficPanel({
               <div key={`${metric?.label || 'metric'}-${index}`} className="min-w-0">
                 <p className="truncate text-xs text-gray-500">{metric?.label}</p>
                 <p className="mt-1 truncate text-base font-semibold text-gray-900">
-                  {metric?.value || '—'}
+                  {metric?.value ? (
+                    metric.value
+                  ) : (
+                    <Unavailable
+                      reason={metric?.reason || 'Chưa có dữ liệu: API chưa trả về số liệu này.'}
+                    />
+                  )}
                 </p>
               </div>
             ))}
