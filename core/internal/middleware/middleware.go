@@ -213,7 +213,11 @@ func RateLimitWith(limit int, window time.Duration) gin.HandlerFunc {
 	rl := newRateLimiter(limit, window)
 
 	return func(c *gin.Context) {
-		key := c.ClientIP() + "|" + c.FullPath()
+		// AuthClientIP, not c.ClientIP: SetTrustedProxies is never called on
+		// this engine, so gin honours whatever X-Forwarded-For the caller
+		// sends. A limiter keyed on a value the caller chooses counts to one
+		// forever.
+		key := AuthClientIP(c) + "|" + c.FullPath()
 		if !rl.allow(key) {
 			utils.RateLimit(c)
 			c.Abort()
@@ -223,8 +227,23 @@ func RateLimitWith(limit int, window time.Duration) gin.HandlerFunc {
 	}
 }
 
-// AuthRateLimit is the strict budget used for login and refresh: five attempts
-// per IP per fifteen minutes.
+// AuthRateLimit is the original strict budget for login and refresh: five
+// attempts per address per fifteen minutes, counted in this process.
+//
+// Superseded by ProtectCredentialEndpoints, which is what actually defends the
+// credential endpoints now. This one has three problems that a single counter
+// always has:
+//
+//   - it is per process, so a two-instance deployment allows ten attempts, not
+//     five, and neither instance can see the other's;
+//   - it is a hard cutoff, which hands an attacker a denial of service against
+//     any address they can make requests from;
+//   - it counts requests rather than failures, so a busy legitimate user is
+//     charged for their successes.
+//
+// It is kept, unchanged, because internal/handler/router.go still installs it
+// and because a second, cruder ceiling in front of the real one costs nothing.
+// New credential endpoints should not reach for it.
 func AuthRateLimit() gin.HandlerFunc {
 	return RateLimitWith(5, 15*time.Minute)
 }

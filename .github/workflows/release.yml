@@ -1,31 +1,186 @@
 name: Release
 
+# Cutting a release is one action: change VERSION on main.
+#
+#   1. On a side branch: edit VERSION, run "make sync-version", rename the
+#      Unreleased section of CHANGELOG.md to "## [X.Y.Z] - YYYY-MM-DD".
+#   2. Merge the pull request. The "Version Check" workflow has already refused
+#      any pull request whose VERSION is not greater than the latest tag.
+#   3. This workflow reads VERSION, refuses to run if the tag already exists,
+#      builds one bare-metal package per architecture, publishes SHA256SUMS, the
+#      GitHub Release (with that version's changelog section as the notes) and
+#      the machine-readable manifests the in-panel upgrade client reads.
+#
+# Nothing here invents a version: VERSION at the repository root is the single
+# source of truth, and "make check-version-sync" proves the Go binaries and the
+# UI bundle carry the same one.
+
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    paths:
+      - VERSION
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and validate everything but publish nothing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+# Two releases must never build at once: they would race for the same tag.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
+env:
+  # Every architecture a release is built for, and the one whose manifest is
+  # published under the plain name manifest.json. Keep in step with the build
+  # matrix below.
+  ARCHES: amd64 arm64
+  REFERENCE_ARCH: amd64
+
 jobs:
-  build:
-    name: Build Release Assets
+  preflight:
+    name: Preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+      min_upgrade_from: ${{ steps.notes.outputs.min_upgrade_from }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Every tag, so "does this version already exist" can be answered.
+          fetch-depth: 0
+
+      - name: Read VERSION
+        id: read
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ -z "$VERSION" ]; then
+            echo "::error file=VERSION::VERSION is empty."
+            exit 1
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error file=VERSION::'$VERSION' is not a semantic version (MAJOR.MINOR.PATCH)."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version $VERSION."
+
+      # A published release is immutable for everyone who already downloaded it.
+      # Re-cutting a version would hand two different tarballs the same name.
+      - name: Refuse to release a version that already exists
+        env:
+          TAG: ${{ steps.read.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::error file=VERSION::Tag ${TAG} already exists. Bump VERSION to cut a new release."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error file=VERSION::Tag ${TAG} already exists on the remote. Bump VERSION to cut a new release."
+            exit 1
+          fi
+          echo "Tag ${TAG} is free."
+
+      - name: Check VERSION is newer than the latest tag
+        env:
+          VERSION: ${{ steps.read.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The latest tag by SEMANTIC order, not by "sort -V", which puts
+          # v1.0.0-rc.1 after v1.0.0. Tags that are not plain semver are ignored.
+          LATEST=""
+          for t in $(git tag --list 'v*' | sed 's/^v//'); do
+            printf '%s' "$t" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || continue
+            if [ -z "$LATEST" ] ||
+               [ "$(awk -v a="$t" -v b="$LATEST" -f .github/workflows/semver-cmp.awk)" = "1" ]; then
+              LATEST="$t"
+            fi
+          done
+          if [ -z "$LATEST" ]; then
+            echo "No previous tag; ${VERSION} is the first release."
+            exit 0
+          fi
+          CMP="$(awk -v a="$VERSION" -v b="$LATEST" -f .github/workflows/semver-cmp.awk)"
+          if [ "$CMP" != "1" ]; then
+            echo "::error file=VERSION::VERSION is ${VERSION}, which is not newer than the latest tag v${LATEST}."
+            exit 1
+          fi
+          echo "${VERSION} is newer than v${LATEST}."
+
+      # A release without notes is a release nobody can decide whether to take.
+      - name: Extract the changelog section
+        id: notes
+        env:
+          VERSION: ${{ steps.read.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { inside = 1; next }
+            inside && /^## \[/ { exit }
+            inside { print }
+          ' CHANGELOG.md \
+          | sed -e '/./,$!d' \
+          | tac | sed -e '/./,$!d' | tac > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md has no '## [${VERSION}]' section. Rename the Unreleased section before releasing."
+            exit 1
+          fi
+
+          # The oldest version that may upgrade straight to this one. Declared in
+          # the changelog section as "<!-- min-upgrade-from: X.Y.Z -->", because
+          # the person who writes the breaking migration is the one who knows.
+          MIN="$(sed -n 's/.*<!--[[:space:]]*min-upgrade-from:[[:space:]]*\([0-9][0-9A-Za-z.+-]*\)[[:space:]]*-->.*/\1/p' release-notes.md | head -n1)"
+          if [ -z "$MIN" ]; then
+            MIN="0.0.0"
+            echo "No min-upgrade-from declared; any older version may upgrade directly."
+          fi
+          echo "min_upgrade_from=$MIN" >> "$GITHUB_OUTPUT"
+          echo "----- release notes -----"
+          cat release-notes.md
+
+      - name: Check every copy of the version agrees
+        run: make check-version-sync
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          if-no-files-found: error
+          path: release-notes.md
+
+  build:
+    name: Package (linux/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: preflight
     strategy:
-      fail-fast: false
+      # A release that ships only half its architectures is worse than no
+      # release: the manifest would point at a tarball that is not there.
+      fail-fast: true
       matrix:
-        os: [linux, darwin, windows]
         arch: [amd64, arm64]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Decrypt source
+        uses: ./.github/actions/decrypt-source
+        env:
+          VKAI_CRYPT_KEY: ${{ secrets.VKAI_CRYPT_KEY }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -34,119 +189,247 @@ jobs:
           cache: true
           cache-dependency-path: core/go.sum
 
-      - name: Build Core API
-        working-directory: core
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: '0'
-        run: |
-          set -euo pipefail
-          EXT=""; [ "${{ matrix.os }}" = "windows" ] && EXT=".exe"
-          # ./cmd/migrate does not exist and never did; only api and cli do.
-          go build -o "vkai-api-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/api
-          go build -o "vkai-cli-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/cli
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: panel/package-lock.json
 
-      - name: Build Agent
-        working-directory: agent
+      # One Makefile target, the same one a developer runs, so the released
+      # package cannot differ in layout from a locally built one.
+      - name: Build the release package
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: '0'
-        run: |
-          set -euo pipefail
-          EXT=""; [ "${{ matrix.os }}" = "windows" ] && EXT=".exe"
-          # The agent's main package lives at ./cmd, not ./cmd/agent.
-          go build -o "vkaid-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd
+          # NEXT_PUBLIC_* is baked into the browser bundle at build time. Empty
+          # means "same origin", which is how the panel's reverse proxy serves it.
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || '' }}
+        run: make package GOOS=linux GOARCH=${{ matrix.arch }}
 
-      - name: Upload artifacts
+      - name: Upload the package
         uses: actions/upload-artifact@v4
         with:
-          name: vkai-${{ matrix.os }}-${{ matrix.arch }}
+          name: package-linux-${{ matrix.arch }}
           if-no-files-found: error
-          path: |
-            core/vkai-api-${{ matrix.os }}-${{ matrix.arch }}*
-            core/vkai-cli-${{ matrix.os }}-${{ matrix.arch }}*
-            agent/vkaid-${{ matrix.os }}-${{ matrix.arch }}*
+          retention-days: 7
+          path: vkai-panel-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
 
   publish:
     name: Publish Release
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: build
+    timeout-minutes: 20
+    needs: [preflight, build]
+    if: ${{ !inputs.dry_run }}
     permissions:
       contents: write
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      TAG: ${{ needs.preflight.outputs.tag }}
+      MIN_UPGRADE_FROM: ${{ needs.preflight.outputs.min_upgrade_from }}
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
 
-      - name: Download all artifacts
+    steps:
+      - name: Download every artifact
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Create release archives
+      - name: Collect the release assets
         run: |
           set -euo pipefail
           mkdir -p release
-          for d in artifacts/*/; do
-            name=$(basename "$d")
-            tar -czf "release/${name}.tar.gz" -C "$d" .
-          done
-          # SHA256SUMS duoc tao trong thu muc release/ de dong tong kiem tra chi
-          # chua ten tep tran ("vkai-linux-amd64.tar.gz"), dung dinh dang ma
-          # `sha256sum -c SHA256SUMS` doc duoc sau khi nguoi dung tai ve.
-          ( cd release && sha256sum ./*.tar.gz | sed 's#\./##' > SHA256SUMS )
-          cat release/SHA256SUMS
+          find artifacts -name 'vkai-panel-*.tar.gz' -exec cp {} release/ \;
+          cp artifacts/release-notes/release-notes.md release-notes.md
           ls -l release
 
-      # Replaces actions/create-release@v1 + 12x actions/upload-release-asset@v1.
-      # Both are archived Node12 actions that GitHub-hosted runners refuse to run,
-      # and the upload steps referenced needs.release.outputs.upload_url, which was
-      # always empty because the release job declared no outputs.
-      - name: Publish GitHub Release
+      # Plain file names, so "sha256sum -c SHA256SUMS" works in the directory the
+      # operator downloaded the tarballs into.
+      - name: Produce SHA256SUMS
+        run: |
+          set -euo pipefail
+          ( cd release && sha256sum ./*.tar.gz | sed 's#\./##' > SHA256SUMS )
+          cat release/SHA256SUMS
+
+      # The upgrade manifest. core/internal/upgrade reads exactly these field
+      # names - version, released_at, min_upgrade_from, tarball_url, sha256,
+      # changelog_url - so they are a contract: add fields, never rename one.
+      - name: Build the release manifests
+        run: |
+          set -euo pipefail
+          RELEASED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          DOWNLOAD="${GITHUB_SERVER_URL}/${REPO}/releases/download/${TAG}"
+
+          for ARCH in $ARCHES; do
+            FILE="vkai-panel-${VERSION}-linux-${ARCH}.tar.gz"
+            test -f "release/${FILE}" || { echo "::error::release/${FILE} was not built"; exit 1; }
+            SHA="$(sha256sum "release/${FILE}" | cut -d' ' -f1)"
+            SIZE="$(stat -c%s "release/${FILE}")"
+
+            jq -n \
+              --arg version "$VERSION" \
+              --arg tag "$TAG" \
+              --arg released_at "$RELEASED_AT" \
+              --arg min_upgrade_from "$MIN_UPGRADE_FROM" \
+              --arg os linux \
+              --arg arch "$ARCH" \
+              --arg tarball_name "$FILE" \
+              --arg tarball_url "${DOWNLOAD}/${FILE}" \
+              --argjson tarball_size "$SIZE" \
+              --arg sha256 "$SHA" \
+              --arg sha256sums_url "${DOWNLOAD}/SHA256SUMS" \
+              --arg changelog_url "${GITHUB_SERVER_URL}/${REPO}/blob/${TAG}/CHANGELOG.md" \
+              --arg release_notes_url "${GITHUB_SERVER_URL}/${REPO}/releases/tag/${TAG}" \
+              --rawfile changelog_markdown release-notes.md \
+              '{
+                 schema_version: 1,
+                 product: "vkai-panel",
+                 channel: "stable",
+                 version: $version,
+                 tag: $tag,
+                 released_at: $released_at,
+                 min_upgrade_from: $min_upgrade_from,
+                 os: $os,
+                 arch: $arch,
+                 tarball_name: $tarball_name,
+                 tarball_url: $tarball_url,
+                 tarball_size: $tarball_size,
+                 sha256: $sha256,
+                 sha256sums_url: $sha256sums_url,
+                 changelog_url: $changelog_url,
+                 release_notes_url: $release_notes_url,
+                 changelog_markdown: $changelog_markdown
+               }' > "release/manifest-linux-${ARCH}.json"
+          done
+
+          # manifest.json is the reference architecture's manifest - identical
+          # field names, so a client that knows nothing about architectures still
+          # finds a working tarball_url - plus an "artifacts" list holding every
+          # architecture for a client that does. The reference manifest must come
+          # first, because the merge below takes its fields.
+          ORDERED="release/manifest-linux-${REFERENCE_ARCH}.json"
+          for ARCH in $ARCHES; do
+            [ "$ARCH" = "$REFERENCE_ARCH" ] && continue
+            ORDERED="$ORDERED release/manifest-linux-${ARCH}.json"
+          done
+
+          # shellcheck disable=SC2086
+          jq -s '.[0] + {
+                   default_platform: ("linux/" + .[0].arch),
+                   artifacts: [ .[] | {os, arch, tarball_name, tarball_url, tarball_size, sha256} ]
+                 }' $ORDERED > release/manifest.json
+
+          jq . release/manifest.json
+
+      # The history feed. min_upgrade_from can refuse a jump; without the history
+      # the upgrade client could only quote that refusal back at the operator
+      # instead of naming the intermediate release to install first. Best effort
+      # by design: a release must never fail because an older asset could not be
+      # fetched, so every feed contains at least this release.
+      - name: Build the release history feeds
+        run: |
+          set -euo pipefail
+
+          # $1 = asset name to collect from earlier releases
+          # $2 = this release's manifest
+          # $3 = feed file to write
+          collect() {
+            local name="$1" current="$2" out="$3" dir ids id n=0
+            dir="history/${name%.json}"
+            rm -rf "$dir"; mkdir -p "$dir"
+            cp "$current" "$dir/000-current.json"
+
+            set +e
+            ids="$(gh api --paginate "repos/${REPO}/releases" \
+                     --jq ".[] | select(.draft == false) | .assets[] | select(.name == \"${name}\") | .id" 2>/dev/null)"
+            for id in $ids; do
+              n=$((n + 1))
+              if ! gh api -H 'Accept: application/octet-stream' \
+                     "repos/${REPO}/releases/assets/${id}" > "$dir/$(printf '%03d' "$n").json" 2>/dev/null; then
+                rm -f "$dir/$(printf '%03d' "$n").json"
+              fi
+            done
+            set -e
+
+            jq -s '{ releases: (map(select(.version != null))
+                                | unique_by(.version)
+                                | sort_by(.released_at)
+                                | reverse) }' "$dir"/*.json > "$out"
+          }
+
+          for ARCH in $ARCHES; do
+            collect "manifest-linux-${ARCH}.json" \
+                    "release/manifest-linux-${ARCH}.json" \
+                    "release/releases-linux-${ARCH}.json"
+          done
+          collect "manifest.json" "release/manifest.json" "release/releases.json"
+
+          jq '.releases | map(.version)' release/releases.json
+
+      - name: Assemble the release notes
+        run: |
+          set -euo pipefail
+          {
+            cat release-notes.md
+            cat <<EOF
+
+          ---
+
+          ## Install
+
+          \`\`\`bash
+          curl -fsSL ${GITHUB_SERVER_URL}/${REPO}/raw/${TAG}/deploy/install.sh | sudo bash
+          \`\`\`
+
+          ## Upgrade an existing installation
+
+          \`\`\`bash
+          sudo vkai upgrade
+          \`\`\`
+
+          ## Verify a download
+
+          \`\`\`bash
+          sha256sum -c SHA256SUMS
+          \`\`\`
+
+          ## Release manifest
+
+          The in-panel upgrade client reads \`manifest.json\` (linux/amd64) or
+          \`manifest-linux-<arch>.json\`; \`releases.json\` carries the history.
+          The newest release always answers at:
+
+              ${GITHUB_SERVER_URL}/${REPO}/releases/latest/download/manifest.json
+              ${GITHUB_SERVER_URL}/${REPO}/releases/latest/download/releases.json
+
+          ## Documentation
+
+          - [Deployment Guide](${GITHUB_SERVER_URL}/${REPO}/blob/${TAG}/docs/DEPLOYMENT.md)
+          - [User Guide](${GITHUB_SERVER_URL}/${REPO}/blob/${TAG}/docs/USER_GUIDE.md)
+          - [API Documentation](${GITHUB_SERVER_URL}/${REPO}/blob/${TAG}/docs/API.md)
+          - [Changelog](${GITHUB_SERVER_URL}/${REPO}/blob/${TAG}/CHANGELOG.md)
+          EOF
+          } > release-body.md
+          cat release-body.md
+
+      # Creates the tag as well: the release is cut from VERSION, not from a tag
+      # someone pushed by hand.
+      - name: Publish the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: true
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.TAG }}
+          body_path: release-body.md
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(needs.preflight.outputs.version, '-') }}
+          fail_on_unmatched_files: true
           files: |
             release/*.tar.gz
             release/SHA256SUMS
-          body: |
-            ## Installation
-
-            ### Using Install Script
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/hitechcloud-vietnam/vkai-panel/main/deploy/install.sh | sudo bash
-            ```
-
-            ### Manual Installation
-            See the [Deployment Guide](https://github.com/hitechcloud-vietnam/vkai-panel/blob/main/docs/DEPLOYMENT.md).
-
-            ### Verify the download
-            ```bash
-            sha256sum -c SHA256SUMS
-            ```
-
-            VKAI Panel chay TRAN tren Linux (binary Go + Next.js standalone +
-            systemd). Khong con image Docker cho ban than panel; Docker trong
-            panel la tinh nang de quan ly container cua ban.
-
-            ## Documentation
-
-            - [API Documentation](https://github.com/hitechcloud-vietnam/vkai-panel/blob/main/docs/API.md)
-            - [User Guide](https://github.com/hitechcloud-vietnam/vkai-panel/blob/main/docs/USER_GUIDE.md)
-            - [Developer Guide](https://github.com/hitechcloud-vietnam/vkai-panel/blob/main/docs/DEVELOPER_GUIDE.md)
-            - [Deployment Guide](https://github.com/hitechcloud-vietnam/vkai-panel/blob/main/docs/DEPLOYMENT.md)
-
-            ## Support
-
-            - [GitHub Issues](https://github.com/hitechcloud-vietnam/vkai-panel/issues)
-            - [GitHub Discussions](https://github.com/hitechcloud-vietnam/vkai-panel/discussions)
-            - [Email](mailto:support@hitechcloud.vn)
+            release/manifest.json
+            release/manifest-linux-amd64.json
+            release/manifest-linux-arm64.json
+            release/releases.json
+            release/releases-linux-amd64.json
+            release/releases-linux-arm64.json

@@ -1,160 +1,263 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to VKAI Panel are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## How a release is cut
+
+The file `VERSION` at the repository root is the single source of truth for the
+product version. Everything else - the Go binaries, the UI bundle,
+`panel/package.json`, the release tag, the release manifest - is derived from it.
+
+On a side branch:
+
+1. Edit `VERSION` to the new version.
+2. Run `make sync-version`, which propagates it into
+   `core/internal/version/version_default.go` and `panel/package.json`.
+   `make check-version-sync` fails if any copy has drifted, and the **Version
+   Check** workflow runs it on every pull request that touches `core/`,
+   `panel/`, `agent/` or `deploy/`.
+3. Rename the `## [Unreleased]` heading below to `## [X.Y.Z] - YYYY-MM-DD` and
+   open a fresh, empty `## [Unreleased]` section above it.
+4. If this release cannot be installed directly on top of arbitrarily old
+   installations - a migration or a config rewrite that only understands the
+   shape a particular predecessor left behind - declare the oldest version that
+   may upgrade straight to it, as the first line of the section:
+
+   ```
+   <!-- min-upgrade-from: 1.2.0 -->
+   ```
+
+   With no such line, any older installation may upgrade directly
+   (`min_upgrade_from: "0.0.0"` in the manifest). The in-panel upgrade client
+   refuses a jump that this line forbids and names the release to install first.
+5. Open the pull request, get it reviewed, merge it into `main`.
+
+Merging is the release. The **Release** workflow sees `VERSION` change on `main`
+and then:
+
+- refuses to run if the tag `vX.Y.Z` already exists (a published release is
+  immutable for everyone who has already downloaded it);
+- refuses to run if `VERSION` is not newer than the latest tag, or if this file
+  has no `## [X.Y.Z]` section;
+- builds one bare-metal package per architecture with `make package`;
+- publishes the tarballs, `SHA256SUMS`, this section as the release notes, and
+  the machine-readable manifests the in-panel upgrade client reads
+  (`manifest.json`, `manifest-linux-<arch>.json`, `releases.json`).
+
+Nothing has to be tagged or uploaded by hand. `.github/workflows/release.yml`
+can also be run manually, with a `dry_run` option that builds everything and
+publishes nothing.
 
 ## [Unreleased]
 
-### Removed - Docker is no longer how the panel is built or run
+## [0.3.0] - 2026-08-28
 
-The panel now builds and runs **bare-metal** on Linux: a Go binary for the API, a
-Next.js standalone build for the UI, a Go binary for the agent, all supervised by
-systemd. PostgreSQL, Redis and nginx are installed natively by the system package
-manager. The host running the panel no longer needs Docker Engine.
+### Added
 
-Removed from the repository:
+- **One version, one place.** `VERSION` at the repository root now holds the
+  product version, and everything else derives from it:
+  - `core/internal/version` exposes `Version`, `Commit`, `BuildDate`,
+    `GoVersion`, `Platform`, `Get()` and `String()` for banners and for
+    `GET /api/v1/version`. Release builds are stamped through a single
+    `LDFLAGS` definition in the `Makefile`; a plain `go build` falls back to the
+    version compiled in from `VERSION` and to the VCS stamps the Go toolchain
+    records, so an un-flagged binary still reports the truth instead of "dev".
+  - `BuildDate` is the *commit* date, not the moment the compiler ran, so
+    rebuilding the same commit produces the same binary.
+  - The UI reads the same file: `panel/scripts/gen-version.js` writes
+    `panel/src/lib/version.generated.ts` before every build, dev server and
+    type-check, and `panel/src/lib/brand.ts` imports it. The generated file is
+    not committed; a build that skips the generator fails at compile time
+    instead of shipping a wrong version, and `panel/package.json` is kept in
+    step by the same script.
+  - `make sync-version` propagates a version change; `make check-version-sync`
+    fails when any copy has drifted.
+- **Releases are cut automatically.** `.github/workflows/release.yml` reads
+  `VERSION` on `main`, refuses to release a version whose tag already exists or
+  which is not newer than the latest tag, builds a package per architecture,
+  publishes `SHA256SUMS`, and creates the GitHub Release with this file's
+  section for that version as the notes. See "How a release is cut" above.
+- **A release manifest the panel can act on.** Every release publishes
+  `manifest.json` (linux/amd64, plus an `artifacts` list covering every
+  architecture), `manifest-linux-<arch>.json` and the history feeds
+  `releases.json` / `releases-linux-<arch>.json`. The fields are a contract with
+  the in-panel upgrade client: `version`, `released_at`, `min_upgrade_from`,
+  `tarball_url`, `sha256`, `changelog_url`, alongside `schema_version`,
+  `product`, `channel`, `tag`, `os`, `arch`, `tarball_name`, `tarball_size`,
+  `sha256sums_url`, `release_notes_url` and `changelog_markdown`. The newest
+  release always answers at
+  `https://github.com/hitechcloud-vietnam/vkai-panel/releases/latest/download/manifest.json`.
+- **A pull request cannot forget the version.** `.github/workflows/version-check.yml`
+  fails any pull request that touches `core/`, `panel/`, `agent/` or `deploy/`
+  without raising `VERSION` above the latest tag, and is skipped for
+  documentation-only changes.
+- The release package now carries a `VERSION` file, so an operator reading
+  `/vkai-panel/releases/<id>/VERSION` never has to guess which release is
+  installed.
 
-- `Dockerfile` at the repository root and in `core/`, `panel/` and `agent/`.
-- `docker-compose.yml`, `docker-compose.dev.yml`, the root `.dockerignore` and
-  the per-component `.dockerignore` files.
-- The `docker/` directory, which only ever served the container build of the
-  panel.
-- The "Docker Build" job and every `docker/*` step in the GitHub Actions
-  workflows.
-- All documentation describing how to install or run the panel with `docker` or
-  `docker compose`.
+### Changed
 
-What replaces them:
+- Release packages are named `vkai-panel-<version>-<os>-<arch>.tar.gz`; one is
+  built for `linux/amd64` and one for `linux/arm64`. The layout inside the
+  tarball is unchanged, so `deploy/scripts/deploy.sh` accepts it as before.
+- `panel/package.json`, `panel/src/lib/brand.ts` and the `Makefile` no longer
+  declare a version of their own.
+- **Whitelabel to VKAI Panel (HiTechCloud).**
+  - Product name is **VKAI Panel**, vendor **HiTechCloud** (hitechcloud.vn).
+  - Source directories renamed: `backend/` is now `core/`, `frontend/` is now
+    `panel/`. `agent/` is unchanged. **Go module paths are unchanged**
+    (`github.com/hitechcloud-vietnam/vkai-panel`), so no import needs editing.
+  - Installed layout moved off `/opt/vkai-panel` and `/var/www`:
 
-- **Installation**: one command through `deploy/install.sh`, which detects the OS
-  family and installs PostgreSQL, Redis and nginx natively.
-- **Development**: `setup-dev.sh` installs the databases natively and prepares
-  the dev `.env` files; no container runtime in the development loop.
-- **Deployment**: a packaged `.tar.gz` release unpacked into
-  `/vkai-panel/releases/<version>/` with a `current` symlink naming the live
-  release, driven by `deploy/scripts/deploy.sh` (validate, back up, migrate,
-  switch, restart, health-check, auto-rollback on failure).
+    | Path | Contents |
+    |------|----------|
+    | `/vkai-panel/` | Installation root (`VKAI_PANEL_ROOT`) |
+    | `/vkai-panel/core/` | API code and binaries |
+    | `/vkai-panel/panel/` | Built UI |
+    | `/vkai-panel/www/domains/<domain>/` | Customer website document roots |
+    | `/vkai-panel/www/backup/` | Website and database backups |
+    | `/vkai-panel/www/default/` | Catch-all vhost |
+    | `/vkai-panel/logs/` | Panel logs |
+    | `/vkai-panel/logs/sites/<domain>/` | Per-site web server logs |
+    | `/vkai-panel/etc/` | `.env`, `config.yaml`, `panel_access.json` |
+    | `/vkai-panel/ssl/` | Certificates (`ssl/panel/` for the panel itself) |
+    | `/vkai-panel/tmp/` | Panel-owned scratch space |
 
-> **Docker management remains a full product feature.** This change removes only
-> the use of Docker *to build and run the panel itself*. The Docker screen in the
-> UI, the `/api/v1/docker/*` API, the Docker service layer and the `docker:*`
-> RBAC permissions are all unchanged, and customers continue to manage their own
-> containers, images, volumes, networks and compose stacks from the panel. In
-> short: the panel does not run in Docker, the panel manages Docker. Install
-> Docker Engine on the host only if you intend to use that feature.
+  - Systemd units are `vkai-api`, `vkai-ui` and `vkai-agent`; the admin command
+    is `vkai`. The former `vkai-frontend` / `vkai-panel-api` /
+    `vkai-panel-frontend` unit names are gone.
+  - Every environment variable carries the `VKAI_` prefix (`VKAI_PANEL_PORT`,
+    `VKAI_PANEL_ENTRANCE`, `VKAI_PANEL_BIND`, `VKAI_DB_HOST`, ...). The
+    pre-whitelabel names are still read for backward compatibility and the
+    `VKAI_` form wins when both are set; the legacy names are deprecated.
+  - Documentation states explicitly that the panel runs on its own port
+    (default `8888`) behind a security entrance and never on 80/443, which are
+    reserved for the customer websites.
+- **Documentation** follows the bare-metal build and run model:
+  - `README.md` gained a prominent section distinguishing the two meanings of
+    "Docker" in this project, plus sections on release deployment and
+    day-to-day operations. The source tree listing no longer shows
+    `Dockerfile`, `docker-compose.yml` or `docker/`.
+  - `docs/ARCHITECTURE.md` documents the release-directory layout
+    (`/vkai-panel/releases/<version>` plus the `current` symlink), the shared
+    state that lives outside releases, the corrected `vkai-ui` unit (Next.js
+    standalone started by `node`, not `npm run start`), and the nginx panel
+    vhost.
+  - `docs/DEPLOYMENT.md` gained "Release Deployment and Rollback" and
+    "Operations": package layout, the exact deploy sequence, rollback semantics
+    and the fact that database migrations are never reversed, reading logs with
+    `journalctl` for `vkai-api` / `vkai-ui` / `vkai-agent`, the `/health`,
+    `/ready` and `/live` endpoints, and a quick incident lookup table.
+  - `docs/DEVELOPMENT.md`, `docs/DEVELOPER_GUIDE.md` and
+    `docs/CONTRIBUTING.md` describe the development databases as natively
+    installed via `setup-dev.sh`.
+  - `docs/PANEL_ACCESS.md` replaced its Docker Compose section with an internal
+    ports and systemd section.
+  - `docs/SECURITY.md` replaced the container hardening guidance with the
+    systemd sandboxing actually shipped in `deploy/systemd/`, and notes that
+    `docker:*` permissions are root-equivalent on the host.
+  - `docs/TESTING.md` describes test databases on the locally installed
+    PostgreSQL and Redis instead of a `docker-compose.test.yml`.
+  - `deploy/README.md` and `docs/FAQ.md` state the two roles of Docker
+    explicitly so the change is not misread as dropping container management.
+  - README rewritten: product introduction, supported OS matrix, one-line
+    installer, interface overview, new directory layout, standard server paths,
+    and the contribution rules (side branch plus Pull Request, direct pushes to
+    `main` forbidden).
+  - Removed references to `cmd/migrate`, which has never existed; migrations
+    are the SQL files in `core/migrations/`, applied with `make migrate`.
 
-### Documentation - bare-metal build and run model
+### Removed
 
-- `README.md` gained a prominent section distinguishing the two meanings of
-  "Docker" in this project, plus sections on release deployment and day-to-day
-  operations. The source tree listing no longer shows `Dockerfile`,
-  `docker-compose.yml` or `docker/`.
-- `docs/ARCHITECTURE.md` documents the release-directory layout
-  (`/vkai-panel/releases/<version>` plus the `current` symlink), the shared state
-  that lives outside releases, the corrected `vkai-ui` unit (Next.js standalone
-  started by `node`, not `npm run start`), and the nginx panel vhost.
-- `docs/DEPLOYMENT.md` gained "Release Deployment and Rollback" and "Operations":
-  package layout, the exact deploy sequence, rollback semantics and the fact that
-  database migrations are never reversed, reading logs with `journalctl` for
-  `vkai-api` / `vkai-ui` / `vkai-agent`, the `/health`, `/ready` and `/live`
-  endpoints, and a quick incident lookup table.
-- `docs/DEVELOPMENT.md`, `docs/DEVELOPER_GUIDE.md` and `docs/CONTRIBUTING.md`
-  describe the development databases as natively installed via `setup-dev.sh`.
-- `docs/PANEL_ACCESS.md` replaced its Docker Compose section with an internal
-  ports and systemd section.
-- `docs/SECURITY.md` replaced the container hardening guidance with the systemd
-  sandboxing actually shipped in `deploy/systemd/`, and notes that `docker:*`
-  permissions are root-equivalent on the host.
-- `docs/TESTING.md` describes test databases on the locally installed PostgreSQL
-  and Redis instead of a `docker-compose.test.yml`.
-- `deploy/README.md` and `docs/FAQ.md` state the two roles of Docker explicitly
-  so the change is not misread as dropping container management.
+- **Docker is no longer how the panel is built or run.** The panel builds and
+  runs **bare-metal** on Linux: a Go binary for the API, a Next.js standalone
+  build for the UI, a Go binary for the agent, all supervised by systemd.
+  PostgreSQL, Redis and nginx are installed natively by the system package
+  manager. The host running the panel no longer needs Docker Engine. Removed
+  from the repository:
+  - `Dockerfile` at the repository root and in `core/`, `panel/` and `agent/`.
+  - `docker-compose.yml`, `docker-compose.dev.yml`, the root `.dockerignore`
+    and the per-component `.dockerignore` files.
+  - The `docker/` directory, which only ever served the container build of the
+    panel.
+  - The "Docker Build" job and every `docker/*` step in the GitHub Actions
+    workflows.
+  - All documentation describing how to install or run the panel with `docker`
+    or `docker compose`.
 
-### Changed - whitelabel to VKAI Panel (HiTechCloud)
+  What replaces them:
+  - **Installation**: one command through `deploy/install.sh`, which detects
+    the OS family and installs PostgreSQL, Redis and nginx natively.
+  - **Development**: `setup-dev.sh` installs the databases natively and
+    prepares the dev `.env` files; no container runtime in the development
+    loop.
+  - **Deployment**: a packaged `.tar.gz` release unpacked into
+    `/vkai-panel/releases/<version>/` with a `current` symlink naming the live
+    release, driven by `deploy/scripts/deploy.sh` (validate, back up, migrate,
+    switch, restart, health-check, auto-rollback on failure).
 
-- Product name is **VKAI Panel**, vendor **HiTechCloud** (hitechcloud.vn).
-- Source directories renamed: `backend/` is now `core/`, `frontend/` is now
-  `panel/`. `agent/` is unchanged. **Go module paths are unchanged**
-  (`github.com/hitechcloud-vietnam/vkai-panel`), so no import needs editing.
-- Installed layout moved off `/opt/vkai-panel` and `/var/www`:
-
-  | Path | Contents |
-  |------|----------|
-  | `/vkai-panel/` | Installation root (`VKAI_PANEL_ROOT`) |
-  | `/vkai-panel/core/` | API code and binaries |
-  | `/vkai-panel/panel/` | Built UI |
-  | `/vkai-panel/www/domains/<domain>/` | Customer website document roots |
-  | `/vkai-panel/www/backup/` | Website and database backups |
-  | `/vkai-panel/www/default/` | Catch-all vhost |
-  | `/vkai-panel/logs/` | Panel logs |
-  | `/vkai-panel/logs/sites/<domain>/` | Per-site web server logs |
-  | `/vkai-panel/etc/` | `.env`, `config.yaml`, `panel_access.json` |
-  | `/vkai-panel/ssl/` | Certificates (`ssl/panel/` for the panel itself) |
-  | `/vkai-panel/tmp/` | Panel-owned scratch space |
-
-- Systemd units are `vkai-api`, `vkai-ui` and `vkai-agent`; the admin command is
-  `vkai`. The former `vkai-frontend` / `vkai-panel-api` / `vkai-panel-frontend`
-  unit names are gone.
-- Every environment variable carries the `VKAI_` prefix
-  (`VKAI_PANEL_PORT`, `VKAI_PANEL_ENTRANCE`, `VKAI_PANEL_BIND`, `VKAI_DB_HOST`,
-  ...). The pre-whitelabel names are still read for backward compatibility and
-  the `VKAI_` form wins when both are set; the legacy names are deprecated.
-- Documentation states explicitly that the panel runs on its own port
-  (default `8888`) behind a security entrance and never on 80/443, which are
-  reserved for the customer websites.
-
-### Documentation
-
-- README rewritten: product introduction, supported OS matrix, one-line
-  installer, interface overview, new directory layout, standard server paths,
-  and the contribution rules (side branch plus Pull Request, direct pushes to
-  `main` forbidden).
-- Pull request template rewritten in Vietnamese with a required checklist:
-  green CI, no direct push to `main`, evidence of testing, UI screenshots,
-  security impact, migration impact.
-- Removed references to `cmd/migrate`, which has never existed; migrations are
-  the SQL files in `core/migrations/`, applied with `make migrate`.
+  > **Docker management remains a full product feature.** This change removes
+  > only the use of Docker *to build and run the panel itself*. The Docker
+  > screen in the UI, the `/api/v1/docker/*` API, the Docker service layer and
+  > the `docker:*` RBAC permissions are all unchanged, and customers continue
+  > to manage their own containers, images, volumes, networks and compose
+  > stacks from the panel. In short: the panel does not run in Docker, the
+  > panel manages Docker. Install Docker Engine on the host only if you intend
+  > to use that feature.
 
 ## [0.2.1] - 2026-08-27
 
 ### Fixed
-- Fix Gin route wildcard conflicts (zoneId→id, scanId→id, phpVersionId→id)
-- Fix migration 012/013/014 permissions INSERT to use (resource, action) columns
-- Add pgx/v5/stdlib driver import for database connection
-- Fix DNS handler to use consistent parameter names
-- Fix security handler to use consistent parameter names
-- Fix PHP handler to use consistent parameter names
+
+- Gin route wildcard conflicts (zoneId to id, scanId to id, phpVersionId to id).
+- Migration 012/013/014 permissions INSERT now uses the (resource, action)
+  columns.
+- Added the pgx/v5/stdlib driver import for the database connection.
+- DNS, security and PHP handlers use consistent parameter names.
 
 ## [0.2.0] - 2026-08-27
 
 ### Added
-- Phase 8: WebSocket real-time communication
-- Phase 9: Job queue system with asynq
-- Phase 10: Config rollback management
-- Phase 11: Node.js app systemd integration
-- Phase 12: CI/CD pipeline with GitHub Actions
+
+- Phase 8: WebSocket real-time communication.
+- Phase 9: Job queue system with asynq.
+- Phase 10: Config rollback management.
+- Phase 11: Node.js app systemd integration.
+- Phase 12: CI/CD pipeline with GitHub Actions.
 
 ### Fixed
-- Go compilation errors (duplicate types, missing imports)
-- Frontend build errors (missing UI components)
-- TypeScript errors in Sidebar component
-- Lumberjack import typo
+
+- Go compilation errors (duplicate types, missing imports).
+- Frontend build errors (missing UI components).
+- TypeScript errors in the Sidebar component.
+- Lumberjack import typo.
 
 ## [0.1.0] - 2026-08-26
 
 ### Added
-- Initial release with Phases 1-7
-- Multi-tenant architecture
-- RBAC with 8 roles
-- DNS management
-- SSL certificate management
-- PHP version management
-- Node.js app management
-- Reverse proxy management
-- Git deployment management
-- WordPress management
-- Security scanning
-- Monitoring and alerting
-- Log management
-- Notification system
-- Audit logging
-- Cluster and HA management
+
+- Initial release with Phases 1-7.
+- Multi-tenant architecture.
+- RBAC with 8 roles.
+- DNS management.
+- SSL certificate management.
+- PHP version management.
+- Node.js app management.
+- Reverse proxy management.
+- Git deployment management.
+- WordPress management.
+- Security scanning.
+- Monitoring and alerting.
+- Log management.
+- Notification system.
+- Audit logging.
+- Cluster and HA management.
+
+[Unreleased]: https://github.com/hitechcloud-vietnam/vkai-panel/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/hitechcloud-vietnam/vkai-panel/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/hitechcloud-vietnam/vkai-panel/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/hitechcloud-vietnam/vkai-panel/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/hitechcloud-vietnam/vkai-panel/releases/tag/v0.1.0

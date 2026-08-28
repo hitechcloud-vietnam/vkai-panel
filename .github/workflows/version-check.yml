@@ -1,0 +1,118 @@
+name: Version Check
+
+# A pull request that changes what gets shipped must also say what to call it.
+#
+# The panel is installed on customer servers and upgraded in place: the upgrade
+# client compares the running version against the version in the release feed. A
+# release whose contents changed but whose version did not is invisible to every
+# one of those servers, which is why this check is blocking rather than advisory.
+#
+# It applies only to pull requests that touch core/, panel/, agent/, deploy/ or
+# VERSION itself. Documentation-only changes are reported as skipped, so the
+# check can still be a required status without blocking a typo fix.
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: VERSION bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Every tag and both sides of the pull request.
+          fetch-depth: 0
+
+      # The path filter lives here rather than in "on:" because a workflow
+      # skipped by a path filter never reports a status, and this is meant to be
+      # a required check: it has to run, and say "skipped", for every pull
+      # request.
+      - name: Decide whether this pull request needs a version bump
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          FILES="$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")"
+          echo "Changed files:"
+          printf '%s\n' "$FILES" | sed 's/^/  /'
+
+          if printf '%s\n' "$FILES" | grep -Eq '^(core/|panel/|agent/|deploy/|VERSION$)'; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "This pull request changes what is shipped; VERSION must be newer than the latest tag."
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "Documentation-only change; the version check is skipped."
+            echo "Version check skipped: no change under core/, panel/, agent/, deploy/ or VERSION." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Read VERSION
+        id: read
+        if: steps.scope.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error file=VERSION::'$VERSION' is not a semantic version (MAJOR.MINOR.PATCH)."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # The Go binaries and the UI bundle each carry a generated copy of VERSION,
+      # because neither //go:embed nor a browser bundle can read a file outside
+      # its own tree. Drift between them is exactly the failure this whole design
+      # removes, so it fails the pull request.
+      - name: Check every copy of the version agrees
+        if: steps.scope.outputs.needed == 'true'
+        run: make check-version-sync
+
+      - name: Check VERSION is newer than the latest tag
+        if: steps.scope.outputs.needed == 'true'
+        env:
+          VERSION: ${{ steps.read.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The latest tag by SEMANTIC order, not by "sort -V", which puts
+          # v1.0.0-rc.1 after v1.0.0. Tags that are not plain semver are ignored.
+          LATEST=""
+          for t in $(git tag --list 'v*' | sed 's/^v//'); do
+            printf '%s' "$t" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || continue
+            if [ -z "$LATEST" ] ||
+               [ "$(awk -v a="$t" -v b="$LATEST" -f .github/workflows/semver-cmp.awk)" = "1" ]; then
+              LATEST="$t"
+            fi
+          done
+          if [ -z "$LATEST" ]; then
+            echo "No release tag exists yet; ${VERSION} will be the first."
+            echo "VERSION ${VERSION} (no previous tag)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          CMP="$(awk -v a="$VERSION" -v b="$LATEST" -f .github/workflows/semver-cmp.awk)"
+          if [ "$CMP" != "1" ]; then
+            echo "::error file=VERSION::VERSION is ${VERSION}, but the latest release is v${LATEST}. Raise VERSION and run \"make sync-version\"; see \"How a release is cut\" in CHANGELOG.md."
+            {
+              echo "### Version check failed"
+              echo ""
+              echo "\`VERSION\` is \`${VERSION}\`, which is not newer than the latest release \`v${LATEST}\`."
+              echo ""
+              echo "Raise \`VERSION\`, run \`make sync-version\`, and add a \`## [${VERSION}]\` section to \`CHANGELOG.md\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "VERSION ${VERSION} is newer than the latest release v${LATEST}."
+          echo "VERSION \`${VERSION}\` is newer than the latest release \`v${LATEST}\`." >> "$GITHUB_STEP_SUMMARY"

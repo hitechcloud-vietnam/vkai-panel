@@ -125,7 +125,9 @@ VKAI_REDIS_DB=0
 # ===========================================
 VKAI_JWT_SECRET=            # openssl rand -hex 32
 VKAI_SECRET_KEY=            # openssl rand -hex 32
-VKAI_AGENT_TOKEN=           # openssl rand -base64 24
+# No agent secret. The panel and the agent authenticate each other with
+# certificates issued by the panel's internal CA; an agent joins with a
+# one-time enrolment token minted in the panel. See docs/AGENT_CHANNEL.md.
 VKAI_JWT_ACCESS_EXPIRY=15
 VKAI_JWT_REFRESH_EXPIRY=10080
 VKAI_JWT_ISSUER=vkai-panel

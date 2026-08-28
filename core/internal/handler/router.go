@@ -52,6 +52,7 @@ type Router struct {
 	scheduledTaskHandler  *ScheduledTaskHandler
 	tamperProofHandler    *TamperProofHandler
 	panelSettingsHandler  *PanelSettingsHandler
+	upgradeHandler        *UpgradeHandler
 	jwtManager            *auth.JWTManager
 	logger                *zap.Logger
 }
@@ -151,8 +152,30 @@ func NewRouter(
 	// parameter list would break every caller for a dependency the router can
 	// resolve on its own.
 	r.panelSettingsHandler = newPanelSettingsHandler(auditHandler, logger)
+	r.upgradeHandler = newUpgradeHandler(auditHandler, logger)
 
 	return r
+}
+
+// newUpgradeHandler wires the panel's self-upgrade routes. It is built here for
+// the same reason as the panel settings handler: NewRouter is called
+// positionally, so a new parameter would break every caller.
+//
+// The release engine lives in internal/upgrade and is injected by the API entry
+// point once it is wired. Until then the service is constructed without one,
+// which is a deliberate, honest state rather than a broken one: GET
+// /api/v1/version still reports what this binary is, and the four upgrade
+// routes answer 503 with a reason instead of pretending an upgrade path exists.
+func newUpgradeHandler(auditHandler *AuditHandler, logger *zap.Logger) *UpgradeHandler {
+	var auditService *service.AuditService
+	if auditHandler != nil {
+		auditService = auditHandler.Service()
+	}
+
+	return NewUpgradeHandler(
+		service.NewUpgradeService(nil, auditService, logger),
+		logger,
+	)
 }
 
 // newPanelSettingsHandler loads the panel access configuration this process is
@@ -198,6 +221,17 @@ func (r *Router) Setup() *gin.Engine {
 
 	// API v1
 	v1 := r.engine.Group("/api/v1")
+
+	// The running build, unauthenticated.
+	//
+	// This is the one piece of runtime introspection that is deliberately not
+	// behind a token. A client watching an upgrade loses its API - and briefly
+	// its session - while the panel restarts itself, and the only way it can
+	// tell "still restarting" from "back on the new version" is to ask an
+	// endpoint that needs nothing from it. The answer is three fields:
+	// version, commit, build date. Everything else about this process stays
+	// behind /api/v1/system, which is admin-only.
+	v1.GET("/version", r.upgradeHandler.Version)
 
 	// Auth endpoints (no auth required, tight rate limit)
 	authGroup := v1.Group("/auth")
@@ -932,6 +966,19 @@ func (r *Router) Setup() *gin.Engine {
 			panel.PUT("/settings", r.panelSettingsHandler.Update)
 			panel.POST("/settings/entrance/regenerate", r.panelSettingsHandler.RegenerateEntrance)
 			panel.POST("/settings/tls/reissue", r.panelSettingsHandler.ReissueCertificate)
+		}
+
+		// Panel self-upgrade. Administrator only: these routes replace the
+		// running release on this machine. The upgrade itself runs in the
+		// background - start returns a job id and nothing here ever blocks on
+		// the release work, because the request that started it does not
+		// survive the restart it causes.
+		upgrade := protected.Group("/upgrade", middleware.RequireAdmin())
+		{
+			upgrade.GET("/status", r.upgradeHandler.Status)
+			upgrade.POST("/check", r.upgradeHandler.Check)
+			upgrade.POST("/start", r.upgradeHandler.Start)
+			upgrade.GET("/progress/:id", r.upgradeHandler.Progress)
 		}
 
 		// Config

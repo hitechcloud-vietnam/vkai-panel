@@ -1,18 +1,23 @@
 {
   "name": "vkai-panel-ui",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
-  "description": "Giao diện quản trị VKAI Panel (Next.js) - HiTechCloud",
+  "description": "VKAI Panel administration UI (Next.js) - HiTechCloud",
   "license": "MIT",
   "author": "HiTechCloud <contact@hitechcloud.vn> (https://hitechcloud.vn)",
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/gen-version.js",
     "build": "next build && npm run postbuild:standalone",
+    "prebuild": "node scripts/gen-version.js",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
+    "pretype-check": "node scripts/gen-version.js",
     "test": "echo \"no frontend tests yet (TODO: add vitest + @testing-library/react)\" && exit 0",
-    "postbuild:standalone": "node scripts/copy-standalone-assets.js"
+    "postbuild:standalone": "node scripts/copy-standalone-assets.js",
+    "gen:version": "node scripts/gen-version.js --write",
+    "check:version": "node scripts/gen-version.js --check"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.4.0",

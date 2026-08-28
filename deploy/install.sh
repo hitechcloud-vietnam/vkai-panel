@@ -56,6 +56,11 @@ readonly CURRENT_LINK="${PANEL_ROOT}/current"
 readonly ENV_FILE="${ETC_DIR}/.env"
 readonly PANEL_STATE_FILE="${ETC_DIR}/panel_access.json"
 readonly SUMMARY_FILE="${ETC_DIR}/install-summary.txt"
+# What is installed, on which channel, since when. "vkai upgrade" reads this to
+# know what it is upgrading FROM, which matters most on a machine where somebody
+# replaced a binary by hand and the running code no longer matches any release.
+readonly VERSION_FILE="${ETC_DIR}/version.json"
+readonly DEFAULT_CHANNEL="stable"
 readonly MIGRATIONS_STATE="${ETC_DIR}/migrations.applied"
 readonly INSTALL_LOG="${LOG_DIR}/install.log"
 
@@ -114,6 +119,7 @@ OPT_ENTRANCE=""
 OPT_DOMAIN=""
 OPT_ADMIN_EMAIL=""
 OPT_TLS_MODE="self-signed"      # self-signed | letsencrypt | none
+OPT_CHANNEL="${DEFAULT_CHANNEL}" # release channel recorded in version.json
 OPT_ACME_STAGING="false"
 OPT_ALLOW_IPS=""                # comma separated, empty = any source IP
 OPT_RANDOM_PORT="false"
@@ -297,6 +303,7 @@ Options:
   --domain <name>        Domain the panel answers on. Empty = reached by IP.
   --admin-email <email>  Administrator e-mail, also used as the ACME contact.
   --tls-mode <mode>      self-signed (default) | letsencrypt | none.
+  --channel <name>       Release channel to follow: stable (default) or beta.
   --acme-staging         Use the Let's Encrypt staging directory (rehearsal, untrusted certs).
   --allow-ip <list>      Restrict panel access to these IPs/CIDRs. Repeatable, comma separated.
   --no-firewall          Do not touch ufw/firewalld.
@@ -354,6 +361,8 @@ parse_args() {
             --admin-email=*) OPT_ADMIN_EMAIL="${1#*=}"; shift ;;
             --tls-mode)      [[ $# -ge 2 ]] || die "--tls-mode needs a value"; OPT_TLS_MODE="$2"; shift 2 ;;
             --tls-mode=*)    OPT_TLS_MODE="${1#*=}"; shift ;;
+            --channel)       [[ $# -ge 2 ]] || die "--channel needs a value"; OPT_CHANNEL="$2"; shift 2 ;;
+            --channel=*)     OPT_CHANNEL="${1#*=}"; shift ;;
             --acme-staging)  OPT_ACME_STAGING="true"; shift ;;
             --allow-ip)      [[ $# -ge 2 ]] || die "--allow-ip needs a value"; add_allow_ip "$2"; shift 2 ;;
             --allow-ip=*)    add_allow_ip "${1#*=}"; shift ;;
@@ -402,6 +411,10 @@ parse_args() {
         [[ "$OPT_ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] ||
             die "--admin-email is not a valid address: '${OPT_ADMIN_EMAIL}'"
     fi
+    case "${OPT_CHANNEL,,}" in
+        stable|beta) OPT_CHANNEL="${OPT_CHANNEL,,}" ;;
+        *) die "--channel accepts stable or beta: '${OPT_CHANNEL}'" ;;
+    esac
     case "$OPT_TLS_MODE" in
         self-signed|selfsigned|self) OPT_TLS_MODE="self-signed" ;;
         letsencrypt|le|acme)         OPT_TLS_MODE="letsencrypt" ;;
@@ -2038,6 +2051,73 @@ setup_current_link() {
 }
 
 # =============================================================================
+# 12b. Version record
+# =============================================================================
+# ${VERSION_FILE} is the answer to "what is installed here?". It is written on
+# every install and rewritten by every successful upgrade, and it lives outside
+# any release directory so a rollback cannot take it back to a lie.
+#
+# It is deliberately NOT derived from the binaries: those can be replaced by
+# hand, and an upgrade that guessed the current version from a binary it did not
+# build would guess wrong exactly on the machine where the answer matters.
+#
+# Fields:
+#   version       what this installer put on disk
+#   channel       which release stream this panel follows (stable | beta)
+#   pin           when set, upgrades are held at this version (see docs/UPGRADE.md)
+#   installed_at  first installation, preserved across upgrades
+#   updated_at    when the running code last changed
+#   release       the release directory current points at, or the in-place build
+#
+# Mode 0644 root:${VKAI_GROUP}: it holds no secret and the API, which runs as
+# ${VKAI_USER}, displays it.
+record_version() {
+    log_step "Recording the installed version"
+
+    local installed_at
+    installed_at="$(json_field_from_file "$VERSION_FILE" installed_at)"
+    [[ -n "$installed_at" ]] || installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    # An in-place install always serves ${PANEL_ROOT} through the symlink.
+    local release="in-place"
+
+    local pin
+    pin="$(json_field_from_file "$VERSION_FILE" pin)"
+
+    local tmp
+    tmp="$(mktemp "${ETC_DIR}/.version.XXXXXX")"
+    cat >"$tmp" <<JSON
+{
+  "version": "${VKAI_VERSION}",
+  "channel": "${OPT_CHANNEL}",
+  "pin": "${pin}",
+  "installed_at": "${installed_at}",
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "release": "${release}",
+  "install_mode": "${INSTALL_MODE}",
+  "os": "${OS_PRETTY}",
+  "arch": "${ARCH}"
+}
+JSON
+    chmod 0644 "$tmp"
+    chown "root:${VKAI_GROUP}" "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$VERSION_FILE"
+
+    log_info "${VERSION_FILE}: version ${VKAI_VERSION}, channel ${OPT_CHANNEL}, installed ${installed_at}"
+}
+
+# json_field_from_file <file> <key> - one top-level string field, empty when the
+# file or the field is absent. jq is not a dependency of the installer, and the
+# only JSON it reads is the one it wrote itself.
+json_field_from_file() {
+    local file="$1" key="$2"
+    [[ -f "$file" ]] || return 0
+    # shellcheck disable=SC2020  # three single characters, each mapped to a newline
+    tr ',{}' '\n\n\n' <"$file" |
+        sed -n -E "s/^[[:space:]]*\"${key}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\\1/p" | sed -n '1p'
+}
+
+# =============================================================================
 # 13. systemd units
 # =============================================================================
 install_systemd_units() {
@@ -2064,6 +2144,17 @@ install_systemd_units() {
         fi
     done
 
+    # The daily update CHECK. It is installed and enabled on every machine
+    # because a panel that cannot tell its operator a security release exists is
+    # worse than one that asks. It only ever checks - see the unit file for why
+    # an unattended install is never scheduled.
+    for unit in vkai-upgrade-check.service vkai-upgrade-check.timer; do
+        if [[ -f "${src}/${unit}" ]]; then
+            install -m 0644 "${src}/${unit}" "/etc/systemd/system/${unit}"
+            log_info "  -> /etc/systemd/system/${unit}"
+        fi
+    done
+
     # Remove unit names from older installations.
     local old
     for old in vkai-frontend.service vkai-panel-api.service vkai-panel-frontend.service; do
@@ -2081,6 +2172,11 @@ install_systemd_units() {
         systemctl enable --now vkai-cert-renew.timer >/dev/null 2>&1 ||
             log_warn "Could not enable vkai-cert-renew.timer; renew manually with 'vkai cert renew'."
         log_info "Daily certificate renewal timer enabled (vkai-cert-renew.timer)."
+    fi
+    if [[ -f /etc/systemd/system/vkai-upgrade-check.timer ]]; then
+        systemctl enable --now vkai-upgrade-check.timer >/dev/null 2>&1 ||
+            log_warn "Could not enable vkai-upgrade-check.timer; check manually with 'vkai upgrade --check'."
+        log_info "Daily update CHECK timer enabled (vkai-upgrade-check.timer). It never installs anything."
     fi
     log_info "vkai-api and vkai-ui enabled at boot."
 }
@@ -2101,6 +2197,15 @@ render_nginx_template() {
 
     : >"$output"
     while IFS= read -r line || [[ -n "$line" ]]; do
+        # A comment is documentation, not a token. The header of the template
+        # shows how to render it by hand and therefore mentions __VKAI_TLS_BLOCK__
+        # literally; expanding that line emitted the TLS block a second time at
+        # http level, where nginx.conf already sets ssl_prefer_server_ciphers, and
+        # nginx refused the whole configuration.
+        if [[ "$line" =~ ^[[:space:]]*# ]]; then
+            printf '%s\n' "$line" >>"$output"
+            continue
+        fi
         case "$line" in
             *__VKAI_TLS_BLOCK__*)
                 if [[ "$TLS_MODE" != "none" ]]; then
@@ -2170,6 +2275,19 @@ setup_nginx() {
     render_nginx_template "$template" "$target"
     chmod 644 "$target"
 
+    # Every directive that may appear only once per context must appear exactly
+    # once. nginx -t catches a duplicate, but only as "directive is duplicate in
+    # <file>:<line>", which says nothing about why the renderer produced two.
+    local d n
+    for d in ssl_certificate_key ssl_prefer_server_ciphers ssl_session_cache; do
+        n=$(grep -cE "^[[:space:]]*${d}[[:space:]]" "$target" || true)
+        if [[ "$n" -gt 1 ]]; then
+            rm -f "$target"
+            [[ -n "$backup" ]] && mv "$backup" "$target"
+            die "The rendered nginx configuration contains ${d} ${n} times. A token was expanded more than once - check render_nginx_template against ${template}."
+        fi
+    done
+
     # Belt and braces: the upstreams MUST be loopback. The panel no longer runs
     # in a container, so any compose style service name is a leftover mistake.
     if ! grep -qE '^[[:space:]]*server[[:space:]]+127\.0\.0\.1:[0-9]+;' "$target"; then
@@ -2224,6 +2342,18 @@ ACMEINC
         default_server=" default_server"
     fi
 
+    # Name the hosts this block actually answers for instead of relying on "_".
+    # The stock Debian and Ubuntu site already uses server_name _ on port 80, and
+    # two blocks with the same name make nginx keep the first and log
+    # "conflicting server name _, ignored" - a warning, not an error, so the
+    # installation appeared to succeed while every ACME challenge quietly went to
+    # /var/www/html and every certificate request failed. An explicit name is more
+    # specific than the default server, so it wins the match without a conflict.
+    local acme_names=""
+    [[ -n "$PANEL_DOMAIN" ]] && acme_names="$PANEL_DOMAIN"
+    [[ -n "${SERVER_IP:-}" ]] && acme_names="${acme_names:+$acme_names }${SERVER_IP}"
+    [[ -n "$acme_names" ]] || acme_names="_"
+
     cat >"$server_conf" <<ACMESRV
 # ${BRAND_NAME}: answers ACME HTTP-01 challenges on port 80.
 #
@@ -2237,7 +2367,7 @@ ACMEINC
 server {
     listen 80${default_server};
     listen [::]:80${default_server};
-    server_name _;
+    server_name ${acme_names};
 
     server_tokens off;
     access_log ${LOG_DIR}/acme-challenge.access.log;
@@ -2632,6 +2762,7 @@ DATA PATHS
   Backups           : ${WWW_BACKUP_DIR}
   Default site      : ${WWW_DEFAULT_DIR}
   Configuration     : ${ENV_FILE}
+  Version record    : ${VERSION_FILE}      (version ${VKAI_VERSION}, channel ${OPT_CHANNEL})
   Panel logs        : ${LOG_DIR}
   Per site logs     : ${LOG_SITES_DIR}/<domain>
   Certificates      : ${SSL_DIR}
@@ -2647,6 +2778,12 @@ SERVICES
   Redis      : ${REDIS_SERVICE:-unknown}
   Firewall   : ${FIREWALL_TOOL} - ${FIREWALL_PORTS}
 
+UPDATES
+  Version    : ${VKAI_VERSION} on the "${OPT_CHANNEL}" channel
+  Daily check: vkai-upgrade-check.timer - it CHECKS ONLY and never installs.
+               The result lands in ${ETC_DIR}/upgrade-check.json and in the panel.
+  Upgrading  : sudo vkai upgrade    (see docs/UPGRADE.md)
+
 THE "vkai" COMMAND
   vkai status              Service status
   vkai start|stop|restart  Control the services
@@ -2655,6 +2792,9 @@ THE "vkai" COMMAND
   vkai port 9001           Change the panel port
   vkai entrance random     Generate a new security entrance
   vkai cert renew          Renew the panel certificate
+  vkai version             Installed version, channel and running release
+  vkai upgrade --check     Is a newer release available? (changes nothing)
+  vkai upgrade             Upgrade the panel, after showing what it will do
   vkai backup              Back up the database and the configuration
   vkai update              Rebuild and restart
   vkai uninstall           Remove the panel
@@ -2696,10 +2836,12 @@ do_uninstall() {
 
     log_step "Stopping the services"
     local svc
-    for svc in vkai-ui vkai-api vkai-agent vkai-cert-renew.timer vkai-cert-renew; do
+    for svc in vkai-ui vkai-api vkai-agent vkai-cert-renew.timer vkai-cert-renew \
+               vkai-upgrade-check.timer vkai-upgrade-check; do
         systemctl disable --now "$svc" >/dev/null 2>&1 || true
     done
-    for svc in vkai-ui vkai-api vkai-agent vkai-cert-renew.service vkai-cert-renew.timer; do
+    for svc in vkai-ui vkai-api vkai-agent vkai-cert-renew.service vkai-cert-renew.timer \
+               vkai-upgrade-check.service vkai-upgrade-check.timer; do
         rm -f "/etc/systemd/system/${svc}" "/etc/systemd/system/${svc}.service"
     done
     for svc in vkai-frontend vkai-panel-api vkai-panel-frontend; do
@@ -2773,7 +2915,7 @@ main() {
     mkdir -p "$LOG_DIR"
     start_logging
     detect_install_mode
-    log_info "Options: port='${OPT_PORT:-default}' entrance='${OPT_ENTRANCE:-generated}' domain='${OPT_DOMAIN:-none}' tls-mode=${OPT_TLS_MODE} acme-staging=${OPT_ACME_STAGING} allow-ip='${OPT_ALLOW_IPS:-any}' skip-deps=${OPT_SKIP_DEPS} no-firewall=${OPT_NO_FIREWALL} quiet=${OPT_QUIET}"
+    log_info "Options: port='${OPT_PORT:-default}' entrance='${OPT_ENTRANCE:-generated}' domain='${OPT_DOMAIN:-none}' channel=${OPT_CHANNEL} tls-mode=${OPT_TLS_MODE} acme-staging=${OPT_ACME_STAGING} allow-ip='${OPT_ALLOW_IPS:-any}' skip-deps=${OPT_SKIP_DEPS} no-firewall=${OPT_NO_FIREWALL} quiet=${OPT_QUIET}"
 
     bootstrap_sources
     install_dependencies
@@ -2801,6 +2943,7 @@ main() {
     build_agent
     build_ui           # reads NEXT_PUBLIC_API_URL from the .env written above
     setup_current_link # the systemd units run through /vkai-panel/current
+    record_version     # /vkai-panel/etc/version.json: what "vkai upgrade" reads
 
     setup_admin_account
     install_vkai_cli     # the renewal unit calls /usr/local/bin/vkai

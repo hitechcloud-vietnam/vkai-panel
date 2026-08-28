@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Save } from 'lucide-react';
 import { brand } from '@/lib/brand';
 import PanelAccessSection from '@/components/settings/PanelAccessSection';
+import UpgradeSection from '@/components/settings/UpgradeSection';
 
 const TABS = [
   { id: 'general', label: 'General' },
   { id: 'panel-access', label: 'Panel access' },
+  { id: 'updates', label: 'Updates' },
   { id: 'security', label: 'Security' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'backup', label: 'Backup' },
@@ -16,6 +18,24 @@ const TABS = [
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
 
+  // Both stateful sections are kept mounted once they have been opened, rather
+  // than being torn down on every tab switch.
+  //
+  // For panel access that preserves an operator's edits, and lets the Updates
+  // tab be told those edits are unsaved - an upgrade restarts the panel and
+  // would silently throw them away.
+  //
+  // For updates it matters more: that section is watching an upgrade in
+  // progress across the restart it causes. Unmounting it because someone
+  // glanced at another tab would abandon the watch mid-upgrade.
+  const [visited, setVisited] = useState<Record<string, boolean>>({});
+  const [panelAccessDirty, setPanelAccessDirty] = useState(false);
+
+  const selectTab = useCallback((id: string) => {
+    setVisited((seen) => (seen[id] ? seen : { ...seen, [id]: true }));
+    setActiveTab(id);
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -23,9 +43,10 @@ export default function SettingsPage() {
           <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
           <p className="mt-1 text-sm text-gray-600">Configure panel settings</p>
         </div>
-        {/* The panel access section saves through its own confirmation flow, so
-            the page-level save button would be a second, silent path to the
-            same settings. It is offered only where it applies. */}
+        {/* The panel access section saves through its own confirmation flow, and
+            the Updates tab has no settings to save at all, so the page-level
+            save button would be a second, silent path to the same settings. It
+            is offered only where it applies. */}
         {activeTab === 'general' ? (
           <button
             type="button"
@@ -45,7 +66,7 @@ export default function SettingsPage() {
               key={tab.id}
               type="button"
               aria-current={activeTab === tab.id ? 'page' : undefined}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => selectTab(tab.id)}
               className={`border-b-2 px-1 pb-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 activeTab === tab.id
                   ? 'border-brand-600 text-brand-700'
@@ -58,7 +79,17 @@ export default function SettingsPage() {
         </nav>
       </div>
 
-      {activeTab === 'panel-access' ? <PanelAccessSection /> : null}
+      {visited['panel-access'] ? (
+        <div className={activeTab === 'panel-access' ? undefined : 'hidden'}>
+          <PanelAccessSection onDirtyChange={setPanelAccessDirty} />
+        </div>
+      ) : null}
+
+      {visited['updates'] ? (
+        <div className={activeTab === 'updates' ? undefined : 'hidden'}>
+          <UpgradeSection unsavedSettings={panelAccessDirty} />
+        </div>
+      ) : null}
 
       {activeTab === 'general' ? (
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -107,12 +138,12 @@ export default function SettingsPage() {
         </div>
       ) : null}
 
-      {activeTab !== 'general' && activeTab !== 'panel-access' ? (
+      {activeTab !== 'general' && activeTab !== 'panel-access' && activeTab !== 'updates' ? (
         <div className="rounded-lg border border-dashed border-gray-300 bg-white px-5 py-10 text-center">
           <p className="text-sm font-medium text-gray-900">Nothing here yet</p>
           <p className="mt-1 text-sm text-gray-600">
             This section has not been built out. Panel access settings live under the
-            &quot;Panel access&quot; tab.
+            &quot;Panel access&quot; tab, and panel updates under &quot;Updates&quot;.
           </p>
         </div>
       ) : null}

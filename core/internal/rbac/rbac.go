@@ -48,6 +48,15 @@ const (
 	// machine, so they are granted to administrators only.
 	PermPanelRead  = "panel.read"
 	PermPanelWrite = "panel.write"
+
+	// Panel self-upgrade: replacing the release this machine runs. Holding
+	// upgrade.write is the ability to swap every binary on the server and to
+	// take the panel offline while it happens, so like the panel access
+	// settings it is granted to administrators only. The read half is separate
+	// because "which version am I on, and is there a newer one" is worth
+	// showing without granting the ability to act on it.
+	PermUpgradeRead  = "upgrade.read"
+	PermUpgradeWrite = "upgrade.write"
 )
 
 // Permission is one row of the permissions table.
@@ -89,11 +98,13 @@ var SystemPermissions = []Permission{
 	{Resource: "audit", Action: "read", Description: "Read the audit log"},
 	{Resource: "panel", Action: "read", Description: "View the panel access settings", AdminOnly: true},
 	{Resource: "panel", Action: "write", Description: "Change the panel port, security entrance, IP allow list and TLS", AdminOnly: true},
+	{Resource: "upgrade", Action: "read", Description: "View the panel version and whether an upgrade is available", AdminOnly: true},
+	{Resource: "upgrade", Action: "write", Description: "Upgrade the panel to a new release", AdminOnly: true},
 }
 
 // AdminOnlyPermissions lists the permissions reserved for administrative roles.
 func AdminOnlyPermissions() []Permission {
-	out := make([]Permission, 0, 2)
+	out := make([]Permission, 0, len(SystemPermissions))
 	for _, permission := range SystemPermissions {
 		if permission.AdminOnly {
 			out = append(out, permission)

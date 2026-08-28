@@ -17,6 +17,10 @@
 13. [High Availability](#high-availability)
 14. [Troubleshooting](#troubleshooting)
 
+Upgrading an installed panel - the `vkai upgrade` command, the release channel,
+rollback, offline upgrades, pinning and manual recovery - has its own guide:
+**[UPGRADE.md](UPGRADE.md)**.
+
 ---
 
 ## Production Deployment
@@ -92,6 +96,9 @@ websites hosted on this server. The panel answers only on `VKAI_PANEL_PORT`
 | `/vkai-panel/ssl/` | TLS certificates |
 | `/vkai-panel/tmp/` | Temporary files |
 | `/vkai-panel/etc/panel_access.json` | Generated panel port and entrance (mode `0600`) |
+| `/vkai-panel/etc/version.json` | Installed version, channel, install date, version pin |
+| `/vkai-panel/etc/upgrade-check.json` | Result of the last update check, displayed by the panel |
+| `/vkai-panel/bin/vkai-deploy` | Root-owned release script: the only privileged entry point |
 
 ---
 
@@ -307,7 +314,8 @@ VKAI_REDIS_DB=0
 # --- Secrets (no defaults: the panel refuses to start without them) ---
 VKAI_JWT_SECRET=$(openssl rand -hex 32)
 VKAI_SECRET_KEY=$(openssl rand -hex 32)
-VKAI_AGENT_TOKEN=$(openssl rand -base64 24)
+# No agent secret: agents authenticate with certificates from the panel's
+# internal CA and join with a one-time token. See docs/AGENT_CHANNEL.md.
 VKAI_JWT_ACCESS_EXPIRY=15
 VKAI_JWT_REFRESH_EXPIRY=10080
 
@@ -424,127 +432,191 @@ trusted. Full instructions: [PANEL_ACCESS.md](PANEL_ACCESS.md).
 
 ## Release Deployment and Rollback
 
-Lần cài đầu dùng `deploy/install.sh`. Các lần cập nhật sau đó dùng **gói phát
-hành** `.tar.gz`: không build trên máy chủ thật, không `git pull` trên máy chủ
-thật.
+The first installation is done by `deploy/install.sh`. Every change after that is
+an **upgrade**, and an upgrade is never a `git pull` or a rebuild on a customer
+server: it is a release package unpacked into its own directory, with one symlink
+deciding which release is live.
 
-### Mô hình thư mục release
+For the operator-facing side of this - `vkai upgrade`, the daily check, pinning,
+offline upgrades and manual recovery - see **[UPGRADE.md](UPGRADE.md)**. This
+section describes the mechanism that all of it drives.
 
-Mỗi bản phát hành được giải nén vào **một thư mục riêng theo phiên bản**, và
-symlink `current` trỏ tới bản đang chạy:
+### The release-directory model
+
+Each release is unpacked into its own directory, and the `current` symlink points
+at the one that is running:
 
 ```
 /vkai-panel/
 ├── releases/
-│   ├── 20250315_101500/                 # bản trước, giữ lại để quay lui
-│   └── 20250316_143000/                 # bản vừa triển khai
-├── current -> releases/20250316_143000  # bản đang chạy
-├── etc/                                 # .env, panel_access.json  - dùng chung
-├── logs/                                # dùng chung
-├── www/                                 # site khách, bản sao lưu - dùng chung
-└── ssl/                                 # dùng chung
+│   ├── 20260315_101500/                 # previous release, kept for rollback
+│   └── 20260316_143000/                 # the release just published
+├── current -> releases/20260316_143000  # what the systemd units run
+├── etc/                                 # .env, panel_access.json, version.json - SHARED
+├── logs/                                # SHARED
+├── www/                                 # customer sites and backups - SHARED
+└── ssl/                                 # SHARED
 ```
 
-Chỉ **mã nguồn** được đánh phiên bản. `etc/`, `logs/`, `www/`, `ssl/` là **dữ
-liệu dùng chung**, nằm ngoài mọi release: triển khai không ghi đè chúng và quay
-lui cũng không đưa chúng về cũ.
+Only **code** is versioned. `etc/`, `logs/`, `www/` and `ssl/` are shared data
+outside every release: a deployment does not overwrite them and a rollback does
+not take them back in time.
 
-Hệ thống giữ bản đang chạy **cộng 5 bản cũ gần nhất**, phần còn lại bị xoá.
+Every systemd unit runs through the symlink - `ExecStart` is
+`/vkai-panel/current/core/bin/vkai-api`, never a release directory by name. So
+"deploying" is *moving one symlink and restarting two services*, and "rolling
+back" is moving it the other way. Both take about a second and neither can leave
+a half-copied tree behind.
+
+Two shapes of `current` are valid:
+
+| `current` points at | Produced by | Rollback |
+|---------------------|-------------|----------|
+| `/vkai-panel/releases/<id>/` | `vkai-deploy deploy`, `vkai upgrade` | Yes, to the previous release |
+| `/vkai-panel` (built in place) | `deploy/install.sh`, `vkai update` | No release directory exists to go back to |
+
+The running release plus the **five most recent old ones** are kept; the rest are
+deleted after a successful deployment.
 
 ```bash
-sudo bash deploy/scripts/deploy.sh list      # các bản đang giữ, đánh dấu bản đang chạy
+sudo /vkai-panel/bin/vkai-deploy list     # what is kept; "->" marks the live one
+readlink -f /vkai-panel/current           # the release running right now
+vkai version                              # version, channel and running release
 ```
 
-### Cấu trúc gói release
+### The privileged entry point
 
-Gói `.tar.gz` bắt buộc phải có:
+`/vkai-panel/bin/vkai-deploy` is installed root-owned in a directory the deploy
+user cannot write, and it is the only privileged command that moves the symlink.
+CI logs in as an unprivileged account that is granted sudo for that one path and
+that one argument shape (see `--ci-deploy-user` in `deploy/install.sh`), so
+publishing a release never means handing out general root.
+
+### Release package layout
+
+A `.tar.gz` release package must contain:
 
 ```
-core/bin/vkai-api                       # binary API, phải có quyền thực thi
-core/migrations/*.sql                   # migration
-panel/.next/standalone/server.js        # bản build UI
-panel/.next/standalone/.next/static     # BẮT BUỘC
-agent/bin/vkai-agent                    # tuỳ chọn
+core/bin/vkai-api                       # the API binary, executable
+core/migrations/*.sql                   # migrations
+panel/.next/standalone/server.js        # the UI build
+panel/.next/standalone/.next/static     # MANDATORY
+agent/bin/vkai-agent                    # optional
 ```
 
-Thiếu `.next/standalone/.next/static` thì trang vẫn trả về HTML nhưng mọi
-`/_next/static/*.js` đều 404, và trình duyệt báo *"Application error: a
-client-side exception has occurred"*. `deploy.sh` kiểm tra điều này **trước khi**
-dừng dịch vụ, nên gói hỏng sẽ bị từ chối thay vì làm sập panel đang chạy.
+Without `.next/standalone/.next/static` the page still returns HTML while every
+`/_next/static/*.js` returns 404, and the browser shows *"Application error: a
+client-side exception has occurred"*. The deployment validates this **before**
+stopping anything, so a broken package is rejected instead of taking down a
+working panel.
 
-Đóng gói trên máy build (không phải máy chủ thật):
+Build the package on a build machine, never on a customer server:
 
 ```bash
 make build
-tar -czf vkai-panel-1.2.0.tar.gz -C dist .
+tar -czf vkai-panel-1.1.0.tar.gz -C dist .
 ```
 
-### Triển khai
+### Deploying a release
 
 ```bash
-# Chép gói lên máy chủ rồi chạy
-sudo bash deploy/scripts/deploy.sh deploy /tmp/vkai-panel-1.2.0.tar.gz
+# Copy the package onto the server, then:
+sudo /vkai-panel/bin/vkai-deploy deploy /tmp/vkai-panel-1.1.0.tar.gz
 ```
 
-Lệnh này làm tuần tự:
+In order:
 
-1. Giải nén gói vào `/vkai-panel/releases/<dấu-thời-gian>/`.
-2. **Kiểm tra gói hợp lệ** trước khi động vào hệ thống đang chạy.
-3. Liên kết `/vkai-panel/etc/.env` vào trong bản mới (Next.js chỉ đọc `.env` ở
-   gốc dự án).
-4. Sao lưu CSDL vào `/vkai-panel/www/backup/predeploy_<thời-gian>.sql.gz`.
-5. Chạy các migration còn thiếu **từ bản mới, trước khi đổi symlink** — migration
-   hỏng thì dừng ngay trong lúc bản cũ vẫn đang phục vụ. Trạng thái ghi trong
+1. Unpack the package into `/vkai-panel/releases/<timestamp>/`.
+2. **Validate the unpacked release** before touching anything that is running.
+3. Link `/vkai-panel/etc/.env` into the new release (Next.js reads `.env` only
+   from its project root).
+4. Dump the database to `/vkai-panel/www/backup/predeploy_<timestamp>.sql.gz`.
+5. Run the outstanding migrations **from the new release, before the symlink
+   moves** - a failing migration stops the deployment while the old release is
+   still serving. Applied files are recorded in
    `/vkai-panel/etc/migrations.applied`.
-6. Trỏ `current` sang bản mới, `systemctl restart vkai-api vkai-ui`
-   (thêm `vkai-agent` nếu đã bật) và `reload nginx`.
-7. Kiểm tra sức khoẻ **cả API lẫn giao diện**, thử lại tối đa 15 lần cách nhau 2
-   giây.
-8. **Hỏng thì tự động quay lui** về bản trước rồi kiểm tra sức khoẻ lại.
-9. Thành công thì xoá các bản cũ vượt quá 5 bản.
+6. Repoint `current`, `systemctl restart vkai-api vkai-ui` (plus `vkai-agent`
+   when enabled) and reload nginx.
+7. Health check **both** the API and the UI, retrying 15 times at 2-second
+   intervals.
+8. **Roll back automatically** to the previous release on failure, then health
+   check again.
+9. On success, delete releases beyond the five kept.
 
-Nhờ bước 8, một bản phát hành lỗi không làm panel chết hẳn: script tự đưa về bản
-trước và báo rõ thư mục chứa bản hỏng để điều tra.
+Step 8 is why a bad release does not end with a dead panel: the script puts the
+previous release back and tells you which directory holds the broken one.
 
-Xem trạng thái:
-
-```bash
-sudo bash deploy/scripts/deploy.sh status
-readlink -f /vkai-panel/current      # bản đang chạy
-ls -1 /vkai-panel/releases/          # các bản còn giữ
-```
-
-### Quay lui
+The panel is unreachable for the few seconds of step 6. Customer websites are
+served by nginx from `/vkai-panel/www/domains/` and stay up throughout.
 
 ```bash
-sudo bash deploy/scripts/deploy.sh rollback
+sudo /vkai-panel/bin/vkai-deploy status
 ```
 
-Lệnh này tìm bản ngay trước bản đang chạy trong `/vkai-panel/releases/`, kiểm tra
-bản đó còn đầy đủ, trỏ `current` về bản cũ, khởi động lại dịch vụ rồi kiểm tra
-sức khoẻ. Dùng khi bản mới chạy được qua health check nhưng lỗi lộ ra sau đó
-(triển khai lỗi ngay lập tức thì bước 8 ở trên đã tự quay lui rồi).
+### Rolling back
 
-> **Quay lui chỉ đưa MÃ NGUỒN về bản cũ.** Migration cơ sở dữ liệu **không** được
-> quay lui. Nếu bản vừa triển khai có migration phá vỡ tương thích ngược, phải
-> khôi phục CSDL từ bản sao lưu `predeploy_*.sql.gz` đã tạo ở bước 3:
+```bash
+sudo /vkai-panel/bin/vkai-deploy rollback
+```
+
+This finds the release immediately before the running one, checks that it is
+complete, repoints `current`, restarts the services and health checks them. Use
+it when a release passes its health check but turns out to be wrong later; an
+immediate failure has already been rolled back by step 8 above.
+
+> **A rollback returns CODE only.** Database migrations are **not** rolled back.
+> If the release that was just deployed carried a migration that breaks backward
+> compatibility, restore the dump taken in step 4:
 >
 > ```bash
-> gunzip -c /vkai-panel/www/backup/predeploy_20250316_143000.sql.gz \
+> sudo gunzip -c /vkai-panel/www/backup/predeploy_20260316_143000.sql.gz \
 >   | psql -h 127.0.0.1 -U vkai -d vkai_panel
 > ```
 
-Nếu cần quay về một bản cũ hơn (không phải bản liền trước), hãy triển khai lại
-chính gói `.tar.gz` của bản đó bằng lệnh `deploy`.
+To go back further than one release, deploy that release's package again.
+If both the deployment and the rollback fail, follow the manual recovery
+procedure in [UPGRADE.md](UPGRADE.md#manual-recovery) - it has the exact commands
+for repointing `/vkai-panel/current` by hand and restarting the services.
 
-### Cập nhật tại chỗ (máy lẻ, không dùng CI)
+### The upgrade path an operator uses
+
+`vkai-deploy` is the mechanism. The operator-facing command is:
 
 ```bash
-sudo vkai update            # build lại core/ và panel/, khởi động lại dịch vụ
+vkai version              # what is installed, on which channel, since when
+vkai upgrade --check      # is a newer release available? changes nothing
+sudo vkai upgrade         # print the plan, confirm, then upgrade
+sudo vkai upgrade --to 1.1.0 --yes    # exact version, no confirmation
 ```
 
-Cách này không tạo thư mục release nên **không quay lui được** bằng `rollback`.
-Với máy chủ thật, luôn ưu tiên gói `.tar.gz`.
+`vkai upgrade` performs the same nine steps as `vkai-deploy deploy`, having first
+resolved and downloaded the release for the channel this machine follows.
+
+- **Version record.** `/vkai-panel/etc/version.json` records the installed
+  version, the channel, the install date and any version pin. It is written by
+  `deploy/install.sh` (`--channel stable|beta`) and rewritten by every successful
+  upgrade, so an upgrade knows what it is upgrading from even on a machine where
+  binaries were replaced by hand.
+- **Daily check, never a daily install.** `vkai-upgrade-check.timer` runs
+  `vkai upgrade --check --quiet` once a day and writes the result to
+  `/vkai-panel/etc/upgrade-check.json`, which is where the panel reads its
+  "update available" banner. It only ever checks: unattended upgrades of a
+  hosting control panel are how a whole fleet goes down at once, and an upgrade
+  that migrates the database and restarts the services belongs in front of a
+  human.
+- **Exit codes.** `vkai upgrade --check` exits `0` up to date (or pinned), `10`
+  an update is available, `2` this build has no upgrade engine, `1` the check
+  failed - so it can drive monitoring directly.
+
+### Updating in place (single machine, no CI)
+
+```bash
+sudo vkai update            # rebuild core/ and panel/ where they are, restart
+```
+
+This keeps the configuration and rebuilds from the source tree on the machine. It
+creates **no release directory**, so `vkai-deploy rollback` cannot undo it. On a
+server with customers on it, always prefer a release package.
 
 ---
 
@@ -636,12 +708,13 @@ sudo nginx -t
 Kiểm tra nhanh toàn bộ:
 
 ```bash
-sudo bash deploy/scripts/deploy.sh status    # bản đang chạy + trạng thái unit + log gần nhất
-sudo bash deploy/scripts/deploy.sh list      # các bản phát hành đang giữ
+sudo /vkai-panel/bin/vkai-deploy status    # running release, unit state, recent log
+sudo /vkai-panel/bin/vkai-deploy list      # the releases kept on disk
 vkai status
+vkai version                               # installed version, channel, last update check
 ```
 
-`deploy.sh` đọc cổng từ `/vkai-panel/etc/.env` (`VKAI_SERVER_PORT` cho API,
+`vkai-deploy` đọc cổng từ `/vkai-panel/etc/.env` (`VKAI_SERVER_PORT` cho API,
 `PORT` cho giao diện), nên nếu đã đổi cổng nội bộ thì health check vẫn đúng.
 
 ### Khởi động lại và nạp lại cấu hình
@@ -706,7 +779,7 @@ Edit `/vkai-panel/etc/.env`. Every panel variable uses the **`VKAI_`** prefix.
 | `VKAI_FILEMANAGER_ROOT` | Jail directory for the file manager | the web root, `/vkai-panel/www/domains` |
 | `VKAI_BACKUP_ROOT` | Root every backup destination must resolve inside | `/vkai-panel/www/backup` |
 | `VKAI_CRON_USER` | Account panel-managed cron jobs run as | `www-data` |
-| `VKAI_AGENT_PORT` / `VKAI_AGENT_TOKEN` | Agent port and shared secret | `30111` / **required** |
+| `VKAI_AGENT_PORT` / `VKAI_AGENT_ENROLMENT_TOKEN` | Agent control channel port, and the one-time enrolment token used at first start only | `30111` / (empty) |
 | `VKAI_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `VKAI_PANEL_ROOT` | Installation root; every other path is derived from it | `/vkai-panel` |
 | `VKAI_WEB_ROOT` | Customer website document roots | `/vkai-panel/www/domains` |
@@ -1348,8 +1421,11 @@ sudo -u postgres psql -c "SELECT count(*) FROM pg_stat_activity;"
 # Update system packages
 sudo apt update && sudo apt upgrade -y
 
-# Update VKAI Panel - preferred path: deploy a packaged release
-sudo bash deploy/scripts/deploy.sh deploy /tmp/vkai-panel-<version>.tar.gz
+# Update VKAI Panel - see UPGRADE.md
+vkai upgrade --check                  # is there anything newer? changes nothing
+sudo vkai upgrade                     # print the plan, confirm, upgrade
+# Offline, from a package you copied onto the server:
+#   sudo /vkai-panel/bin/vkai-deploy deploy /tmp/vkai-panel-<version>.tar.gz
 # Single-server shortcut that rebuilds in place (no rollback point):
 #   sudo vkai update
 

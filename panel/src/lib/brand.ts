@@ -1,31 +1,66 @@
 /**
- * Nguon SU THAT DUY NHAT cho moi chuoi thuong hieu cua giao dien.
+ * The SINGLE SOURCE OF TRUTH for every brand string in the UI.
  *
- * Khong hardcode ten san pham / ten doanh nghiep o bat ky noi nao khac:
- * moi component can hien thi thuong hieu deu phai import tu tep nay.
+ * Never hardcode the product name or the company name anywhere else: any
+ * component that shows the brand imports it from this file.
  *
  *   import { productName, company, brand } from '@/lib/brand';
+ *
+ * The version is the one exception to "this file owns it": the product version
+ * lives in the file VERSION at the repository root, shared with the Go binaries,
+ * the installer and the release workflow. The browser cannot read a file at
+ * runtime, so panel/scripts/gen-version.js compiles it into
+ * ./version.generated.ts before every build, dev server and type-check. That
+ * file is generated, not committed. If it is missing the build stops at
+ * "Cannot find module './version.generated'" rather than shipping a wrong
+ * version.
  */
 
-/** Ten san pham hien thi cho nguoi dung cuoi. */
+import { generatedVersion } from './version.generated';
+
+/** The product name shown to end users. */
 export const productName = 'VKAI Panel';
 
-/** Ten doanh nghiep phat hanh san pham. */
+/** The company that publishes the product. */
 export const company = 'HiTechCloud';
 
-/** Trang chu doanh nghiep. */
+/** The company home page. */
 export const companyUrl = 'https://hitechcloud.vn';
 
-/** Hom thu ho tro ky thuat. */
+/** Technical support mailbox. */
 export const supportEmail = 'support@hitechcloud.vn';
 
-/** Tai lieu huong dan su dung. */
+/** User documentation. */
 export const docsUrl = 'https://hitechcloud.vn/docs';
 
-/** Phien ban giao dien - dong bo voi CHANGELOG.md va package.json. */
-export const version = '0.2.1';
+/**
+ * The subset of SemVer 2.0.0 the panel releases use. Kept deliberately strict:
+ * a version that does not match this is a build accident, not a release.
+ */
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
-/** Thang navy - mau chinh, rut tu logo hitechcloud.vn. Trung voi Tailwind `brand-*`. */
+/**
+ * Guards against the generated file existing but holding nonsense - an empty
+ * string, a placeholder, a half-written file. Shipping a UI that reports the
+ * wrong version to an operator deciding whether to upgrade is worse than not
+ * building at all, so this throws at import time and the build fails.
+ */
+function requireVersion(value: string): string {
+  if (!SEMVER.test(value)) {
+    throw new Error(
+      `VKAI Panel: src/lib/version.generated.ts holds ${JSON.stringify(value)}, ` +
+        'which is not a semantic version. Regenerate it from the repository ' +
+        'VERSION file with "make sync-version" (or "npm run gen:version").',
+    );
+  }
+  return value;
+}
+
+/** Product version, taken from the repository VERSION file at build time. */
+export const version = requireVersion(generatedVersion);
+
+/** Navy scale - the primary colour, taken from the hitechcloud.vn logo. Matches Tailwind `brand-*`. */
 export const brandScale = {
   50: '#EFF4FC',
   100: '#D9E4F7',
@@ -40,7 +75,7 @@ export const brandScale = {
   950: '#03102A',
 } as const;
 
-/** Thang cyan - diem nhan phu. Trung voi Tailwind `accent-*`. */
+/** Cyan scale - the secondary accent. Matches Tailwind `accent-*`. */
 export const accentScale = {
   50: '#ECF7FC',
   100: '#D2ECF7',
@@ -55,8 +90,9 @@ export const accentScale = {
 } as const;
 
 /**
- * Bang mau thuong hieu - nguon duy nhat cho code TypeScript can mau
- * (bieu do SVG, canvas, inline style). CSS/Tailwind dung `brand-*` / `accent-*`.
+ * The brand palette - the only source for TypeScript code that needs a colour
+ * (SVG charts, canvas, inline styles). CSS and Tailwind use `brand-*` /
+ * `accent-*` instead.
  */
 export const colors = {
   navy: brandScale[600],
@@ -66,12 +102,12 @@ export const colors = {
 } as const;
 
 /**
- * Mau chuoi du lieu cho bieu do, theo dung thu tu quy uoc:
- * chuoi 1 navy, chuoi 2 cyan, chuoi 3 emerald-600, chuoi 4 amber-600.
+ * Chart series colours, in the agreed order: series 1 navy, series 2 cyan,
+ * series 3 emerald-600, series 4 amber-600.
  */
 export const chartSeries = ['#0B398C', '#1791C8', '#059669', '#D97706'] as const;
 
-/** Mau khung bieu do: luoi, truc va vien tooltip. */
+/** Chart frame colours: grid, axes and tooltip border. */
 export const chartAxis = {
   grid: '#E5E7EB',
   axis: '#6B7280',
@@ -80,25 +116,25 @@ export const chartAxis = {
   tooltipRadius: 6,
 } as const;
 
-/** Phien ban dang hien thi, vi du "v0.2.1". */
+/** The version as displayed, for example "v0.3.0". */
 export const versionLabel = `v${version}`;
 
-/** Dong phu de duoi khoi thuong hieu, vi du "by HiTechCloud". */
+/** The line under the brand block, for example "by HiTechCloud". */
 export const byline = `by ${company}`;
 
-/** Ten day du dung cho tieu de trang / metadata. */
+/** The full name used for page titles and metadata. */
 export const fullName = `${productName} - ${company}`;
 
-/** Mo ta ngan bang tieng Viet, dung cho metadata va man hinh dang nhap. */
+/** Short description used for metadata and the sign-in screen. */
 export const description =
-  'Bảng điều khiển quản trị máy chủ, website và hạ tầng hosting của HiTechCloud.';
+  'Control panel for HiTechCloud servers, websites and hosting infrastructure.';
 
-/** Dong ban quyen, tu dong cap nhat nam. */
+/** Copyright line, with the year filled in automatically. */
 export function copyright(year: number = new Date().getFullYear()): string {
-  return `© ${year} ${company}. Bảo lưu mọi quyền.`;
+  return `© ${year} ${company}. All rights reserved.`;
 }
 
-/** Toan bo thong tin thuong hieu gom trong mot object tien dung. */
+/** Every brand fact in one convenient object. */
 export const brand = {
   productName,
   company,

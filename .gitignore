@@ -45,6 +45,10 @@ panel/.next/
 panel/out/
 panel/build/
 panel/.env.local
+# Generated from the repository VERSION file by panel/scripts/gen-version.js
+# (npm prebuild / predev / pretype-check). Never commit it: VERSION is the
+# single source of truth and a committed copy would drift from it.
+panel/src/lib/version.generated.ts
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

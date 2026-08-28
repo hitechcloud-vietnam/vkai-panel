@@ -199,7 +199,16 @@ function LoadingSkeleton() {
 // Section
 // ---------------------------------------------------------------------------
 
-export default function PanelAccessSection() {
+interface PanelAccessSectionProps {
+  /**
+   * Called whenever this section starts or stops holding edits that have not
+   * been saved. The settings page passes it on to the Updates tab, because an
+   * upgrade restarts the panel and would throw those edits away.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+export default function PanelAccessSection({ onDirtyChange }: PanelAccessSectionProps = {}) {
   const [settings, setSettings] = useState<PanelSettingsView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +226,20 @@ export default function PanelAccessSection() {
   const [dialogUrl, setDialogUrl] = useState('');
   const [dialogReasons, setDialogReasons] = useState<PanelConfirmationReason[]>([]);
   const [dialogChanges, setDialogChanges] = useState<PanelSettingChange[]>([]);
+
+  // Dirty means "in edit mode and the form no longer matches what is saved".
+  // Opening the editor and changing nothing is not unsaved work, and reporting
+  // it as such would train an operator to ignore the warning.
+  const dirty = Boolean(
+    editing && form && settings && JSON.stringify(form) !== JSON.stringify(formFrom(settings)),
+  );
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // A section that is unmounted is no longer holding anything.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
