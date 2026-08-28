@@ -51,6 +51,8 @@ readonly MAX_OLD_RELEASES=5
 
 readonly DEFAULT_API_PORT="30110"
 readonly DEFAULT_UI_PORT="3000"
+# The panel vhost the installer renders. Only reconcile_nginx touches it.
+readonly PANEL_VHOST="/etc/nginx/conf.d/vkai-panel.conf"
 readonly HEALTH_RETRIES=15
 readonly HEALTH_SLEEP=2
 
@@ -260,6 +262,75 @@ run deploy/install.sh once before deploying releases to it."
     systemctl reload nginx 2>/dev/null || true
 }
 
+# =============================================================================
+# nginx: keep the panel port pointed at the access gate
+# =============================================================================
+# A release is a symlink move; the nginx vhost is NOT part of it, so a host
+# installed before the panel gained its single front door keeps a configuration
+# in which "location /" goes straight to the Next.js service. That configuration
+# serves the whole interface - the login form included - to anyone who finds the
+# panel port, because the security entrance is enforced in the API and nothing
+# else. Deploying the fixed code onto such a host would fix nothing.
+#
+# This repairs exactly that one thing: the upstream each location proxies to.
+# It runs only when the release being activated no longer knows about a UI
+# upstream at all AND the installed vhost still proxies to one, so it is a
+# no-op on every host that is already correct, and it never touches TLS, the
+# allow list, ports, log paths or anything else the operator may have tuned.
+#
+# The now-unused "upstream vkai_ui" block is deliberately left in place: nginx
+# accepts an upstream nothing references, and removing a multi-line block from
+# a file an operator may have edited is a bigger risk than leaving it.
+reconcile_nginx() {
+    local dir="$1"
+    local template="${dir}/deploy/nginx/vkai-panel.conf"
+
+    command -v nginx >/dev/null 2>&1 || return 0
+    [[ -f "$PANEL_VHOST" ]] || return 0
+    [[ -f "$template" ]]    || return 0
+
+    # A release whose own template still has a UI upstream predates the single
+    # front door. Leave the vhost alone: it matches that release.
+    grep -q 'vkai_ui' "$template" && return 0
+
+    # Nothing to repair when no location proxies to the UI. Commented-out lines
+    # cannot match: the pattern is anchored at the start of the directive.
+    grep -qE '^[[:space:]]*proxy_pass[[:space:]]+https?://vkai_ui' "$PANEL_VHOST" || return 0
+
+    warn "${PANEL_VHOST} still sends requests straight to the UI, so the security entrance protects only /api."
+    log  "Pointing every location at the API, which is what enforces the entrance..."
+
+    local backup="${PANEL_VHOST}.pre-frontdoor.bak"
+    cp -a "$PANEL_VHOST" "$backup"
+
+    sed -i -E 's#^([[:space:]]*proxy_pass[[:space:]]+https?://)vkai_ui#\1vkai_api#' "$PANEL_VHOST"
+
+    if ! nginx -t >/dev/null 2>&1; then
+        mv -f "$backup" "$PANEL_VHOST"
+        warn "nginx -t failed after the change; ${PANEL_VHOST} was restored unchanged."
+        warn "THE PANEL INTERFACE IS STILL REACHABLE WITHOUT THE SECURITY ENTRANCE."
+        warn "Re-run deploy/install.sh on this host to render a correct vhost."
+        return 0
+    fi
+
+    systemctl reload nginx 2>/dev/null || true
+    log "The panel port now has one front door: nginx -> ${SVC_API} -> UI. Previous vhost kept at ${backup}."
+
+    # Prove it from outside: without the entrance cookie the panel port must not
+    # serve the interface at all. One request, one scheme - curl prints
+    # "%{http_code}" even when it fails, so a fallback attempt would concatenate
+    # two codes into one string.
+    local port scheme code
+    port="$(env_get VKAI_PANEL_PUBLIC_PORT || echo 8888)"
+    scheme="$(env_get VKAI_PANEL_PUBLIC_SCHEME || echo http)"
+    code="$(curl -s -o /dev/null -k --max-time 5 -w '%{http_code}' "${scheme}://127.0.0.1:${port}/" 2>/dev/null || true)"
+    case "$code" in
+        404)      log "Verified: GET / on the panel port answers 404 without the entrance." ;;
+        ""|000)   warn "Could not reach ${scheme}://127.0.0.1:${port}/ to verify; check it by hand." ;;
+        *)        warn "GET / on the panel port answered ${code}, expected 404. Check ${PANEL_VHOST} by hand." ;;
+    esac
+}
+
 switch_to() {
     local dir="$1"
     log "Pointing ${CURRENT_LINK} at $(basename "$dir")"
@@ -332,6 +403,9 @@ deploy_release() {
 
     if health_check; then
         log "Release ${id} is live."
+        # After the release is proven healthy, never before: a vhost repair must
+        # not be the thing that makes a bad deploy harder to roll back.
+        reconcile_nginx "$dir"
         cleanup_old_releases
         return 0
     fi
@@ -365,6 +439,15 @@ rollback() {
 
     health_check || die "The rollback finished but the services are unhealthy. Inspect: journalctl -u ${SVC_API} -n 80"
     log "Rolled back. NOTE: database migrations are NOT rolled back automatically."
+
+    # The vhost is not part of a release, so it does not travel back with one.
+    if [[ -f "$PANEL_VHOST" ]] && ! grep -qE '^[[:space:]]*proxy_pass[[:space:]]+https?://vkai_ui' "$PANEL_VHOST" &&
+       [[ -f "${previous}/deploy/nginx/vkai-panel.conf" ]] &&
+       grep -q 'vkai_ui' "${previous}/deploy/nginx/vkai-panel.conf"; then
+        warn "This release predates the panel's single front door, but ${PANEL_VHOST} sends everything to ${SVC_API}."
+        warn "That release cannot serve the interface that way: the panel port will answer 404 for every page."
+        warn "Either deploy a release that has the front door, or re-run deploy/install.sh to render a matching vhost."
+    fi
 }
 
 # Keep the running release plus the MAX_OLD_RELEASES newest, delete the rest.

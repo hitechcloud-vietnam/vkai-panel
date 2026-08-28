@@ -65,13 +65,21 @@ container-management functionality.
 │  Web root:                │             │  ADMIN PANEL ONLY         │
 │  /vkai-panel/www/domains/ │             │                           │
 └───────────────────────────┘             └─────────────┬─────────────┘
-                                                        │
+                                                        │ nginx has ONE upstream
+                                                        ▼
+                                          ┌───────────────────────────┐
+                                          │  vkai-api (Go)            │
+                                          │  Port 30110, localhost    │
+                                          │  ACCESS GATE: host pin,   │
+                                          │  IP allow list, entrance  │
+                                          └─────────────┬─────────────┘
+                                                        │ only past the gate
                                       ┌─────────────────┴─────────────────┐
                                       │                                   │
                                       ▼                                   ▼
                         ┌─────────────────────────┐     ┌─────────────────────────┐
-                        │   vkai-ui (Next.js)     │     │  vkai-api (Go)          │
-                        │   Port 3000, localhost  │     │  Port 30110, localhost  │
+                        │   vkai-ui (Next.js)     │     │  API routes             │
+                        │   Port 3000, localhost  │     │  /api/v1/...            │
                         └─────────────────────────┘     └─────────────────────────┘
                                                                     │
                                                   ┌─────────────────┼─────────────────┐
@@ -87,6 +95,13 @@ The panel never listens on 80 or 443: those ports belong to the customer
 websites this server hosts. `vkai-api` owns the panel port itself and serves
 both the API and the UI behind the security entrance; ports 30110 and 3000 are
 bound to localhost and are not reachable from the Internet.
+
+There is exactly ONE front door. nginx on the panel port has a single upstream,
+`vkai-api`; `vkai-api` checks the host, the source address and the security
+entrance, and only then forwards what it does not serve itself to `vkai-ui`
+(`core/internal/uiproxy`). nginx never talks to Next.js. That is what puts the
+login page behind the entrance rather than beside it, and it is why rotating the
+entrance needs neither an nginx change nor a UI rebuild.
 
 ### Component Overview
 
@@ -607,12 +622,14 @@ Request ──► Auth Middleware ──► RBAC Check ──► Handler
 │  Logs: /vkai-panel/logs/    │        └──────────────┬──────────────┘
 │        sites/<domain>       │                       │
 └─────────────────────────────┘        ┌──────────────┴──────────────┐
-                                       │                             │
+                                       │ past the gate, and only then
                                        ▼                             ▼
                          ┌─────────────────────────┐   ┌─────────────────────────┐
                          │   vkai-ui (Next.js)     │   │   vkai-api internal API │
                          │   127.0.0.1:3000        │   │   127.0.0.1:30110       │
                          │   (systemd: vkai-ui)    │   │                         │
+                         │   reached ONLY through  │   │                         │
+                         │   vkai-api, never nginx │   │                         │
                          └─────────────────────────┘   └────────────┬────────────┘
                                                                     │
                                                   ┌─────────────────┼─────────────────┐
@@ -760,20 +777,29 @@ why the pre-deploy dump in step 3 is the real recovery path for a bad migration.
 
 ### nginx
 
-nginx terminates the panel port and proxies to the two loopback services. The
-vhost is installed as `/etc/nginx/conf.d/vkai-panel.conf` from
+nginx terminates the panel port and proxies to ONE loopback service, the API.
+The vhost is installed as `/etc/nginx/conf.d/vkai-panel.conf` from
 `deploy/nginx/vkai-panel.conf`:
 
 ```nginx
-upstream vkai_ui  { server 127.0.0.1:3000;  keepalive 32; }
-upstream vkai_api { server 127.0.0.1:30110; keepalive 32; }
+upstream vkai_api { server 127.0.0.1:30110; keepalive 16; }
 
 server {
     listen 8888;              # VKAI_PANEL_PORT -- never 80 or 443
     listen [::]:8888;
+
+    location / {              # pages, /_next/..., the login form
+        proxy_pass http://vkai_api;
+    }
     ...
 }
 ```
+
+There is deliberately no `vkai_ui` upstream here. Everything on the panel port
+reaches the access gate first, and the API forwards to Next.js afterwards. A
+`proxy_pass` to the UI from this file would put the interface back outside the
+entrance, which is why `deploy/install.sh` refuses to install a rendered
+configuration that contains one.
 
 This file contains no `listen 80` and no `listen 443`, by design: those ports
 belong to customer vhosts, which nginx serves from entirely separate server

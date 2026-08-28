@@ -19,6 +19,20 @@ type Config struct {
 	Log      LogConfig      `mapstructure:"log"`
 	CORS     CORSConfig     `mapstructure:"cors"`
 	Paths    PathsConfig    `mapstructure:"paths"`
+	UI       UIConfig       `mapstructure:"ui"`
+}
+
+// UIConfig locates the Next.js process that renders the panel interface.
+//
+// The API serves the interface by forwarding to it (see internal/uiproxy), so
+// that the security entrance guards the pages and the login form and not just
+// /api. The upstream is always loopback: nginx publishes one port, and that
+// port reaches this process, never Next.js directly.
+//
+// An empty upstream means no interface is attached, which is a valid API-only
+// deployment; unknown paths then get the API's own 404.
+type UIConfig struct {
+	Upstream string `mapstructure:"upstream"`
 }
 
 // PathsConfig is the resolved filesystem layout. It exists so a handler can be
@@ -144,6 +158,11 @@ func Load() (*Config, error) {
 
 	viper.SetDefault("agent.token_header", "X-Agent-Token")
 
+	// The Next.js service installed by deploy/install.sh, on loopback. It has
+	// to have a default: an unset value must not silently take the interface
+	// out of the panel's front door.
+	viper.SetDefault("ui.upstream", "http://127.0.0.1:3000")
+
 	viper.SetDefault("cors.allowed_origins", []string{})
 
 	viper.SetDefault("log.level", "info")
@@ -182,6 +201,7 @@ func Load() (*Config, error) {
 		"jwt.secret":        {"VKAI_JWT_SECRET", "JWT_SECRET"},
 		"jwt.issuer":        {"VKAI_JWT_ISSUER", "JWT_ISSUER"},
 		"log.level":         {"VKAI_LOG_LEVEL", "LOG_LEVEL"},
+		"ui.upstream":       {"VKAI_UI_UPSTREAM", "UI_UPSTREAM"},
 		"paths.panel_root":  {EnvPanelRoot, "PANEL_ROOT"},
 		"paths.web_root":    {EnvWebRoot, "WEB_ROOT"},
 		"paths.backup_root": {EnvBackupRoot, "BACKUP_ROOT"},

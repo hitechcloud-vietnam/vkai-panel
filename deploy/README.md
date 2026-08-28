@@ -354,7 +354,15 @@ What `deploy` does, in order:
    `vkai-agent` when enabled), reload nginx.
 6. Health check **both the API and the UI**; **roll back automatically** when the
    new release is unhealthy.
-7. Keep the running release plus the five most recent old ones.
+7. Reconcile `/etc/nginx/conf.d/vkai-panel.conf`, once the release is proven
+   healthy. The vhost is not part of a release, so a host installed before the
+   panel gained its single front door still proxies `location /` straight to the
+   Next.js service — which serves the interface, login form included, to anyone
+   who finds the panel port. Only those `proxy_pass` lines are pointed at the
+   API; `nginx -t` must pass, the previous file is kept as
+   `vkai-panel.conf.pre-frontdoor.bak`, and a host that is already correct is
+   left untouched.
+8. Keep the running release plus the five most recent old ones.
 
 > A rollback only reverts **code**, never database migrations. The backup from
 > step 3 is the recovery path when a migration damages data.
@@ -366,12 +374,19 @@ What `deploy` does, in order:
 The installer renders `deploy/nginx/vkai-panel.conf` (a template with
 `__VKAI_*__` tokens) into `/etc/nginx/conf.d/vkai-panel.conf`, filling in the
 panel port, TLS, the allow list, the server name and the log directory. nginx
-owns the public panel port and forwards to the two loopback services:
+owns the public panel port and forwards everything to ONE loopback service, the
+API:
 
 ```nginx
-upstream vkai_ui  { server 127.0.0.1:3000;  keepalive 16; }
 upstream vkai_api { server 127.0.0.1:30110; keepalive 16; }
 ```
+
+There is no `vkai_ui` upstream, on purpose. The API is what enforces the
+security entrance, so every request - the login page and every `/_next/` asset
+included - has to pass through it; the API then forwards what it does not serve
+itself to the Next.js service on `VKAI_UI_UPSTREAM`. When nginx sent `/`
+straight to Next.js the entrance guarded the API and nothing else. The installer
+refuses to install a rendered configuration that proxies to the UI directly.
 
 That file contains **no** `listen 80` and **no** `listen 443`, and must never
 contain them.

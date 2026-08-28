@@ -24,11 +24,25 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/tlsmanager"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/uiproxy"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/version"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/webserver"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/websocket"
 )
 
 func main() {
+	// "vkai-api --version" answers before anything else is touched: no
+	// configuration, no database, no port. It is how an operator - or a support
+	// ticket - finds out which release is actually installed, and how a build
+	// can be checked for the linker stamp it is supposed to carry.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-version", "-v", "version":
+			fmt.Printf("VKAI Panel API %s\n", version.String())
+			return
+		}
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -310,6 +324,26 @@ func main() {
 		logger.Fatal("Failed to build panel access gate", zap.Error(err))
 	}
 
+	// The panel has ONE front door, and it is this process. nginx forwards the
+	// whole panel port here; requests the API does not own are forwarded to the
+	// Next.js service afterwards. Serving the interface beside the gate instead
+	// of behind it is what made the entrance decorative: the login form was
+	// reachable by anyone who found the port, while only /api ever met the
+	// guard.
+	//
+	// The proxy is deliberately outside the gin engine. The engine's response
+	// headers are written for a JSON API - "Content-Security-Policy: default-src
+	// 'none'" among them - and would break every page of the interface.
+	panelHandler, err := uiproxy.New(uiproxy.Options{
+		Upstream: cfg.UI.Upstream,
+		API:      engine,
+		Logger:   logger,
+	})
+	if err != nil {
+		logger.Fatal("Failed to build the panel UI proxy", zap.Error(err))
+	}
+	logger.Info("Panel UI upstream", zap.String("upstream", cfg.UI.Upstream))
+
 	// Panel TLS is optional and independent of the customer vhosts' certificates.
 	//
 	// The manager owns the certificate for the whole life of the process: it
@@ -356,7 +390,7 @@ func main() {
 	// Create HTTP server
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      panelGuard.Wrap(engine),
+		Handler:      panelGuard.Wrap(panelHandler),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

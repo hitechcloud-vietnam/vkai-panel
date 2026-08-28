@@ -25,7 +25,15 @@ set -Eeuo pipefail
 # -----------------------------------------------------------------------------
 # Constants
 # -----------------------------------------------------------------------------
-readonly VKAI_VERSION="1.0.0"
+# The product version. It is NOT written here: the file VERSION at the repository
+# root is the single source of truth that the Makefile, the release workflow, the
+# UI build and the Go binaries all read. A literal in this script is how an
+# installed panel came to report 1.0.0 while VERSION said 0.5.0.
+#
+# It is resolved as soon as the source tree is known, which for a "curl | bash"
+# run is only after bootstrap_sources has downloaded one - hence the placeholder
+# and the second call in main().
+VKAI_VERSION="unknown"
 readonly BRAND_NAME="VKAI Panel"
 readonly BRAND_ORG="HiTechCloud (hitechcloud.vn)"
 
@@ -110,6 +118,21 @@ if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
     SELF_CMD="bash ${BASH_SOURCE[0]}"
 fi
 readonly SELF_CMD
+
+# read_product_version fills VKAI_VERSION from ${SRC_DIR}/VERSION. It returns
+# non-zero when no source tree is available yet, so the caller can decide
+# whether that is fatal.
+read_product_version() {
+    local file="${SRC_DIR}/VERSION" value
+    [[ -n "$SRC_DIR" && -f "$file" ]] || return 1
+    value="$(tr -d '[:space:]' <"$file")"
+    [[ -n "$value" ]] || return 1
+    VKAI_VERSION="$value"
+}
+
+# Best effort before the banner is printed; main() insists on it once the source
+# tree is certain.
+read_product_version || true
 
 # -----------------------------------------------------------------------------
 # Command line options (defaults chosen so that "no flags" is a valid install)
@@ -1471,6 +1494,13 @@ VKAI_SERVER_HOST=127.0.0.1
 VKAI_SERVER_PORT=${API_BIND_PORT}
 VKAI_SERVER_MODE=release
 
+# Where the API forwards requests for the user interface. The panel has ONE
+# front door: nginx sends the whole panel port to the API, the API checks the
+# security entrance, and only then does anything reach Next.js. nginx never
+# talks to Next.js, which is why the entrance protects the login form and not
+# just /api. Loopback only.
+VKAI_UI_UPSTREAM=http://127.0.0.1:${UI_BIND_PORT}
+
 # --- Database ----------------------------------------------------------------
 VKAI_DB_HOST=127.0.0.1
 VKAI_DB_PORT=5432
@@ -1905,6 +1935,34 @@ SQLEOF
 # =============================================================================
 # 12. Building
 # =============================================================================
+# panel_ldflags echoes the linker flags every Go build must use, straight out of
+# the Makefile.
+#
+# The flags are what put the VERSION file, the commit and the build date INTO the
+# binary: core/internal/version declares three empty strings for the linker to
+# overwrite, and without -X every one of them falls back to a compiled-in
+# default. This script used to build with "-ldflags '-s -w'" only, so the whole
+# versioning mechanism was inert in the shipped product and the in-panel upgrade
+# check compared releases against a version that was never stamped.
+#
+# The definition is READ from the Makefile rather than repeated here. A second
+# copy is a copy that drifts, and the two would drift silently: a wrongly stamped
+# binary still builds, still starts and still serves.
+panel_ldflags() {
+    [[ -f "${SRC_DIR}/Makefile" ]] ||
+        die "${SRC_DIR}/Makefile not found. It holds the single definition of the build stamp (LDFLAGS)."
+    has make ||
+        die "make is not installed, so the build stamp cannot be read from ${SRC_DIR}/Makefile. Install make and re-run."
+
+    local flags
+    # --no-print-directory: -C makes some versions of make announce the
+    # directory change on stdout, which would end up inside the linker flags.
+    flags="$(make -s --no-print-directory -C "$SRC_DIR" GO="$GO_BIN" print-ldflags)" ||
+        die "'make print-ldflags' failed in ${SRC_DIR}."
+    [[ -n "$flags" ]] || die "'make print-ldflags' produced nothing in ${SRC_DIR}."
+    printf '%s' "$flags"
+}
+
 build_core() {
     log_step "Building the API (core/)"
     cd "$CORE_DIR"
@@ -1912,11 +1970,15 @@ build_core() {
     export GOCACHE="${TMP_DIR}/go-build" GOMODCACHE="${TMP_DIR}/go-mod" GOFLAGS="-buildvcs=false"
     mkdir -p "$GOCACHE" "$GOMODCACHE"
 
+    local ldflags
+    ldflags="$(panel_ldflags)"
+    log_info "Build stamp: ${ldflags}"
+
     "$GO_BIN" mod download
-    "$GO_BIN" build -trimpath -ldflags "-s -w" -o "${CORE_DIR}/bin/vkai-api"       ./cmd/api
-    "$GO_BIN" build -trimpath -ldflags "-s -w" -o "${CORE_DIR}/bin/vkai-panelctl"  ./cmd/panelctl
+    "$GO_BIN" build -trimpath -ldflags "$ldflags" -o "${CORE_DIR}/bin/vkai-api"       ./cmd/api
+    "$GO_BIN" build -trimpath -ldflags "$ldflags" -o "${CORE_DIR}/bin/vkai-panelctl"  ./cmd/panelctl
     if [[ -f "${CORE_DIR}/cmd/cli/main.go" ]]; then
-        "$GO_BIN" build -trimpath -ldflags "-s -w" -o "${CORE_DIR}/bin/vkai-cli" ./cmd/cli
+        "$GO_BIN" build -trimpath -ldflags "$ldflags" -o "${CORE_DIR}/bin/vkai-cli" ./cmd/cli
     fi
 
     [[ -x "${CORE_DIR}/bin/vkai-api" ]] || die "${CORE_DIR}/bin/vkai-api was not produced"
@@ -1934,11 +1996,18 @@ build_agent() {
     export HOME="${TMP_DIR}"
     export GOCACHE="${TMP_DIR}/go-build" GOMODCACHE="${TMP_DIR}/go-mod" GOFLAGS="-buildvcs=false"
 
+    # The same stamp the Makefile's build-agent target uses. The agent is a
+    # separate Go module and cannot import core/internal/version, so the -X
+    # flags have no target there and the linker ignores them; passing the one
+    # definition anyway is what keeps this script and the Makefile identical.
+    local ldflags
+    ldflags="$(panel_ldflags)"
+
     "$GO_BIN" mod download
     if [[ -f "${AGENT_DIR}/cmd/main.go" ]]; then
-        "$GO_BIN" build -trimpath -ldflags "-s -w" -o "${AGENT_DIR}/bin/vkai-agent" ./cmd
+        "$GO_BIN" build -trimpath -ldflags "$ldflags" -o "${AGENT_DIR}/bin/vkai-agent" ./cmd
     else
-        "$GO_BIN" build -trimpath -ldflags "-s -w" -o "${AGENT_DIR}/bin/vkai-agent" .
+        "$GO_BIN" build -trimpath -ldflags "$ldflags" -o "${AGENT_DIR}/bin/vkai-agent" .
     fi
 
     [[ -x "${AGENT_DIR}/bin/vkai-agent" ]] || die "${AGENT_DIR}/bin/vkai-agent was not produced"
@@ -2254,7 +2323,6 @@ render_nginx_template() {
         esac
         line="${line//__VKAI_PANEL_PORT__/$PANEL_PORT}"
         line="${line//__VKAI_LISTEN_OPTS__/$listen_opts}"
-        line="${line//__VKAI_UI_PORT__/$UI_BIND_PORT}"
         line="${line//__VKAI_API_PORT__/$API_BIND_PORT}"
         line="${line//__VKAI_SERVER_NAME__/$server_name}"
         line="${line//__VKAI_LOG_DIR__/$LOG_DIR}"
@@ -2304,6 +2372,17 @@ setup_nginx() {
     if ! grep -qE '^[[:space:]]*server[[:space:]]+127\.0\.0\.1:[0-9]+;' "$target"; then
         rm -f "$target"
         die "The rendered nginx configuration has no 127.0.0.1 upstream. Was ${template} modified?"
+    fi
+
+    # The single front door, asserted rather than assumed. Every request on the
+    # panel port must reach the API, because the API is what enforces the
+    # security entrance; a proxy_pass to the Next.js service from here would put
+    # the interface - the login form included - back outside the gate, which is
+    # exactly the defect this arrangement fixes.
+    if grep -qE 'proxy_pass[[:space:]]+https?://vkai_ui' "$target"; then
+        rm -f "$target"
+        [[ -n "$backup" ]] && mv "$backup" "$target"
+        die "${template} proxies to the UI directly. Everything on the panel port must go to the API, which is what enforces the security entrance."
     fi
 
     if ! nginx -t; then
@@ -2929,6 +3008,9 @@ main() {
     log_info "Options: port='${OPT_PORT:-default}' entrance='${OPT_ENTRANCE:-generated}' domain='${OPT_DOMAIN:-none}' channel=${OPT_CHANNEL} tls-mode=${OPT_TLS_MODE} acme-staging=${OPT_ACME_STAGING} allow-ip='${OPT_ALLOW_IPS:-any}' skip-deps=${OPT_SKIP_DEPS} no-firewall=${OPT_NO_FIREWALL} quiet=${OPT_QUIET}"
 
     bootstrap_sources
+    read_product_version ||
+        die "${SRC_DIR}/VERSION not found or empty. It is the single source of truth for the product version."
+    log_info "Installing ${BRAND_NAME} v${VKAI_VERSION} (from ${SRC_DIR}/VERSION)."
     install_dependencies
     install_golang
     install_nodejs
