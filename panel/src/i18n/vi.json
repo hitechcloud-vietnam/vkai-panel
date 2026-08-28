@@ -229,6 +229,169 @@
       "placeholder": "Chọn máy chủ",
       "localBadgeTitle": "Đây là máy đang chạy panel. Panel quản lý chính máy này.",
       "noNode": "Chưa có máy chủ nào được đăng ký, nên chưa thể thực hiện thao tác này."
+    },
+    "detail": {
+      "title": "Máy chủ",
+      "backToList": "Tất cả máy chủ",
+      "loadFailed": "Không đọc được máy chủ này",
+      "loadFailedBody": "Panel không đọc được thông tin máy này. Hãy thử lại; nếu vẫn lỗi thì API đang không phản hồi.",
+      "metricsFailed": "Không đọc được mẫu đo đã lưu của máy này",
+      "sampleFailed": "Không đọc được số đo trực tiếp của máy này",
+      "countersNote": "Số liệu mạng ở trên là bộ đếm tích lũy: tổng byte kể từ lần khởi động gần nhất, không phải lưu lượng mỗi giây.",
+      "unavailableMeasurements": "Nguồn dữ liệu không đo được: {items}.",
+      "notFound": {
+        "title": "Không có máy chủ này",
+        "body": "Không có máy chủ nào mang định danh này thuộc tài khoản của bạn. Có thể máy đã bị xóa, hoặc liên kết trỏ tới máy của tài khoản khác - panel cố ý trả lời giống nhau cho cả hai trường hợp, để không ai dò được sự tồn tại của một node."
+      },
+      "denied": {
+        "title": "Bạn không được phép xem máy chủ này",
+        "body": "Tài khoản của bạn không có quyền \"server\", quyền mà mọi route dưới /servers đều yêu cầu. Hãy đề nghị quản trị viên cấp quyền."
+      },
+      "neverReported": {
+        "title": "Máy này chưa từng gửi báo cáo",
+        "body": "Chưa có mẫu đo nào từ máy này, nên mọi số liệu trực tiếp bên dưới là chưa có dữ liệu chứ không phải bằng 0. Hãy kiểm tra agent đã được cài, đang chạy và kết nối được tới panel."
+      },
+      "stale": {
+        "title": "Các số liệu này đã cũ",
+        "body": "Lần đo gần nhất là {when}. Những gì bạn thấy là số đo tại thời điểm đó, không phải tình trạng hiện tại của máy."
+      },
+      "monitoringDenied": {
+        "title": "Tài khoản của bạn không xem được số liệu trực tiếp",
+        "body": "Các endpoint của bộ thu thập yêu cầu quyền \"monitoring\" mà tài khoản của bạn không có. Thông tin của máy ở bên dưới không bị ảnh hưởng."
+      },
+      "duration": {
+        "days": "{n} ngày",
+        "hours": "{n} giờ",
+        "minutes": "{n} phút"
+      },
+      "reason": {
+        "noSample": "Chưa có dữ liệu: chưa có số đo nào của máy này được lưu - chưa có nguồn nào gửi mẫu đo, hoặc tính năng thu thập số liệu đang tắt trên panel này.",
+        "noStoredMetric": "Chưa có dữ liệu: chưa có agent nào trên máy này gửi mẫu đo.",
+        "noHeartbeat": "Chưa có dữ liệu: máy này chưa từng gửi tín hiệu về panel.",
+        "monitoringDenied": "Chưa có dữ liệu: xem số liệu trực tiếp cần quyền \"monitoring\" mà tài khoản của bạn không có.",
+        "noTags": "Chưa có dữ liệu: máy này chưa được gắn nhãn nào.",
+        "noAgentVersion": "Chưa có dữ liệu: API chưa báo cáo phiên bản agent của máy này."
+      },
+      "field": {
+        "hostname": "Tên máy",
+        "ipv6": "Địa chỉ IPv6",
+        "sshPort": "Cổng SSH",
+        "cores": "Số nhân CPU",
+        "ramTotal": "Bộ nhớ đã lắp",
+        "diskTotal": "Dung lượng ổ đĩa",
+        "swap": "Bộ nhớ swap",
+        "load": "Tải trung bình",
+        "role": "Vai trò",
+        "location": "Vị trí",
+        "tags": "Nhãn",
+        "agentVersion": "Phiên bản agent",
+        "lastSeen": "Lần cuối thấy",
+        "registered": "Ngày đăng ký",
+        "uptime": "Thời gian hoạt động",
+        "bootTime": "Khởi động lúc",
+        "sampledAt": "Đo trực tiếp lúc",
+        "sampleSource": "Nguồn số đo",
+        "storedSample": "Mẫu đo đã lưu lúc",
+        "transferred": "Đã truyền kể từ khi khởi động"
+      },
+      "section": {
+        "identity": "Định danh và phần cứng",
+        "agent": "Agent và số đo",
+        "filesystems": "Hệ thống tập tin",
+        "interfaces": "Giao diện mạng",
+        "history": "Lịch sử",
+        "websites": "Website trên máy này",
+        "databases": "Cơ sở dữ liệu trên máy này",
+        "panelHost": "Xác minh máy cài panel",
+        "terminal": "Terminal"
+      },
+      "filesystems": {
+        "description": "Mọi hệ thống tập tin mà máy này báo cáo trong lần đo gần nhất.",
+        "emptyTitle": "Chưa có hệ thống tập tin nào được báo cáo",
+        "emptyBody": "Lần đo gần nhất của máy này không kèm danh sách hệ thống tập tin. Máy chưa từng được đo thì không báo cáo gì cả.",
+        "mountpoint": "Điểm gắn kết",
+        "device": "Thiết bị",
+        "fstype": "Loại",
+        "used": "Đã dùng",
+        "total": "Dung lượng",
+        "usage": "Mức sử dụng",
+        "inodes": "Inode đã dùng",
+        "root": "gốc",
+        "readOnly": "chỉ đọc",
+        "noInodes": "Chưa có dữ liệu: máy này không báo cáo số inode cho hệ thống tập tin này."
+      },
+      "interfaces": {
+        "description": "Bộ đếm byte và gói tin kể từ lần khởi động gần nhất của máy.",
+        "emptyTitle": "Chưa có giao diện mạng nào được báo cáo",
+        "emptyBody": "Lần đo gần nhất của máy này không kèm danh sách giao diện mạng.",
+        "name": "Giao diện",
+        "bytesIn": "Nhận vào",
+        "bytesOut": "Gửi đi",
+        "packetsIn": "Gói nhận",
+        "packetsOut": "Gói gửi"
+      },
+      "history": {
+        "description": "Các số đo bộ thu thập còn lưu cho máy này. Đường biểu đồ bị đứt là khoảng thời gian không có số đo - không phải khoảng bằng 0.",
+        "rangeLabel": "Khoảng thời gian",
+        "range": {
+          "1h": "1 giờ",
+          "6h": "6 giờ",
+          "24h": "24 giờ"
+        },
+        "utilisation": "CPU và bộ nhớ",
+        "network": "Mạng",
+        "in": "Vào",
+        "out": "Ra",
+        "failed": "Không đọc được lịch sử",
+        "deniedTitle": "Tài khoản của bạn không xem được lịch sử",
+        "deniedBody": "Đọc chuỗi số liệu theo thời gian cần quyền \"monitoring\" mà tài khoản của bạn không có.",
+        "emptyTitle": "Không có số đo nào trong khoảng này",
+        "emptyBody": "Bộ thu thập không lưu số đo nào cho máy này trong khoảng thời gian đã chọn. Nếu máy chưa từng được đo thì khoảng ngắn hơn cũng sẽ trống.",
+        "retention": "Panel này lưu số đo trong {days} ngày.",
+        "truncated": "Khoảng thời gian bạn chọn vượt quá thời gian panel lưu trữ, nên biểu đồ bắt đầu từ số đo cũ nhất còn giữ."
+      },
+      "websites": {
+        "count": {
+          "one": "{count} website tại đây",
+          "other": "{count} website tại đây"
+        },
+        "emptyTitle": "Không có website nào trên máy này",
+        "emptyBody": "Không có website nào của bạn đang chạy tại đây.",
+        "deniedTitle": "Tài khoản của bạn không xem được danh sách website",
+        "deniedBody": "Liệt kê website cần quyền \"website\" mà tài khoản của bạn không có.",
+        "partial": "Chỉ đọc được {scanned} website đầu tiên trong tổng số {total}, nên danh sách này có thể chưa đầy đủ."
+      },
+      "databases": {
+        "count": {
+          "one": "{count} cơ sở dữ liệu",
+          "other": "{count} cơ sở dữ liệu"
+        },
+        "countUnavailable": "Chưa có dữ liệu: không đọc được danh sách cơ sở dữ liệu nên chưa biết có bao nhiêu cơ sở dữ liệu trên engine này.",
+        "port": "Cổng",
+        "emptyTitle": "Không có engine cơ sở dữ liệu nào trên máy này",
+        "emptyBody": "Chưa có bản cài MySQL, MariaDB hay PostgreSQL nào được đăng ký cho máy này.",
+        "deniedTitle": "Tài khoản của bạn không xem được danh sách cơ sở dữ liệu",
+        "deniedBody": "Liệt kê cơ sở dữ liệu cần quyền \"database\" mà tài khoản của bạn không có."
+      },
+      "panelHost": {
+        "description": "Đây là máy đang cài panel. Dưới đây là các kiểm tra panel thực hiện với khẳng định đó.",
+        "registered": "Đã đăng ký",
+        "verified": "Đã xác minh định danh",
+        "healthy": "Đang báo cáo",
+        "witness": "Xác minh bởi",
+        "registeredAt": "Đăng ký lúc",
+        "lastVerified": "Xác minh lần cuối",
+        "lastMismatch": "Sai lệch gần nhất",
+        "verdict": "Kết luận",
+        "noMismatch": "Chưa có dữ liệu: chưa ghi nhận sai lệch nào cho máy này.",
+        "mismatchTitle": "Định danh đã lưu không khớp với máy này",
+        "mismatchBody": "Bản ghi của panel về node này không còn khớp với máy đang chạy. Trước khi xử lý xong, hãy coi mọi số liệu trên trang này là của một máy chưa xác định."
+      },
+      "terminal": {
+        "localBody": "Terminal mở phiên shell ngay trên máy này, vì đây chính là máy đang chạy panel.",
+        "remoteBody": "Terminal mở phiên shell trên máy đang chạy panel, không phải trên node này. Panel chưa có endpoint nào mở shell trên node từ xa.",
+        "open": "Mở terminal"
+      }
     }
   },
   "dashboard": {
