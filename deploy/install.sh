@@ -1236,6 +1236,17 @@ sync_sources() {
         fi
     fi
 
+    # The UI build reads the version from the repository root, one level above
+    # panel/. On a developer machine that file is simply there; in an installed
+    # tree it only exists if it is copied, and without it "npm run build" stops
+    # at its prebuild step with ENOENT on /vkai-panel/VERSION.
+    if [[ -f "${SRC_DIR}/VERSION" ]]; then
+        install -m 644 "${SRC_DIR}/VERSION" "${PANEL_ROOT}/VERSION"
+        log_info "Version $(tr -d '[:space:]' <"${PANEL_ROOT}/VERSION") recorded at ${PANEL_ROOT}/VERSION."
+    else
+        die "${SRC_DIR}/VERSION not found. It is the single source of truth for the product version and the UI cannot be built without it."
+    fi
+
     install -d -o "$VKAI_USER" -g "$VKAI_GROUP" -m 750 "${CORE_DIR}/bin" "${AGENT_DIR}/bin"
     chown -R "$VKAI_USER:$VKAI_GROUP" "$CORE_DIR" "$UI_DIR" "$AGENT_DIR"
     log_info "core/, panel/ and agent/ are in place."
