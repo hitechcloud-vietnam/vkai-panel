@@ -3,6 +3,7 @@ package wpcli
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -11,7 +12,23 @@ import (
 )
 
 // nonRoot is an ordinary site identity.
+// nonRoot is the site identity the staging and runner tests use.
+//
+// The point it exists to prove is "not uid 0", not "uid 1201". Some of these
+// tests chown files to it, and chowning to an arbitrary uid needs privilege the
+// test process may not have: as root any uid works, as an ordinary user only its
+// own does. Hard-coding 1201 therefore passed for whoever wrote it, running as
+// root, and failed for CI, running as an ordinary user - which is the opposite of
+// what a test asserting non-root behaviour should do.
+//
+// So: use the process's own identity when it is already unprivileged, and a
+// fixed unprivileged uid when running as root. Either way it is not uid 0, which
+// is the property under test.
 func nonRoot() Identity {
+	if uid := os.Getuid(); uid != 0 {
+		return Identity{Name: "site-example", Group: "site-example",
+			UID: uint32(uid), GID: uint32(os.Getgid())}
+	}
 	return Identity{Name: "site-example", Group: "site-example", UID: 1201, GID: 1201}
 }
 

@@ -148,11 +148,11 @@ func TestQueryColumnsExistInSchema(t *testing.T) {
 	root := coreRoot(t)
 	schema := loadSchema(t, root)
 
-	stmts, err := dbschema.CollectStatements(
-		filepath.Join(root, "internal"),
-		filepath.Join(root, "cmd"),
-		filepath.Join(root, "pkg"),
-	)
+	// Only the directories that exist. "pkg" is passed because a Go layout often
+	// has one; this module does not, and a sweep that fails because a
+	// conventional directory is absent is reporting the repository layout as a
+	// defect.
+	stmts, err := dbschema.CollectStatements(existingDirs(root, "internal", "cmd", "pkg")...)
 	if err != nil {
 		t.Fatalf("collect SQL statements: %v", err)
 	}
@@ -277,11 +277,11 @@ func TestStatementsPrepareAgainstLiveSchema(t *testing.T) {
 	}
 	defer db.Close()
 
-	stmts, err := dbschema.CollectStatements(
-		filepath.Join(root, "internal"),
-		filepath.Join(root, "cmd"),
-		filepath.Join(root, "pkg"),
-	)
+	// Only the directories that exist. "pkg" is passed because a Go layout often
+	// has one; this module does not, and a sweep that fails because a
+	// conventional directory is absent is reporting the repository layout as a
+	// defect.
+	stmts, err := dbschema.CollectStatements(existingDirs(root, "internal", "cmd", "pkg")...)
 	if err != nil {
 		t.Fatalf("collect SQL statements: %v", err)
 	}
@@ -318,4 +318,19 @@ func waivedFile(file string) bool {
 		}
 	}
 	return false
+}
+
+// existingDirs returns the given subdirectories of root that are actually
+// present. A collector that walks a fixed list of conventional directories
+// should skip the ones this repository does not have, rather than report their
+// absence as a failure of the sweep.
+func existingDirs(root string, names ...string) []string {
+	dirs := make([]string, 0, len(names))
+	for _, name := range names {
+		p := filepath.Join(root, name)
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			dirs = append(dirs, p)
+		}
+	}
+	return dirs
 }

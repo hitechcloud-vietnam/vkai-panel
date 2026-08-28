@@ -385,9 +385,20 @@ func (m *Manager) refreshSelfSigned() {
 			zap.Error(err))
 		return
 	}
-	m.install(fresh, SourceSelfSigned)
+	// A reissue must not quietly upgrade the story the banner tells. When the
+	// operator asked for "custom" or "letsencrypt" and the panel is only serving
+	// a generated pair because that failed, it is still serving a fallback -
+	// reporting it as a plain self-signed certificate would read as a choice
+	// rather than as the symptom of a certificate that could not be loaded or
+	// issued, and the operator would stop looking for the cause.
+	source := SourceSelfSigned
+	if m.cfg.TLSMode() != config.TLSModeSelfSigned {
+		source = SourceSelfSignedFallback
+	}
+	m.install(fresh, source)
 	m.log.Info("panel TLS: self-signed certificate reissued",
-		zap.String("cert_file", certFile), zap.String("key_file", keyFile))
+		zap.String("cert_file", certFile), zap.String("key_file", keyFile),
+		zap.String("source", source))
 }
 
 // refreshCustom picks up a certificate an operator (or their own automation)
