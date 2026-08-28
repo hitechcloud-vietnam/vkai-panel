@@ -405,25 +405,38 @@ jobs:
           cache: 'npm'
           cache-dependency-path: panel/package-lock.json
 
-      # `go build -o` khong tu tao thu muc cha.
+      # `go build -o` does not create parent directories.
       - name: Prepare dist
         run: mkdir -p "$DIST/core/bin" "$DIST/agent/bin" "$DIST/panel" "$DIST/deploy"
 
-      # CGO_ENABLED=0: binary tinh, chay duoc tren may chu khong cung glibc.
-      # -trimpath -ldflags "-s -w": bo duong dan build va bang ky hieu.
+      # CGO_ENABLED=0: a static binary that runs on servers whose glibc does not
+      # match the build machine's. -trimpath drops build machine paths and the
+      # -s -w in the stamp below drops the symbol table and DWARF.
+      # The build stamp comes from the Makefile, the same definition a developer
+      # builds with, so a binary produced here reports the same version, commit
+      # and commit date as one built locally.
+      - name: Resolve the build stamp
+        id: stamp
+        run: |
+          set -euo pipefail
+          echo "ldflags=$(make -s print-ldflags)" >> "$GITHUB_OUTPUT"
+          make -s print-ldflags
+
       - name: Build Core API and CLI
         working-directory: core
         env:
           CGO_ENABLED: '0'
           GOOS: linux
           GOARCH: amd64
+          LDFLAGS: ${{ steps.stamp.outputs.ldflags }}
         run: |
           set -euo pipefail
-          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-api"      ./cmd/api
-          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-cli"      ./cmd/cli
-          # panelctl la cong cu quan tri bat buoc cua ban cai (deploy/install.sh
-          # cai no vao /usr/local/bin), nen no thuoc goi phat hanh.
-          go build -trimpath -ldflags "-s -w" -o "$DIST/core/bin/vkai-panelctl" ./cmd/panelctl
+          go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/core/bin/vkai-api"      ./cmd/api
+          go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/core/bin/vkai-cli"      ./cmd/cli
+          # panelctl is an administration tool the installer requires
+          # (deploy/install.sh puts it in /usr/local/bin), so it belongs to the
+          # release package.
+          go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/core/bin/vkai-panelctl" ./cmd/panelctl
 
       - name: Build Agent
         working-directory: agent
@@ -431,10 +444,13 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: linux
           GOARCH: amd64
+          LDFLAGS: ${{ steps.stamp.outputs.ldflags }}
         run: |
           set -euo pipefail
-          # Package main cua agent nam o ./cmd, khong phai ./cmd/agent.
-          go build -trimpath -ldflags "-s -w" -o "$DIST/agent/bin/vkai-agent" ./cmd
+          # The agent's main package is ./cmd, not ./cmd/agent. The agent is a
+          # separate Go module, so only -s -w applies to it: it cannot import
+          # core/internal/version and carries its own version constant.
+          go build -trimpath -ldflags "$LDFLAGS" -o "$DIST/agent/bin/vkai-agent" ./cmd
 
       - name: Stage migrations
         run: cp -r core/migrations "$DIST/core/migrations"

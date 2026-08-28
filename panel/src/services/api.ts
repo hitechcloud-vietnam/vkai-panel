@@ -455,3 +455,36 @@ export const panelSettingsApi = {
     api.post('/api/v1/panel/settings/entrance/regenerate', { confirm }),
   reissueCertificate: () => api.post('/api/v1/panel/settings/tls/reissue'),
 };
+
+// Panel version and self-upgrade API.
+//
+// Two things here are unlike the rest of this file.
+//
+// The version endpoint needs no token. It is what a client asks while the panel
+// is restarting itself: the upgrade takes the API away and brings it back on a
+// new release, and comparing the version before and after is the only reliable
+// proof that the upgrade landed. It gets a short timeout of its own so a poll
+// against a socket that is not accepting yet fails fast instead of stalling the
+// whole watch loop.
+//
+// The progress endpoint is polled through the same restart, so it too uses a
+// short timeout. A rejected promise from either of these is an expected state
+// during an upgrade, not an error to show the operator - see UpgradeSection.
+const UPGRADE_POLL_TIMEOUT = 6000;
+
+export const upgradeApi = {
+  /** Running version, build commit and build date. No authentication needed. */
+  version: () => api.get('/api/v1/version', { timeout: UPGRADE_POLL_TIMEOUT }),
+  /** Cached release status plus the current job. Administrator only. */
+  status: () => api.get('/api/v1/upgrade/status'),
+  /** Force a fresh check against the release source. Administrator only. */
+  check: () => api.post('/api/v1/upgrade/check'),
+  /** Begin an upgrade. Returns a job id immediately. Administrator only. */
+  start: (version?: string) =>
+    api.post('/api/v1/upgrade/start', version ? { version } : {}),
+  /** Where one job has got to. Administrator only. */
+  progress: (jobId: string) =>
+    api.get(`/api/v1/upgrade/progress/${encodeURIComponent(jobId)}`, {
+      timeout: UPGRADE_POLL_TIMEOUT,
+    }),
+};

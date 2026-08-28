@@ -1,17 +1,18 @@
 # ============================================================================
 # VKAI Panel - Makefile (HiTechCloud)
 # ----------------------------------------------------------------------------
-# Thu muc ma nguon:
+# Source directories:
 #   core/   Go API      (module github.com/hitechcloud-vietnam/vkai-panel)
 #   panel/  Next.js UI
 #   agent/  Go node agent
 #
-# Duong dan chuan khi cai dat tren may chu: /vkai-panel/...
+# Installed layout on a server: /vkai-panel/...
 #
-# Panel duoc build va chay TRAN tren Linux: binary Go + Next.js standalone +
-# systemd. KHONG co target Docker nao o day - Docker chi la TINH NANG cho khach
-# hang quan ly container cua ho, khong phai cach dung chinh panel.
-# PostgreSQL va Redis cai tran tren may; bo cai deploy/install.sh lo viec do.
+# The panel is built and runs BARE-METAL on Linux: Go binaries + a Next.js
+# standalone build + systemd. There is deliberately no Docker target here -
+# Docker is a FEATURE for customers managing their own containers, not the way
+# the panel itself is run. PostgreSQL and Redis are installed natively on the
+# host; deploy/install.sh takes care of that.
 # ============================================================================
 
 .PHONY: all build build-core build-panel build-agent package clean test test-core \
@@ -20,47 +21,92 @@
         deps deps-core deps-panel install hooks check-services \
         deploy deploy-release deploy-status rollback status restart \
         install-systemd uninstall-systemd setup check watch-core watch-panel \
-        db-backup db-restore ssl-issue ssl-renew logs version help
+        db-backup db-restore ssl-issue ssl-renew logs version help \
+        sync-version check-version-sync print-ldflags
 
-# --- Thuong hieu -----------------------------------------------------------
+# --- Brand -----------------------------------------------------------------
 BRAND        = VKAI Panel
 BRAND_SLUG   = vkai
 BRAND_VENDOR = HiTechCloud
-VERSION     ?= 1.0.0
 
-# --- Thu muc ma nguon ------------------------------------------------------
+# --- Version ---------------------------------------------------------------
+# The file VERSION at the repository root is the SINGLE source of truth for the
+# product version. Nothing else in this repository may declare one:
+#
+#   Go binaries    stamped from here through LDFLAGS into
+#                  core/internal/version, with core/internal/version/
+#                  version_default.go as the un-stamped fallback
+#   panel/         panel/scripts/gen-version.js compiles it into the bundle and
+#                  keeps panel/package.json in step
+#   releases       .github/workflows/release.yml reads it, tags v$(VERSION) and
+#                  publishes the release manifest
+#
+# "make sync-version" propagates a change; "make check-version-sync" fails when
+# any copy has drifted (the Version Check workflow runs it on every pull
+# request). An explicit "make VERSION=x.y.z ..." still wins, for local testing.
+VERSION_FILE = VERSION
+VERSION := $(strip $(shell cat $(VERSION_FILE) 2>/dev/null))
+
+ifeq ($(VERSION),)
+$(error $(VERSION_FILE) is missing or empty - it is the single source of truth for the product version)
+endif
+
+# --- Source directories ----------------------------------------------------
 CORE_DIR  = core
 PANEL_DIR = panel
 AGENT_DIR = agent
 BUILD_DIR = build
 DIST_DIR  = dist
 
-# --- Ten binary ------------------------------------------------------------
+# --- Binary names ----------------------------------------------------------
 API_BIN      = vkai-api
 CLI_BIN      = vkai-cli
 PANELCTL_BIN = vkai-panelctl
 AGENT_BIN    = vkai-agent
 
-# --- Ten systemd service ---------------------------------------------------
+# --- systemd service names -------------------------------------------------
 SVC_API   = vkai-api
 SVC_UI    = vkai-ui
 SVC_AGENT = vkai-agent
 
-# --- Duong dan cai dat chuan ----------------------------------------------
+# --- Standard installation paths -------------------------------------------
 PANEL_ROOT ?= /vkai-panel
 WEB_ROOT   ?= $(PANEL_ROOT)/www/domains
 
-# --- Goi phat hanh ---------------------------------------------------------
-# Bo cuc goi phai trung voi job "Package" trong .github/workflows/ci.yml va voi
-# thu tu deploy/scripts/deploy.sh kiem tra, neu khong deploy.sh se tu choi goi.
-PKG_NAME ?= vkai-panel-$(VERSION).tar.gz
-
 # Go variables
 GO = go
-# -trimpath: bo duong dan may build khoi binary. -s -w: bo bang ky hieu/DWARF.
-# CGO_ENABLED=0: binary tinh, chay duoc tren may chu khong cung phien ban glibc.
-GO_LDFLAGS = -s -w
-GOBUILD = CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)"
+# Target platform of the built binaries. A release builds one package per
+# architecture, so the package name carries them.
+GOOS   ?= $(shell $(GO) env GOOS)
+GOARCH ?= $(shell $(GO) env GOARCH)
+
+# --- Release package -------------------------------------------------------
+# The package layout must match the "Package" job in .github/workflows/ci.yml
+# and the order deploy/scripts/deploy.sh validates, otherwise deploy.sh rejects
+# the package.
+PKG_NAME ?= vkai-panel-$(VERSION)-$(GOOS)-$(GOARCH).tar.gz
+
+# --- Build stamp -----------------------------------------------------------
+# One LDFLAGS definition, used by every Go build target in this file, so a
+# binary can always answer "which release am I and where did I come from".
+#
+# BUILD_DATE is the COMMIT date, not the moment the compiler ran: rebuilding the
+# same commit must produce the same bytes. %cI is strict ISO 8601 (RFC 3339).
+# Outside a git checkout both fall back to "unknown", and core/internal/version
+# then reports what the Go toolchain itself recorded.
+VERSION_PKG = github.com/hitechcloud-vietnam/vkai-panel/internal/version
+COMMIT     := $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+BUILD_DATE := $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
+
+# -s -w: drop the symbol table and DWARF. -trimpath (below): drop build machine
+# paths. CGO_ENABLED=0: a static binary that runs on servers whose glibc does
+# not match the build machine's.
+LDFLAGS = -s -w \
+	-X $(VERSION_PKG).Version=$(VERSION) \
+	-X $(VERSION_PKG).Commit=$(COMMIT) \
+	-X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
+
+GOBUILD = CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -trimpath -ldflags "$(LDFLAGS)"
 GOTEST = $(GO) test
 GOVET = $(GO) vet
 GOFMT = gofmt
@@ -75,7 +121,7 @@ all: build
 
 ## help: Show this help message
 help:
-	@echo "$(BRAND) - $(BRAND_VENDOR)"
+	@echo "$(BRAND) v$(VERSION) - $(BRAND_VENDOR)"
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
@@ -84,7 +130,7 @@ help:
 	@echo "  build-core    Build core/ binaries only ($(API_BIN), $(CLI_BIN), $(PANELCTL_BIN))"
 	@echo "  build-panel   Build panel/ (Next.js) only"
 	@echo "  build-agent   Build agent/ binary only ($(AGENT_BIN))"
-	@echo "  package       Dong goi ban phat hanh tran ($(PKG_NAME))"
+	@echo "  package       Package a bare-metal release ($(PKG_NAME))"
 	@echo "  clean         Clean build artifacts"
 	@echo "  test          Run all tests"
 	@echo "  test-core     Run core/ tests"
@@ -103,6 +149,8 @@ help:
 	@echo "  deploy-status Show deployment status via deploy.sh"
 	@echo "  status        Show systemd service status"
 	@echo "  version       Show version"
+	@echo "  sync-version  Propagate $(VERSION_FILE) into every generated copy"
+	@echo "  check-version-sync  Fail if any version copy has drifted"
 	@echo "  help          Show this help message"
 
 ## build: Build core and panel
@@ -110,7 +158,7 @@ build: build-core build-panel
 
 ## build-core: Build core binaries
 build-core:
-	@echo "Building core ($(CORE_DIR)/)..."
+	@echo "Building core ($(CORE_DIR)/) v$(VERSION) (commit $(COMMIT))..."
 	@mkdir -p $(BUILD_DIR)
 	cd $(CORE_DIR) && $(GOBUILD) -o ../$(BUILD_DIR)/$(API_BIN) ./cmd/api
 	cd $(CORE_DIR) && $(GOBUILD) -o ../$(BUILD_DIR)/$(CLI_BIN) ./cmd/cli
@@ -118,26 +166,68 @@ build-core:
 	@echo "Core built successfully!"
 
 ## build-panel: Build the Next.js UI (standalone)
-## `npm run build` chay ca postbuild:standalone, buoc copy .next/static va
-## public/ vao .next/standalone. Thieu buoc do thi UI tra ve HTML nhung moi
-## /_next/static/*.js deu 404 -> "Application error: a client-side exception".
+## `npm run build` also runs prebuild (which regenerates the version the UI
+## displays from $(VERSION_FILE)) and postbuild:standalone, which copies
+## .next/static and public/ into .next/standalone. Without that copy the UI
+## returns HTML but every /_next/static/*.js is a 404 -> "Application error: a
+## client-side exception".
 build-panel:
-	@echo "Building panel ($(PANEL_DIR)/)..."
+	@echo "Building panel ($(PANEL_DIR)/) v$(VERSION)..."
 	cd $(PANEL_DIR) && $(NPM) ci && $(NPM) run build
 	@test -f $(PANEL_DIR)/.next/standalone/server.js || \
-		{ echo "LOI: thieu $(PANEL_DIR)/.next/standalone/server.js"; exit 1; }
+		{ echo "ERROR: $(PANEL_DIR)/.next/standalone/server.js is missing"; exit 1; }
 	@test -d $(PANEL_DIR)/.next/standalone/.next/static || \
-		{ echo "LOI: thieu $(PANEL_DIR)/.next/standalone/.next/static"; exit 1; }
+		{ echo "ERROR: $(PANEL_DIR)/.next/standalone/.next/static is missing"; exit 1; }
 	@echo "Panel built successfully!"
 
 ## build-agent: Build agent binary
+## The agent is a separate Go module and cannot import core/internal/version,
+## so it is not stamped by LDFLAGS today; see agent/cmd/main.go.
 build-agent:
 	@echo "Building agent ($(AGENT_DIR)/)..."
 	@mkdir -p $(BUILD_DIR)
 	cd $(AGENT_DIR) && $(GOBUILD) -o ../$(BUILD_DIR)/$(AGENT_BIN) ./cmd
 	@echo "Agent built successfully!"
 
-## package: Dong goi ban phat hanh tran (tar.gz + SHA256), giong job "Package" cua CI
+## sync-version: Propagate VERSION into every generated copy
+## The copies exist because neither Go's //go:embed nor a browser bundle can
+## read a file outside its own tree at build time. They are generated, never
+## hand-edited, and check-version-sync fails the build if they drift.
+sync-version:
+	@echo "Syncing version $(VERSION) from $(VERSION_FILE)..."
+	@printf '%s\n' \
+		'// Code generated from the repository VERSION file by "make sync-version".' \
+		'// DO NOT EDIT: edit /$(VERSION_FILE) and run "make sync-version".' \
+		'//' \
+		'// This file exists because Go'"'"'s //go:embed cannot reach outside the module' \
+		'// directory (core/), while VERSION has to stay at the repository root where the' \
+		'// installer, the Makefile, the UI build and the release workflow all read it.' \
+		'// The copy below is therefore mechanical, and the "Version Check" workflow fails' \
+		'// any pull request in which it has drifted from VERSION.' \
+		'' \
+		'package version' \
+		'' \
+		'// defaultVersion is the version a build reports when no linker flags were' \
+		'// passed, that is, a plain "go build ./...".' \
+		'const defaultVersion = "$(VERSION)"' \
+		> $(CORE_DIR)/internal/version/version_default.go
+	cd $(PANEL_DIR) && $(NODE) scripts/gen-version.js --write
+	@echo "Version synced: $(VERSION)"
+
+## check-version-sync: Fail if any generated copy of VERSION has drifted
+check-version-sync:
+	@set -e; \
+	go_version="$$(sed -n 's/^const defaultVersion = "\(.*\)"$$/\1/p' \
+		$(CORE_DIR)/internal/version/version_default.go)"; \
+	if [ "$$go_version" != "$(VERSION)" ]; then \
+		echo "ERROR: $(CORE_DIR)/internal/version/version_default.go says '$$go_version', $(VERSION_FILE) says '$(VERSION)'."; \
+		echo "Run: make sync-version"; \
+		exit 1; \
+	fi; \
+	cd $(PANEL_DIR) && $(NODE) scripts/gen-version.js --check
+	@echo "Version is consistent everywhere: $(VERSION)"
+
+## package: Package a bare-metal release (tar.gz + SHA256), same layout as the CI "Package" job
 package: build-core build-agent build-panel
 	@echo "Packaging $(PKG_NAME)..."
 	rm -rf $(DIST_DIR)
@@ -152,10 +242,13 @@ package: build-core build-agent build-panel
 	cp deploy/nginx/vkai-panel.conf $(DIST_DIR)/deploy/nginx/
 	cp deploy/scripts/deploy.sh $(DIST_DIR)/deploy/scripts/
 	chmod +x $(DIST_DIR)/deploy/scripts/deploy.sh
+	# The unpacked release says which version it is, so an operator reading
+	# /vkai-panel/releases/<id>/VERSION never has to guess.
+	cp $(VERSION_FILE) $(DIST_DIR)/$(VERSION_FILE)
 	tar -czf $(PKG_NAME) -C $(DIST_DIR) .
 	sha256sum $(PKG_NAME) > $(PKG_NAME).sha256
 	@echo "Package ready: $(PKG_NAME)"
-	@echo "Trien khai: sudo bash deploy/scripts/deploy.sh deploy $(PKG_NAME)"
+	@echo "Deploy with: sudo bash deploy/scripts/deploy.sh deploy $(PKG_NAME)"
 
 ## clean: Clean build artifacts
 clean:
@@ -235,30 +328,30 @@ format-panel:
 	cd $(PANEL_DIR) && $(NPM) run format --if-present
 	@echo "Panel code formatted!"
 
-## check-services: Kiem tra PostgreSQL/Redis cai tran tren may co dang chay khong
+## check-services: Check that the natively installed PostgreSQL/Redis are running
 check-services:
 	@for svc in postgresql redis-server redis; do \
 		if systemctl list-unit-files "$$svc.service" >/dev/null 2>&1 && \
 		   systemctl is-active --quiet "$$svc"; then \
-			echo "OK: $$svc dang chay."; \
+			echo "OK: $$svc is running."; \
 		fi; \
 	done
 	@systemctl is-active --quiet postgresql || \
-		echo "CANH: postgresql khong chay. Cai tran bang: sudo bash deploy/install.sh"
+		echo "WARNING: postgresql is not running. Install it natively with: sudo bash deploy/install.sh"
 	@systemctl is-active --quiet redis-server || systemctl is-active --quiet redis || \
-		echo "CANH: redis khong chay. Cai tran bang: sudo bash deploy/install.sh"
+		echo "WARNING: redis is not running. Install it natively with: sudo bash deploy/install.sh"
 
-## run-dev: Chay song song API (core/) va UI (panel/) o che do phat trien
-## PostgreSQL va Redis phai cai TRAN tren may (deploy/install.sh lo viec do);
-## khong con "docker compose up" cho ha tang phat trien nua.
+## run-dev: Run the API (core/) and the UI (panel/) side by side in development
+## PostgreSQL and Redis must be installed NATIVELY on the host (deploy/install.sh
+## does that); there is no "docker compose up" for development infrastructure.
 run-dev: check-services
-	@echo "Starting $(BRAND) development servers (Ctrl-C de dung ca hai)..."
+	@echo "Starting $(BRAND) development servers (Ctrl-C stops both)..."
 	@trap 'kill 0' EXIT INT TERM; \
 		( cd $(CORE_DIR) && $(GO) run ./cmd/api ) & \
 		( cd $(PANEL_DIR) && $(NPM) run dev ) & \
 		wait
 
-## dev: Alias cua run-dev (giu lai cho quen tay)
+## dev: Alias for run-dev (kept for muscle memory)
 dev: run-dev
 
 ## dev-core: Start the API development server
@@ -303,7 +396,7 @@ hooks:
 	git config core.hooksPath githooks
 	@echo "Git hooks configured: core.hooksPath=githooks"
 
-## install: Run the installer on this host (cai dat $(BRAND) vao $(PANEL_ROOT))
+## install: Run the installer on this host (installs $(BRAND) into $(PANEL_ROOT))
 install:
 	@echo "Installing $(BRAND) into $(PANEL_ROOT)..."
 	@test -f deploy/install.sh || { echo "deploy/install.sh is missing from this repo"; exit 1; }
@@ -367,7 +460,7 @@ setup: hooks
 	@echo "Development environment setup completed!"
 
 ## check: Run all checks
-check: lint test
+check: check-version-sync lint test
 	@echo "All checks passed!"
 
 ## watch-core: Watch for changes and rebuild the API
@@ -430,9 +523,19 @@ logs:
 	@echo "============="
 	@journalctl -u $(SVC_API) -f
 
+## print-ldflags: Print the linker flags every build target uses
+## For the CI jobs that call "go build" directly: they ask the Makefile for the
+## flags instead of repeating them, so the stamp cannot drift from a local build.
+print-ldflags:
+	@printf '%s\n' "$(LDFLAGS)"
+
 ## version: Show version
 version:
 	@echo "$(BRAND) v$(VERSION) - $(BRAND_VENDOR)"
+	@echo "Source: $(VERSION_FILE)"
+	@echo "Commit: $(COMMIT)"
+	@echo "Date:   $(BUILD_DATE)"
+	@echo "Target: $(GOOS)/$(GOARCH)"
 	@echo "Core:  $(shell cd $(CORE_DIR) && $(GO) version)"
 	@echo "Panel: $(shell cd $(PANEL_DIR) && $(NODE) --version)"
 	@echo "Agent: $(shell cd $(AGENT_DIR) && $(GO) version)"

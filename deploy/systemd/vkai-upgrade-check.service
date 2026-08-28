@@ -1,0 +1,59 @@
+# =============================================================================
+# VKAI Panel - daily update check  |  HiTechCloud (hitechcloud.vn)
+# Installed as: /etc/systemd/system/vkai-upgrade-check.service
+#
+# THIS UNIT ONLY CHECKS. IT NEVER INSTALLS ANYTHING.
+#
+# Unattended upgrades of a hosting control panel are how a whole fleet goes down
+# at once: one bad release, every customer's panel restarted into it overnight,
+# nobody watching. A panel upgrade also runs database migrations and restarts
+# the API and the UI, so it must happen when a human is there to look at the
+# result. The timer therefore answers exactly one question - "is there something
+# newer?" - and records the answer. Installing it stays a human decision:
+#
+#   vkai upgrade            (prints the plan and asks first)
+#   vkai upgrade --yes      (for an operator's own automation, not for us)
+#
+# "vkai upgrade --check" writes /vkai-panel/etc/upgrade-check.json, which is
+# where the panel reads the "an update is available" banner from. It exits 10
+# when an update exists, so monitoring can watch this unit's result directly.
+# =============================================================================
+[Unit]
+Description=Check whether a newer VKAI Panel release is available (check only, never installs)
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+# --quiet keeps the journal to one line per run; --check is what makes this a
+# report and not an upgrade. Never add --yes here.
+ExecStart=/usr/local/bin/vkai upgrade --check --quiet
+EnvironmentFile=-/vkai-panel/etc/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vkai-upgrade-check
+TimeoutStartSec=300
+
+# Exit code 10 means "an update is available". That is a normal outcome of a
+# successful check, not a failure, so systemd must not mark the unit failed and
+# monitoring must not page anyone. The panel banner carries the news instead.
+SuccessExitStatus=10
+
+# The check talks to the release server and writes one small file. It needs no
+# more of the machine than that.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/vkai-panel/etc
+
+[Install]
+WantedBy=multi-user.target

@@ -987,7 +987,7 @@ security_controls:
 - [ ] **Secrets**
   - [ ] `VKAI_JWT_SECRET` is at least 32 random characters and unique to this install
   - [ ] `VKAI_SECRET_KEY` is set (32 bytes hex/base64)
-  - [ ] `VKAI_AGENT_TOKEN` is set and unique
+  - [ ] `VKAI_AGENT_TOKEN` is ABSENT from `.env`: it is obsolete and ignored (docs/AGENT_CHANNEL.md)
   - [ ] `VKAI_DB_PASSWORD` is not a value published in this repository
   - [ ] Default administrator password changed at first login
 

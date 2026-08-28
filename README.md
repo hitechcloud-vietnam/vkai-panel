@@ -484,7 +484,7 @@ Mọi biến đều mang tiền tố **`VKAI_`**.
 | `VKAI_JWT_SECRET` | Khoá ký JWT, tối thiểu 32 ký tự ngẫu nhiên | **bắt buộc, không có mặc định** |
 | `VKAI_SECRET_KEY` | Khoá mã hoá bí mật lưu trong CSDL (32 byte hex/base64) | **bắt buộc để tạo/đổi user CSDL** |
 | `VKAI_CORS_ALLOWED_ORIGINS` | Danh sách origin trình duyệt được phép | (trống) |
-| `VKAI_AGENT_PORT` / `VKAI_AGENT_TOKEN` | Agent và bí mật dùng chung | `30111` / **bắt buộc** |
+| `VKAI_AGENT_PORT` / `VKAI_AGENT_ENROLMENT_TOKEN` | Agent control channel port, and the one-time enrolment token used at the agent's first start only. There is no shared secret: see [docs/AGENT_CHANNEL.md](docs/AGENT_CHANNEL.md) | `30111` / (empty) |
 
 Danh sách đầy đủ: [`.env.example`](.env.example) và [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 

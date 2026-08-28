@@ -1,0 +1,27 @@
+# =============================================================================
+# VKAI Panel - daily update check timer  |  HiTechCloud (hitechcloud.vn)
+# Installed as: /etc/systemd/system/vkai-upgrade-check.timer
+#
+# Once a day, and it CHECKS ONLY - see vkai-upgrade-check.service for why an
+# unattended install is never scheduled here.
+#
+# The randomised delay spreads a fleet of panels over four hours so they do not
+# all ask the release server the same question in the same second, and so that a
+# release published mid-day does not hit every customer at once.
+# =============================================================================
+[Unit]
+Description=Daily VKAI Panel update check
+Documentation=https://github.com/hitechcloud-vietnam/vkai-panel
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=4h
+# Catch up after the machine was switched off across the scheduled time, so a
+# server that is only on during office hours still reports.
+Persistent=true
+# A machine that has just booted has usually been off for a while.
+OnBootSec=20min
+Unit=vkai-upgrade-check.service
+
+[Install]
+WantedBy=timers.target

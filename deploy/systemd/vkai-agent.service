@@ -42,6 +42,11 @@ LockPersonality=true
 ReadWritePaths=/vkai-panel/logs
 ReadWritePaths=/vkai-panel/tmp
 ReadWritePaths=/vkai-panel/www
+# The agent's own key, certificate and copy of the panel CA. It is written on
+# enrolment and rewritten on every rotation, so it must be writable, and it
+# lives outside /vkai-panel/current so an upgrade does not take the identity
+# with it. Override with VKAI_AGENT_STATE_DIR.
+ReadWritePaths=/vkai-panel/ssl/agent
 
 LimitNOFILE=65536
 

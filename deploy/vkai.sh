@@ -24,10 +24,21 @@ readonly ACME_CHALLENGE_DIR="${WWW_DEFAULT_DIR}/.well-known/acme-challenge"
 readonly RELEASES_DIR="${PANEL_ROOT}/releases"
 readonly CURRENT_LINK="${PANEL_ROOT}/current"
 readonly ETC_DIR="${PANEL_ROOT}/etc"
+# The only privileged entry point that moves ${CURRENT_LINK}; root owned.
+readonly BIN_DEPLOY="${PANEL_ROOT}/bin/vkai-deploy"
 readonly LOG_DIR="${PANEL_ROOT}/logs"
 readonly SSL_DIR="${PANEL_ROOT}/ssl"
 readonly ENV_FILE="${ETC_DIR}/.env"
 readonly SUMMARY_FILE="${ETC_DIR}/install-summary.txt"
+# What is installed, on which channel, since when. Written by deploy/install.sh
+# and rewritten by every successful upgrade, so it stays true even when the
+# binaries were replaced by hand.
+readonly VERSION_FILE="${ETC_DIR}/version.json"
+# Result of the last update check, written by "vkai upgrade --check" and read by
+# the panel to show the "an update is available" banner.
+readonly UPGRADE_STATE_FILE="${ETC_DIR}/upgrade-check.json"
+readonly DEFAULT_CHANNEL="stable"
+readonly RELEASE_NOTES_URL="https://github.com/hitechcloud-vietnam/vkai-panel/releases"
 readonly PANEL_CERT="${SSL_DIR}/panel.crt"
 readonly PANEL_KEY="${SSL_DIR}/panel.key"
 
@@ -65,6 +76,17 @@ env_get() {
     line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n1 || true)"
     [[ -n "$line" ]] || return 1
     printf '%s' "${line#*=}"
+}
+
+# Read one top-level string field out of a small JSON file. The panel writes
+# these files itself and jq is not a dependency of the panel, so a field regex
+# is enough - and a missing field must never be fatal here.
+json_get() {
+    local file="$1" key="$2" value
+    [[ -f "$file" ]] || return 1
+    value="$(sed -n -E "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\\1/p" "$file" | head -n1)"
+    [[ -n "$value" ]] || return 1
+    printf '%s' "$value"
 }
 
 # Write one key back into .env, keeping mode 600.
@@ -146,6 +168,16 @@ Certificate
   cert info             Show the panel certificate, its fingerprint and expiry
   cert renew            Renew it if it is close to expiry (used by the timer)
   cert issue            Order a new certificate now
+
+Version and upgrade
+  version               Show the installed version, channel and running release
+  upgrade --check       Report whether a newer release exists; changes nothing.
+                        Exits 10 when an update is available, so it can drive
+                        monitoring.
+  upgrade [--to <version>] [--yes]
+                        Upgrade the panel. Without --yes it prints the plan and
+                        asks first. Rolls back by itself when the new release
+                        does not come up.
 
 Operations
   backup [label]        Back up the database and configuration into ${WWW_BACKUP_DIR}
@@ -584,6 +616,306 @@ cmd_backup() {
 }
 
 # -----------------------------------------------------------------------------
+# Version and upgrade
+#
+# The upgrade engine itself lives in the Go binary (vkai-cli upgrade). This
+# wrapper is the operator-facing surface: it resolves the binary, keeps the
+# machine-readable check record up to date and degrades to printed instructions
+# on a build whose vkai-cli is older than the upgrade command.
+# -----------------------------------------------------------------------------
+
+# Read one top-level string field out of a JSON document held in a variable.
+# Commas and braces are turned into line breaks first, so the same expression
+# works on pretty-printed and single-line JSON, and the anchor at the start of
+# the line stops "version" from matching inside "installed_version".
+# The panel writes these documents itself and never puts a comma inside one of
+# these values, which is why this is enough and jq is not a dependency.
+json_field() {
+    local json="$1" key="$2" value
+    # shellcheck disable=SC2020  # three single characters, each mapped to a newline
+    value="$(printf '%s' "$json" | tr ',{}' '\n\n\n' |
+        sed -n -E "s/^[[:space:]]*\"${key}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/p" | sed -n '1p')"
+    [[ -n "$value" ]] || return 1
+    printf '%s' "$value"
+}
+
+installed_version() { json_get "$VERSION_FILE" version || printf 'unknown'; }
+installed_channel() { json_get "$VERSION_FILE" channel || printf '%s' "$DEFAULT_CHANNEL"; }
+version_pin()       { json_get "$VERSION_FILE" pin     || printf ''; }
+now_utc()           { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# Replace a file in ${ETC_DIR} in one step. A half-written version.json is a
+# panel that no longer knows what it is running, so it is never written in place.
+atomic_write_etc() {
+    local dest="$1" mode="$2" payload="$3" tmp
+    tmp="$(mktemp "${ETC_DIR}/.$(basename "$dest").XXXXXX" 2>/dev/null)" || return 1
+    printf '%s\n' "$payload" >"$tmp" || { rm -f "$tmp"; return 1; }
+    chmod "$mode" "$tmp"
+    # Owned by root, readable by the panel: vkai-api only reads these files.
+    chown "root:${VKAI_GROUP}" "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$dest"
+}
+
+# Record the result of an update check where the panel can display it.
+write_upgrade_state() {
+    local payload="$1"
+    if ! atomic_write_etc "$UPGRADE_STATE_FILE" 0644 "$payload"; then
+        warn "Could not write ${UPGRADE_STATE_FILE} (run as root to record the result)."
+        return 0
+    fi
+}
+
+# Build a check record locally, for the cases where vkai-cli could not produce
+# one. Keep every value free of '"' and ',' - see json_field.
+upgrade_state_json() {
+    local status="$1" latest="$2" detail="$3"
+    cat <<JSON
+{
+  "checked_at": "$(now_utc)",
+  "status": "${status}",
+  "installed_version": "$(installed_version)",
+  "latest_version": "${latest}",
+  "channel": "$(installed_channel)",
+  "pinned": "$(version_pin)",
+  "release_notes_url": "${RELEASE_NOTES_URL}",
+  "detail": "${detail}"
+}
+JSON
+}
+
+# Rewrite version.json after the running code changed, keeping the fields this
+# caller has no business changing (channel, pin, install date). The version is
+# taken from the argument when the caller knows it; otherwise the recorded one
+# is kept, because the upgrade engine writes this file too and its value is
+# newer than anything this wrapper could guess.
+stamp_version_file() {
+    local version channel pin installed
+    version="${1:-$(installed_version)}"
+    channel="$(installed_channel)"
+    pin="$(version_pin)"
+    installed="$(json_get "$VERSION_FILE" installed_at || now_utc)"
+    atomic_write_etc "$VERSION_FILE" 0644 "$(cat <<JSON
+{
+  "version": "${version}",
+  "channel": "${channel}",
+  "pin": "${pin}",
+  "installed_at": "${installed}",
+  "updated_at": "$(now_utc)",
+  "release": "$(current_release)"
+}
+JSON
+)" || warn "Could not update ${VERSION_FILE}."
+}
+
+# The Go CLI, which owns the upgrade engine and the domain commands.
+cli_bin() {
+    if has vkai-cli; then
+        printf 'vkai-cli'
+    elif [[ -x "${CORE_DIR}/bin/vkai-cli" ]]; then
+        printf '%s' "${CORE_DIR}/bin/vkai-cli"
+    elif [[ -x "${CURRENT_LINK}/core/bin/vkai-cli" ]]; then
+        printf '%s' "${CURRENT_LINK}/core/bin/vkai-cli"
+    else
+        return 1
+    fi
+}
+
+# upgrade_cli <args...> - hand the work to vkai-cli. Returns 2 when this build
+# has no "upgrade" command, which is exactly the build an operator is upgrading
+# FROM, so it must produce instructions rather than a stack of shell errors.
+upgrade_cli() {
+    local bin
+    bin="$(cli_bin)" || return 2
+    "$bin" upgrade --help >/dev/null 2>&1 || return 2
+    "$bin" upgrade "$@"
+}
+
+manual_upgrade_hint() {
+    cat >&2 <<HINT
+Upgrade from a release package instead:
+  1. Download vkai-panel-<version>.tar.gz onto this server.
+  2. sudo ${BIN_DEPLOY} deploy /tmp/vkai-panel-<version>.tar.gz
+It unpacks into ${RELEASES_DIR}/<id>, migrates, moves ${CURRENT_LINK}, restarts
+and rolls back by itself if the new release does not answer. Details: docs/UPGRADE.md
+HINT
+}
+
+cmd_version() {
+    local last_status last_latest last_checked
+    printf '\n%s%s %s%s\n' "$C_BOLD" "$BRAND_NAME" "$(installed_version)" "$C_OFF"
+    printf '  Channel        : %s\n' "$(installed_channel)"
+    local pin; pin="$(version_pin)"
+    [[ -z "$pin" ]] || printf '  Pinned to      : %s   (upgrades are held at this version)\n' "$pin"
+    printf '  Installed      : %s\n' "$(json_get "$VERSION_FILE" installed_at || printf 'unknown')"
+    printf '  Last changed   : %s\n' "$(json_get "$VERSION_FILE" updated_at || printf 'unknown')"
+    printf '  Running release: %s\n' "$(current_release)"
+    printf '  Record         : %s\n' "$VERSION_FILE"
+
+    if [[ -f "$UPGRADE_STATE_FILE" ]]; then
+        last_status="$(json_get "$UPGRADE_STATE_FILE" status || printf 'unknown')"
+        last_latest="$(json_get "$UPGRADE_STATE_FILE" latest_version || printf '')"
+        last_checked="$(json_get "$UPGRADE_STATE_FILE" checked_at || printf 'unknown')"
+        printf '\n%sLast update check%s\n' "$C_BLUE" "$C_OFF"
+        printf '  When           : %s\n' "$last_checked"
+        printf '  Result         : %s%s\n' "$last_status" \
+            "$( [[ -n "$last_latest" ]] && printf ' (latest %s)' "$last_latest" || printf '' )"
+        [[ "$last_status" != "update-available" ]] ||
+            printf '  Install it     : sudo vkai upgrade\n'
+    else
+        printf '\n  No update check has run yet: vkai upgrade --check\n'
+    fi
+
+    local bin
+    if bin="$(cli_bin)"; then
+        printf '\n%sBinaries%s\n' "$C_BLUE" "$C_OFF"
+        printf '  %s\n' "$("$bin" version 2>/dev/null | head -n1 || printf 'vkai-cli (no version output)')"
+    fi
+    printf '\n'
+}
+
+# Report only. Never changes the installed code - the only file it touches is
+# the check record the panel reads.
+# Exit codes: 0 up to date or pinned, 10 an update is available,
+#             2 this build cannot check, 1 the check failed.
+upgrade_check() {
+    local as_json="$1" out="" rc=0 payload=""
+    out="$(upgrade_cli --check --json 2>/dev/null)" || rc=$?
+
+    if [[ "$out" == \{* ]]; then
+        payload="$out"
+    elif (( rc == 2 )); then
+        payload="$(upgrade_state_json unsupported "" "the installed vkai-cli has no upgrade command")"
+    else
+        payload="$(upgrade_state_json error "" "the update check produced no usable result (exit ${rc})")"
+        rc=1
+    fi
+
+    write_upgrade_state "$payload"
+
+    if [[ "$as_json" == "true" ]]; then
+        printf '%s\n' "$payload"
+        exit "$rc"
+    fi
+    print_upgrade_summary "$payload"
+    exit "$rc"
+}
+
+print_upgrade_summary() {
+    local payload="$1" status installed latest channel pinned detail
+    status="$(json_field "$payload" status || printf 'unknown')"
+    installed="$(json_field "$payload" installed_version || printf 'unknown')"
+    latest="$(json_field "$payload" latest_version || printf 'unknown')"
+    channel="$(json_field "$payload" channel || printf 'unknown')"
+    pinned="$(json_field "$payload" pinned || printf '')"
+    detail="$(json_field "$payload" detail || printf '')"
+
+    # The daily timer runs with --quiet: one line in the journal, no banner.
+    if [[ "$QUIET" == "true" ]]; then
+        printf 'update check: %s (installed %s, latest %s, channel %s)\n' \
+            "$status" "$installed" "$latest" "$channel"
+        case "$status" in
+            unsupported|error) warn "${detail:-the update check did not succeed}" ;;
+        esac
+        return 0
+    fi
+
+    printf '\n%s%s - update check%s\n' "$C_BOLD" "$BRAND_NAME" "$C_OFF"
+    printf '  Installed : %s\n' "$installed"
+    printf '  Latest    : %s\n' "$latest"
+    printf '  Channel   : %s\n' "$channel"
+    [[ -z "$pinned" ]] || printf '  Pinned to : %s\n' "$pinned"
+    printf '  Checked   : %s\n' "$(json_field "$payload" checked_at || printf 'unknown')"
+    printf '\n'
+
+    case "$status" in
+        update-available)
+            printf 'An update is available: %s -> %s\n' "$installed" "$latest"
+            printf 'Install it with : sudo vkai upgrade\n'
+            printf 'Release notes   : %s\n\n' "$RELEASE_NOTES_URL"
+            ;;
+        pinned)
+            printf 'A newer release exists but this panel is pinned to %s.\n' "$pinned"
+            printf 'Clear "pin" in %s to allow upgrades again.\n\n' "$VERSION_FILE"
+            ;;
+        up-to-date)
+            printf 'This panel is up to date.\n\n'
+            ;;
+        unsupported)
+            err "This build cannot check for updates: ${detail:-no upgrade engine}"
+            manual_upgrade_hint
+            ;;
+        *)
+            err "The update check failed: ${detail:-unknown reason}"
+            ;;
+    esac
+}
+
+# Re-run the check after the code changed, so the panel stops advertising an
+# update it has just installed. Best effort: never fails the upgrade.
+refresh_upgrade_state() {
+    local out
+    out="$(upgrade_cli --check --json 2>/dev/null || true)"
+    [[ "$out" == \{* ]] || return 0
+    write_upgrade_state "$out"
+}
+
+upgrade_apply() {
+    local target="$1" assume_yes="$2" rc=0
+    local args=()
+    [[ -z "$target" ]] || args+=(--to "$target")
+    [[ "$assume_yes" != "true" ]] || args+=(--yes)
+
+    upgrade_cli ${args[@]+"${args[@]}"} || rc=$?
+
+    if (( rc == 2 )); then
+        err "This build has no upgrade engine (vkai-cli has no 'upgrade' command)."
+        manual_upgrade_hint
+        exit 2
+    fi
+    if (( rc != 0 )); then
+        err "The upgrade did not complete (exit ${rc})."
+        err "Check what is running now: vkai version && vkai status"
+        err "If neither the new release nor the rollback came up, follow the manual"
+        err "recovery in docs/UPGRADE.md."
+        exit "$rc"
+    fi
+
+    stamp_version_file "$target"
+    refresh_upgrade_state
+    info "Upgrade finished."
+    cmd_status
+}
+
+cmd_upgrade() {
+    local check="false" target="" assume_yes="false" as_json="false"
+    while (( $# > 0 )); do
+        case "$1" in
+            --check)    check="true"; shift ;;
+            --to)       [[ $# -ge 2 ]] || die "--to needs a version, for example: vkai upgrade --to 1.4.2"
+                        target="$2"; shift 2 ;;
+            --to=*)     target="${1#*=}"; shift ;;
+            -y|--yes)   assume_yes="true"; shift ;;
+            --json)     as_json="true"; shift ;;
+            -q|--quiet) QUIET="true"; shift ;;
+            -h|--help)  usage; return 0 ;;
+            *)          die "Unknown option for 'vkai upgrade': $1
+Usage: vkai upgrade [--check] [--to <version>] [--yes]" ;;
+        esac
+    done
+
+    if [[ "$check" == "true" ]]; then
+        # Deliberately allowed without root: reporting must be cheap. Only the
+        # record in ${ETC_DIR} needs privileges, and failing to write it is a
+        # warning, not an error.
+        upgrade_check "$as_json"
+    fi
+
+    [[ "$as_json" != "true" ]] || die "--json only makes sense together with --check."
+    need_root upgrade
+    upgrade_apply "$target" "$assume_yes"
+}
+
+# -----------------------------------------------------------------------------
 # Update
 # -----------------------------------------------------------------------------
 cmd_update() {
@@ -679,6 +1011,10 @@ cmd_update() {
 
     systemctl daemon-reload
     systemctl start "$SVC_API" "$SVC_UI"
+    # The rebuild replaced the running code, so the version record has to say
+    # so. "vkai update" does not know a release number, hence only the
+    # timestamp and the running release are refreshed.
+    stamp_version_file
     info "Update complete."
     cmd_status
 }
@@ -699,13 +1035,8 @@ cmd_uninstall() {
 # -----------------------------------------------------------------------------
 delegate_cli() {
     local bin=""
-    if has vkai-cli; then
-        bin="vkai-cli"
-    elif [[ -x "${CORE_DIR}/bin/vkai-cli" ]]; then
-        bin="${CORE_DIR}/bin/vkai-cli"
-    else
+    bin="$(cli_bin)" ||
         die "'vkai-cli' not found. Rebuild it: cd ${CORE_DIR} && go build -o bin/vkai-cli ./cmd/cli"
-    fi
     exec "$bin" "$@"
 }
 
@@ -724,6 +1055,8 @@ main() {
         port)       cmd_port "${1:-}" ;;
         entrance)   cmd_entrance "${1:-}" ;;
         cert)       cmd_cert "$@" ;;
+        version)    cmd_version ;;
+        upgrade)    cmd_upgrade "$@" ;;
         backup)     cmd_backup "${1:-}" ;;
         update)     cmd_update "${1:-}" ;;
         uninstall)  cmd_uninstall "$@" ;;
@@ -744,7 +1077,7 @@ main() {
             # backup commands of vkai-cli.
             delegate_cli backup "$@"
             ;;
-        site|db|ssl|firewall|server|service|version)
+        site|db|ssl|firewall|server|service)
             delegate_cli "$cmd" "$@"
             ;;
         ""|-h|--help|help)
