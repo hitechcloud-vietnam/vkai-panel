@@ -15,10 +15,11 @@
  * why rather than leaving the user typing codes at a dead token.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TwoFactorError, useAuthStore } from '@/store/auth';
-import { brand, byline, copyright, description as brandDescription } from '@/lib/brand';
+import { brand, byline, description as brandDescription } from '@/lib/brand';
+import { LanguageSwitcher, useI18n, type TranslateFn } from '@/i18n';
 import {
   AlertCircle,
   ArrowLeft,
@@ -41,9 +42,26 @@ function errorMessage(err: any, fallback: string): string {
   return err?.response?.data?.error?.message || err?.message || fallback;
 }
 
+/**
+ * Text for a two-factor failure. The store cannot translate - it is not a
+ * component - so it hands over a key, and the API's own wording wins when it
+ * supplied one.
+ */
+function twoFactorMessage(t: TranslateFn, err: TwoFactorError): string {
+  return err.serverMessage || t(err.messageKey);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, completeTwoFactor, isLoading } = useAuthStore();
+  const { t } = useI18n();
+
+  // The copyright year is settled in an effect so the server's markup and the
+  // browser's first render cannot disagree across a New Year boundary.
+  const [year, setYear] = useState<number | null>(null);
+  useEffect(() => {
+    setYear(new Date().getFullYear());
+  }, []);
 
   const [step, setStep] = useState<Step>('password');
   const [username, setUsername] = useState('');
@@ -80,12 +98,7 @@ export default function LoginPage() {
       }
       router.push('/dashboard');
     } catch (err: any) {
-      setError(
-        errorMessage(
-          err,
-          'Đăng nhập không thành công. Vui lòng kiểm tra lại tài khoản và mật khẩu.'
-        )
-      );
+      setError(errorMessage(err, t('auth.signInFailed')));
     }
   };
 
@@ -97,15 +110,19 @@ export default function LoginPage() {
       await completeTwoFactor(challengeToken, code.trim());
       router.push('/dashboard');
     } catch (err: any) {
-      if (err instanceof TwoFactorError && err.reason === 'retry' && err.challengeToken) {
-        // The code was wrong and the window is still open: swap in the
-        // replacement challenge and ask again.
-        setChallengeToken(err.challengeToken);
-        setCode('');
-        setError(err.message);
+      if (err instanceof TwoFactorError) {
+        if (err.reason === 'retry' && err.challengeToken) {
+          // The code was wrong and the window is still open: swap in the
+          // replacement challenge and ask again.
+          setChallengeToken(err.challengeToken);
+          setCode('');
+          setError(twoFactorMessage(t, err));
+          return;
+        }
+        backToPassword(twoFactorMessage(t, err));
         return;
       }
-      backToPassword(errorMessage(err, 'Xác thực không thành công. Vui lòng đăng nhập lại.'));
+      backToPassword(errorMessage(err, t('auth.verificationFailed')));
     }
   };
 
@@ -159,7 +176,7 @@ export default function LoginPage() {
                     htmlFor="login-username"
                     className="mb-1.5 block text-sm font-medium text-gray-700"
                   >
-                    Tên đăng nhập
+                    {t('auth.usernameLabel')}
                   </label>
                   <input
                     id="login-username"
@@ -169,7 +186,7 @@ export default function LoginPage() {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className={inputClass}
-                    placeholder="Nhập tên đăng nhập"
+                    placeholder={t('auth.usernamePlaceholder')}
                     required
                   />
                 </div>
@@ -179,7 +196,7 @@ export default function LoginPage() {
                     htmlFor="login-password"
                     className="mb-1.5 block text-sm font-medium text-gray-700"
                   >
-                    Mật khẩu
+                    {t('auth.passwordLabel')}
                   </label>
                   <div className="relative">
                     <input
@@ -190,13 +207,13 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className={`${inputClass} pr-10`}
-                      placeholder="Nhập mật khẩu"
+                      placeholder={t('auth.passwordPlaceholder')}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                       className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     >
                       {showPassword ? (
@@ -216,13 +233,13 @@ export default function LoginPage() {
                       type="checkbox"
                       className="h-4 w-4 rounded border-gray-300 bg-white text-brand-600 focus:ring-brand-500"
                     />
-                    <span className="text-sm text-gray-700">Ghi nhớ đăng nhập</span>
+                    <span className="text-sm text-gray-700">{t('auth.rememberMe')}</span>
                   </label>
                   <a
                     href={`mailto:${brand.supportEmail}`}
                     className="rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
-                    Quên mật khẩu?
+                    {t('auth.forgotPassword')}
                   </a>
                 </div>
 
@@ -234,10 +251,10 @@ export default function LoginPage() {
                   {isLoading ? (
                     <>
                       <Loader2 className="animate-spin" size={16} aria-hidden="true" />
-                      Đang đăng nhập…
+                      {t('auth.signingIn')}
                     </>
                   ) : (
-                    'Đăng nhập'
+                    t('auth.signIn')
                   )}
                 </button>
               </form>
@@ -247,8 +264,8 @@ export default function LoginPage() {
                   <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-gray-400" aria-hidden="true" />
                   <span>
                     {useRecoveryCode
-                      ? 'Nhập một mã khôi phục bạn đã lưu khi bật xác thực hai lớp. Mỗi mã chỉ dùng được một lần.'
-                      : 'Tài khoản này bật xác thực hai lớp. Nhập mã đang hiển thị trong ứng dụng xác thực của bạn.'}
+                      ? t('auth.twoFactorRecoveryHint')
+                      : t('auth.twoFactorAppHint')}
                   </span>
                 </div>
 
@@ -257,7 +274,7 @@ export default function LoginPage() {
                     htmlFor="login-code"
                     className="mb-1.5 block text-sm font-medium text-gray-700"
                   >
-                    {useRecoveryCode ? 'Mã khôi phục' : 'Mã xác thực'}
+                    {useRecoveryCode ? t('auth.recoveryCodeLabel') : t('auth.verificationCodeLabel')}
                   </label>
                   <input
                     id="login-code"
@@ -284,10 +301,10 @@ export default function LoginPage() {
                   {isLoading ? (
                     <>
                       <Loader2 className="animate-spin" size={16} aria-hidden="true" />
-                      Đang xác thực…
+                      {t('auth.verifying')}
                     </>
                   ) : (
-                    'Xác thực và đăng nhập'
+                    t('auth.verifyAndSignIn')
                   )}
                 </button>
 
@@ -298,7 +315,7 @@ export default function LoginPage() {
                     className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <ArrowLeft size={15} aria-hidden="true" />
-                    Quay lại
+                    {t('common.back')}
                   </button>
                   <button
                     type="button"
@@ -310,7 +327,7 @@ export default function LoginPage() {
                     className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <KeyRound size={15} aria-hidden="true" />
-                    {useRecoveryCode ? 'Dùng mã từ ứng dụng xác thực' : 'Dùng mã khôi phục'}
+                    {useRecoveryCode ? t('auth.useAuthenticatorCode') : t('auth.useRecoveryCode')}
                   </button>
                 </div>
               </form>
@@ -326,20 +343,29 @@ export default function LoginPage() {
               className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               <BookOpen size={15} aria-hidden="true" />
-              Tài liệu hướng dẫn
+              {t('common.documentationGuide')}
             </a>
             <a
               href={`mailto:${brand.supportEmail}`}
               className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               <LifeBuoy size={15} aria-hidden="true" />
-              Hỗ trợ kỹ thuật
+              {t('common.technicalSupport')}
             </a>
           </div>
         </div>
 
-        {/* Page footer */}
-        <p className="mt-6 text-center text-sm text-gray-500">{copyright()}</p>
+        {/* Page footer: the language switch and the copyright line. The
+            switch appears here as well as in the application header, because
+            the sign-in screen has no header to carry it. */}
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <LanguageSwitcher />
+          <p className="text-center text-sm text-gray-500">
+            {year === null
+              ? t('common.copyrightNoYear', { company: brand.company })
+              : t('common.copyright', { year, company: brand.company })}
+          </p>
+        </div>
       </div>
     </div>
   );

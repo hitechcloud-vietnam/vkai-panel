@@ -10,7 +10,7 @@ import { Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface LocalNodeBadgeProps {
-  /** Wording is the calling screen's, because the panel is not uniformly one language. */
+  /** Wording comes from the calling screen, already translated. */
   label: string;
   /** Longer explanation shown on hover. */
   title?: string;

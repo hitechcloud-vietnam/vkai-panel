@@ -1,17 +1,18 @@
 'use client';
 
 import { Package } from 'lucide-react';
+import { useT } from '@/i18n';
 import { Skeleton, StateMessage } from './StatCard';
 
 /**
- * Luoi cac o phan mem da cai dat tren may chu (Nginx, MySQL, PHP, Redis, Docker...).
- * Moi o: ten + phien ban + trang thai chay/dung.
+ * A grid of the software installed on a machine (Nginx, MySQL, PHP, Redis,
+ * Docker...). Each cell: name + version + running/stopped state.
  */
 export type SoftwareStatus = 'running' | 'stopped' | 'unknown';
 
 export interface SoftwareItem {
   name: string;
-  /** `null`/bo trong khi API chua tra phien ban. */
+  /** `null` or empty while the API has not reported a version. */
   version?: string | null;
   status?: SoftwareStatus;
 }
@@ -20,14 +21,15 @@ export interface SoftwareGridProps {
   items: SoftwareItem[];
   loading?: boolean;
   error?: string | null;
-  /** Chu thich hien o trang thai rong. */
+  /** Note shown in the empty state, already translated. */
   emptyHint?: string;
 }
 
-const STATUS_TEXT: Record<SoftwareStatus, string> = {
-  running: 'Đang chạy',
-  stopped: 'Đã dừng',
-  unknown: 'Chưa rõ',
+/** Dictionary key per status. The status itself is a machine value. */
+const STATUS_KEY: Record<SoftwareStatus, string> = {
+  running: 'dashboard.software.status.running',
+  stopped: 'dashboard.software.status.stopped',
+  unknown: 'dashboard.software.status.unknown',
 };
 
 const STATUS_DOT: Record<SoftwareStatus, string> = {
@@ -48,6 +50,7 @@ export default function SoftwareGrid({
   error = null,
   emptyHint,
 }: SoftwareGridProps) {
+  const t = useT();
   const list = Array.isArray(items) ? items : [];
 
   if (loading) {
@@ -68,7 +71,7 @@ export default function SoftwareGrid({
     return (
       <StateMessage
         tone="error"
-        title="Không tải được danh sách phần mềm"
+        title={t('dashboard.software.loadFailed')}
         hint={error}
       />
     );
@@ -78,8 +81,8 @@ export default function SoftwareGrid({
     return (
       <StateMessage
         icon={<Package size={32} aria-hidden="true" />}
-        title="Chưa có dữ liệu phần mềm"
-        hint={emptyHint || 'API hiện chưa trả về danh sách phần mềm đã cài đặt.'}
+        title={t('dashboard.software.emptyTitle')}
+        hint={emptyHint || t('dashboard.software.emptyHint')}
       />
     );
   }
@@ -102,7 +105,7 @@ export default function SoftwareGrid({
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
                 aria-hidden="true"
               />
-              <span className={STATUS_LABEL[status]}>{STATUS_TEXT[status]}</span>
+              <span className={STATUS_LABEL[status]}>{t(STATUS_KEY[status])}</span>
             </p>
           </div>
         );

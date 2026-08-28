@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, RotateCcw, Home } from 'lucide-react';
 import { brand } from '@/lib/brand';
+import { useT } from '@/i18n';
 
 export default function Error({
   error,
@@ -12,9 +13,13 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useT();
+
   useEffect(() => {
-    // Ghi log ra console de ky thuat vien co the doc duoc nguyen nhan that.
-    console.error(`[${brand.productName}] Lỗi ứng dụng:`, error);
+    // Logged to the console so a technician can read the real cause. Console
+    // output stays in English regardless of the interface locale: it is read
+    // by whoever is debugging, not by the operator.
+    console.error(`[${brand.productName}] Application error:`, error);
   }, [error]);
 
   return (
@@ -25,34 +30,32 @@ export default function Error({
             <AlertTriangle size={18} aria-hidden="true" />
           </span>
           <div>
-            <h1 className="text-sm font-semibold text-gray-900">Đã xảy ra lỗi</h1>
-            <p className="mt-0.5 text-sm text-gray-600">
-              Trang không thể hiển thị. Bạn có thể thử lại hoặc quay về trang chủ.
-            </p>
+            <h1 className="text-sm font-semibold text-gray-900">{t('errors.appTitle')}</h1>
+            <p className="mt-0.5 text-sm text-gray-600">{t('errors.appBody')}</p>
           </div>
         </div>
 
         <div className="space-y-3 px-5 py-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Chi tiết lỗi
+              {t('errors.detailsLabel')}
             </p>
             <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-              {error?.message || 'Không có thông tin chi tiết.'}
+              {error?.message || t('errors.noDetails')}
             </pre>
           </div>
 
           {error?.digest && (
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Mã lỗi (digest)
+                {t('errors.digestLabel')}
               </p>
               <p className="mt-1 font-mono text-xs text-gray-700">{error.digest}</p>
             </div>
           )}
 
           <p className="text-sm text-gray-600">
-            Nếu lỗi lặp lại, vui lòng gửi mã lỗi tới{' '}
+            {t('errors.contactSupportLead')}{' '}
             <a
               href={`mailto:${brand.supportEmail}`}
               className="rounded-md font-medium text-brand-700 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
@@ -70,14 +73,14 @@ export default function Error({
             className="inline-flex items-center gap-2 rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           >
             <RotateCcw size={16} aria-hidden="true" />
-            Thử lại
+            {t('common.retry')}
           </button>
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
           >
             <Home size={16} aria-hidden="true" />
-            Về trang chủ
+            {t('common.backToHome')}
           </Link>
         </div>
       </div>

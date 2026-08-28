@@ -7,17 +7,15 @@ import { Bell, ChevronDown, LogOut, Search, Settings, User } from 'lucide-react'
 import { useAuthStore } from '@/store/auth';
 import { monitoringApi, unwrap } from '@/services/api';
 import { brand, versionLabel } from '@/lib/brand';
+import { EMPTY_VALUE, LanguageSwitcher, useT } from '@/i18n';
 
-/** Gia tri hien thi khi API chua cung cap truong du lieu tuong ung. */
-const EMPTY_VALUE = '—';
-
-/** Vien focus dung chung cho moi phan tu tuong tac tren thanh tren. */
+/** The focus ring shared by every interactive element in the top bar. */
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
 
 /**
- * Dang du lieu tra ve tu GET /api/v1/monitoring/system.
- * Chi khai bao nhung truong thanh tren thuc su dung den.
+ * The shape returned by GET /api/v1/monitoring/system.
+ * Only the fields the top bar actually reads are declared.
  */
 interface SystemInfoResponse {
   system?: {
@@ -31,13 +29,14 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const t = useT();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [osLabel, setOsLabel] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Ten he dieu hanh lay tu endpoint giam sat co san.
-  // Endpoint hien khong tra ve thoi gian hoat dong (uptime) nen o do hien "—".
+  // The operating system name comes from the existing monitoring endpoint.
+  // That endpoint does not report uptime yet, so the uptime slot shows "—".
   useEffect(() => {
     let cancelled = false;
 
@@ -53,7 +52,7 @@ export default function Header() {
         }
       })
       .catch(() => {
-        // Khong co quyen hoac API loi: giu nguyen "—", khong bia du lieu.
+        // No permission, or the API failed: keep "—" rather than invent a value.
         if (!cancelled) setOsLabel(null);
       });
 
@@ -90,7 +89,9 @@ export default function Header() {
   }, [pathname]);
 
   const displayName =
-    [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Người dùng';
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
+    user?.username ||
+    t('header.defaultUserName');
   const initial = (user?.first_name || user?.username || 'U').charAt(0).toUpperCase();
 
   const handleLogout = () => {
@@ -101,7 +102,7 @@ export default function Header() {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-gray-200 bg-white px-4">
-      {/* Trai: ten panel, he dieu hanh, thoi gian hoat dong */}
+      {/* Left: panel name, operating system, uptime */}
       <div className="flex min-w-0 items-center gap-3 text-sm">
         <Link
           href="/dashboard"
@@ -113,33 +114,30 @@ export default function Header() {
         <span className="hidden h-4 w-px shrink-0 bg-gray-200 sm:block" aria-hidden />
 
         <p className="hidden min-w-0 items-center gap-1.5 sm:flex">
-          <span className="shrink-0 text-gray-500">Hệ điều hành:</span>
+          <span className="shrink-0 text-gray-500">{t('header.operatingSystem')}</span>
           <span className="truncate text-gray-700">{osLabel || EMPTY_VALUE}</span>
         </p>
 
         <span className="hidden h-4 w-px shrink-0 bg-gray-200 lg:block" aria-hidden />
 
         <p className="hidden items-center gap-1.5 lg:flex">
-          <span className="shrink-0 text-gray-500">Thời gian hoạt động:</span>
-          <span
-            className="text-gray-700"
-            title="API hiện chưa cung cấp thời gian hoạt động của máy chủ"
-          >
+          <span className="shrink-0 text-gray-500">{t('header.uptime')}</span>
+          <span className="text-gray-700" title={t('header.uptimeUnavailable')}>
             {EMPTY_VALUE}
           </span>
         </p>
       </div>
 
-      {/* Phai: phien ban, tim kiem, thong bao, nguoi dung */}
+      {/* Right: version, search, language, notifications, user */}
       <div className="flex shrink-0 items-center gap-2">
         <span className="hidden rounded border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 sm:inline">
           {versionLabel}
         </span>
 
-        {/* Tim kiem */}
+        {/* Search */}
         <div className="relative hidden md:block">
           <label htmlFor="header-search" className="sr-only">
-            Tìm kiếm
+            {t('common.search')}
           </label>
           <Search
             size={15}
@@ -149,22 +147,25 @@ export default function Header() {
           <input
             id="header-search"
             type="search"
-            placeholder="Tìm kiếm…"
+            placeholder={t('header.searchPlaceholder')}
             className="w-48 rounded-md border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder:text-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>
 
-        {/* Thong bao */}
+        {/* Language */}
+        <LanguageSwitcher className="hidden sm:block" />
+
+        {/* Notifications */}
         <Link
           href="/notifications"
-          aria-label="Thông báo"
-          title="Thông báo"
+          aria-label={t('header.notifications')}
+          title={t('header.notifications')}
           className={`rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 ${FOCUS_RING}`}
         >
           <Bell size={18} aria-hidden />
         </Link>
 
-        {/* Menu nguoi dung */}
+        {/* User menu */}
         <div className="relative" ref={menuRef}>
           <button
             ref={menuButtonRef}
@@ -172,7 +173,7 @@ export default function Header() {
             onClick={() => setShowUserMenu((prev) => !prev)}
             aria-haspopup="menu"
             aria-expanded={showUserMenu}
-            aria-label={`Tài khoản: ${displayName}`}
+            aria-label={t('header.accountMenu', { name: displayName })}
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-100 ${FOCUS_RING}`}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-medium text-white">
@@ -190,7 +191,7 @@ export default function Header() {
           {showUserMenu && (
             <div
               role="menu"
-              aria-label="Menu người dùng"
+              aria-label={t('header.userMenu')}
               className="absolute right-0 top-full z-50 mt-2 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg"
             >
               <div className="border-b border-gray-200 px-3 py-2">
@@ -203,7 +204,7 @@ export default function Header() {
                 className={`flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 ${FOCUS_RING}`}
               >
                 <User size={16} className="text-gray-500" aria-hidden />
-                Hồ sơ cá nhân
+                {t('header.profile')}
               </Link>
               <Link
                 href="/settings"
@@ -211,7 +212,7 @@ export default function Header() {
                 className={`flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 ${FOCUS_RING}`}
               >
                 <Settings size={16} className="text-gray-500" aria-hidden />
-                Cài đặt
+                {t('header.settings')}
               </Link>
               <div className="my-1 border-t border-gray-200" />
               <button
@@ -221,7 +222,7 @@ export default function Header() {
                 className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-700 hover:bg-red-50 ${FOCUS_RING}`}
               >
                 <LogOut size={16} aria-hidden />
-                Đăng xuất
+                {t('header.signOut')}
               </button>
             </div>
           )}

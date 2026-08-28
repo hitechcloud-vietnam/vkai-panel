@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { brand, fullName, description as brandDescription } from '@/lib/brand';
+import { I18nProvider } from '@/i18n';
 import '@/styles/globals.css';
 
 const inter = Inter({
@@ -43,9 +44,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={inter.variable}>
+    // lang is the source locale here because a server component cannot know
+    // the operator's choice; I18nProvider rewrites it on the client as soon as
+    // the stored choice and the browser preference have been read.
+    <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-[#F7F8FA] text-gray-900 antialiased">
-        {children}
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );

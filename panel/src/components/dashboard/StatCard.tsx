@@ -4,19 +4,19 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The trang dung chung cho moi khoi cua trang Dashboard:
- * bo 8px, vien 1px #E5E7EB, bong nhe, tieu de co duong ke duoi.
+ * The card shell every block on the dashboard is built from: 8px radius, a 1px
+ * #E5E7EB border, a light shadow, and a heading separated by a rule.
  */
 export interface StatCardProps {
   title?: string;
-  /** Dong mo ta ngan canh tieu de. */
+  /** Short description beside the heading. */
   description?: string;
-  /** Vung thao tac ben phai tieu de (nut, tab, bo loc...). */
+  /** Controls to the right of the heading (buttons, tabs, filters). */
   action?: ReactNode;
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
-  /** Bo padding cua than the - dung cho bang cuon ngang. */
+  /** Drop the body padding - used by tables that scroll horizontally. */
   flush?: boolean;
 }
 
@@ -52,14 +52,14 @@ export default function StatCard({
   );
 }
 
-/** Khoi xam nhat dung cho trang thai dang tai. */
+/** Pale block used for the loading state. */
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn('rounded bg-gray-100', className)} aria-hidden="true" />;
 }
 
 /**
- * Trang thai rong / loi hien thi gon trong than the.
- * `tone` = 'error' doi sang tong do, mac dinh la tong trung tinh.
+ * A compact empty or error state inside the card body.
+ * `tone` = 'error' switches to the red palette; the default is neutral.
  */
 export function StateMessage({
   icon,
@@ -98,7 +98,7 @@ export function StateMessage({
   );
 }
 
-/** Chu thich ngan cho truong ma API chua tra ve. */
+/** Short note for a field the API has not reported. */
 export function MissingNote({ children }: { children: ReactNode }) {
   return <span className="text-xs text-gray-500">{children}</span>;
 }

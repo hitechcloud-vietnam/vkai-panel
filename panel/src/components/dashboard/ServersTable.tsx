@@ -5,12 +5,13 @@ import { Cpu, HardDrive, MemoryStick, RefreshCw, Server } from 'lucide-react';
 
 import LocalNodeBadge from '@/components/servers/LocalNodeBadge';
 import { MetricText } from '@/components/Unavailable';
+import { useFormatters, useT } from '@/i18n';
 import { formatUsage, isLocalNode, serverLabel } from '@/lib/servers';
 import type { ManagedServer, ServerMetrics } from '@/types/server';
 import { Skeleton, StateMessage } from './StatCard';
 
 /**
- * Bang danh sach may chu dang quan ly.
+ * The table of managed machines.
  *
  * Every figure here comes from a node that has reported it. One that has not is
  * an em dash with the reason in its tooltip - never a zero, which would read as
@@ -28,19 +29,17 @@ export interface ServersTableProps {
   onRetry?: () => void;
 }
 
-const COLUMNS = [
-  'Máy chủ',
-  'Trạng thái',
-  'Địa chỉ IP',
-  'Hệ điều hành',
-  'CPU',
-  'RAM',
-  'Ổ đĩa',
-  'Thao tác',
+/** Column headings, in order. Dictionary keys, resolved at render. */
+const COLUMN_KEYS = [
+  'common.field.server',
+  'common.status',
+  'common.field.ipAddress',
+  'common.field.os',
+  'common.field.cpu',
+  'common.field.ram',
+  'common.field.disk',
+  'common.actions',
 ];
-
-const NO_METRICS_REASON = 'Chưa có dữ liệu: agent trên máy này chưa gửi mẫu đo nào.';
-const NO_INVENTORY_REASON = 'Chưa có dữ liệu: máy này chưa báo cáo cấu hình phần cứng.';
 
 function statusBadgeClass(status: string | undefined): string {
   switch (String(status || '').toLowerCase()) {
@@ -68,7 +67,11 @@ export default function ServersTable({
   emptyHint,
   onRetry,
 }: ServersTableProps) {
+  const t = useT();
+  const { formatNumber } = useFormatters();
   const list = Array.isArray(servers) ? servers : [];
+  const noMetricsReason = t('common.reason.noMetrics');
+  const noInventoryReason = t('common.reason.noInventory');
 
   if (loading) {
     return (
@@ -84,7 +87,7 @@ export default function ServersTable({
     return (
       <StateMessage
         tone="error"
-        title="Không tải được danh sách máy chủ"
+        title={t('dashboard.servers.loadFailed')}
         hint={error}
         action={
           onRetry ? (
@@ -93,7 +96,7 @@ export default function ServersTable({
               onClick={onRetry}
               className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
-              Thử lại
+              {t('common.retry')}
             </button>
           ) : undefined
         }
@@ -111,11 +114,8 @@ export default function ServersTable({
     return (
       <StateMessage
         icon={<Server size={36} aria-hidden="true" />}
-        title="Máy cài panel chưa được đăng ký"
-        hint={
-          emptyHint ||
-          'Panel quản lý chính máy mà nó đang chạy. Máy này chưa xuất hiện trong danh sách node quản lý, nên chưa có số liệu nào để hiển thị.'
-        }
+        title={t('dashboard.servers.unregisteredTitle')}
+        hint={emptyHint || t('dashboard.servers.unregisteredHint')}
         action={
           <div className="flex flex-wrap items-center justify-center gap-3">
             {onRetry && (
@@ -125,14 +125,14 @@ export default function ServersTable({
                 className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 <RefreshCw size={16} aria-hidden="true" />
-                Kiểm tra lại
+                {t('common.checkAgain')}
               </button>
             )}
             <Link
               href="/servers"
               className="inline-flex items-center rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
-              Xem trang máy chủ
+              {t('dashboard.servers.openServers')}
             </Link>
           </div>
         }
@@ -145,13 +145,13 @@ export default function ServersTable({
       <table className="w-full min-w-[900px] border-collapse">
         <thead className="bg-gray-50">
           <tr className="border-b border-gray-200">
-            {COLUMNS.map((label) => (
+            {COLUMN_KEYS.map((key) => (
               <th
-                key={label}
+                key={key}
                 scope="col"
                 className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
               >
-                {label}
+                {t(key)}
               </th>
             ))}
           </tr>
@@ -161,7 +161,12 @@ export default function ServersTable({
             const sample = metrics[server.id] || null;
             const cpu =
               typeof sample?.cpu_percent === 'number' && Number.isFinite(sample.cpu_percent)
-                ? `${sample.cpu_percent.toFixed(1)}%`
+                ? t('common.percent', {
+                    n: formatNumber(sample.cpu_percent, {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    }),
+                  })
                 : null;
             const ram = formatUsage(sample?.ram_used, sample?.ram_total ?? server.ram_total);
             const disk = formatUsage(sample?.disk_used, sample?.disk_total ?? server.disk_total);
@@ -176,13 +181,13 @@ export default function ServersTable({
                     <span className="font-medium text-gray-900">{serverLabel(server)}</span>
                     {isLocalNode(server) && (
                       <LocalNodeBadge
-                        label="Máy cài panel"
-                        title="Máy đang chạy panel. Panel quản lý trực tiếp máy này."
+                        label={t('servers.localBadge')}
+                        title={t('servers.localBadgeTitle.managed')}
                       />
                     )}
                   </span>
                   <span className="block text-xs text-gray-500">
-                    <MetricText value={server.os || null} reason={NO_INVENTORY_REASON} />
+                    <MetricText value={server.os || null} reason={noInventoryReason} />
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm">
@@ -195,27 +200,27 @@ export default function ServersTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 font-mono text-sm text-gray-700">
-                  <MetricText value={server.ip_address || null} reason={NO_INVENTORY_REASON} />
+                  <MetricText value={server.ip_address || null} reason={noInventoryReason} />
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">
-                  <MetricText value={server.os || null} reason={NO_INVENTORY_REASON} />
+                  <MetricText value={server.os || null} reason={noInventoryReason} />
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">
                   <span className="flex items-center gap-2">
                     <Cpu size={14} className="text-gray-500" aria-hidden="true" />
-                    <MetricText value={cpu} reason={NO_METRICS_REASON} />
+                    <MetricText value={cpu} reason={noMetricsReason} />
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">
                   <span className="flex items-center gap-2">
                     <MemoryStick size={14} className="text-gray-500" aria-hidden="true" />
-                    <MetricText value={ram} reason={NO_METRICS_REASON} />
+                    <MetricText value={ram} reason={noMetricsReason} />
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">
                   <span className="flex items-center gap-2">
                     <HardDrive size={14} className="text-gray-500" aria-hidden="true" />
-                    <MetricText value={disk} reason={NO_METRICS_REASON} />
+                    <MetricText value={disk} reason={noMetricsReason} />
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm">
@@ -223,7 +228,7 @@ export default function ServersTable({
                     href={`/servers/${server.id}`}
                     className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
-                    Xem
+                    {t('common.view')}
                   </Link>
                 </td>
               </tr>

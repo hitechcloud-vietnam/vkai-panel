@@ -17,6 +17,7 @@ import { RefreshCw, Server } from 'lucide-react';
 
 import LocalNodeBadge from './LocalNodeBadge';
 import { Unavailable } from '@/components/Unavailable';
+import { useT } from '@/i18n';
 
 export interface PanelHostPlaceholderCopy {
   title: string;
@@ -36,42 +37,20 @@ export interface PanelHostPlaceholderCopy {
   refresh: string;
 }
 
-export const PANEL_HOST_PLACEHOLDER_COPY_EN: PanelHostPlaceholderCopy = {
-  title: 'Panel host',
-  body:
-    'This panel manages the machine it runs on. That machine has not been registered as a managed node yet, so its details are not available. Check again in a moment; if it stays this way, the local agent is not reporting.',
-  localBadge: 'Panel host',
-  localBadgeTitle: 'The machine this panel runs on.',
-  statusLabel: 'Status',
-  statusValue: 'registering',
-  unavailableReason:
-    'Not available: the panel host has not been registered as a managed node yet, so nothing has reported this figure.',
-  hostnameLabel: 'Address',
-  osLabel: 'OS',
-  cpuLabel: 'CPU',
-  ramLabel: 'RAM',
-  refresh: 'Check again',
-};
-
-export const PANEL_HOST_PLACEHOLDER_COPY_VI: PanelHostPlaceholderCopy = {
-  title: 'Máy cài panel',
-  body:
-    'Panel quản lý chính máy mà nó đang chạy. Máy này chưa được đăng ký thành node quản lý nên chưa có thông số. Hãy thử lại sau giây lát; nếu vẫn vậy thì agent nội bộ chưa gửi dữ liệu.',
-  localBadge: 'Máy cài panel',
-  localBadgeTitle: 'Máy đang chạy panel.',
-  statusLabel: 'Trạng thái',
-  statusValue: 'đang đăng ký',
-  unavailableReason:
-    'Chưa có dữ liệu: máy cài panel chưa được đăng ký thành node quản lý nên chưa có nguồn nào báo cáo số liệu này.',
-  hostnameLabel: 'Địa chỉ',
-  osLabel: 'Hệ điều hành',
-  cpuLabel: 'CPU',
-  ramLabel: 'RAM',
-  refresh: 'Kiểm tra lại',
-};
+/**
+ * Deprecated. Every string now comes from the dictionary; this export remains
+ * only so the screens that still pass `copy` keep compiling, and passing it
+ * changes nothing. `localBadge` is still filled in because one screen reads
+ * that field directly - it should read `t('servers.localBadge')` instead, and
+ * then this export can go.
+ */
+export const PANEL_HOST_PLACEHOLDER_COPY_EN: Partial<PanelHostPlaceholderCopy> & {
+  localBadge: string;
+} = { localBadge: 'Panel host' };
 
 export interface PanelHostPlaceholderProps {
-  copy: PanelHostPlaceholderCopy;
+  /** Deprecated per-field override; omit it and the dictionary is used. */
+  copy?: Partial<PanelHostPlaceholderCopy>;
   onRefresh?: () => void;
 }
 
@@ -79,6 +58,8 @@ export default function PanelHostPlaceholder({
   copy,
   onRefresh,
 }: PanelHostPlaceholderProps) {
+  const t = useT();
+
   // The address the operator reached the panel on is the one thing the browser
   // genuinely knows about this machine. Read after mount so server and client
   // render the same markup.
@@ -91,11 +72,20 @@ export default function PanelHostPlaceholder({
     }
   }, []);
 
+  const title = copy?.title ?? t('servers.panelHost.title');
+  const body = copy?.body ?? t('servers.panelHost.body');
+  const localBadge = copy?.localBadge ?? t('servers.localBadge');
+  const localBadgeTitle = copy?.localBadgeTitle ?? t('servers.localBadgeTitle.short');
+  const statusValue = copy?.statusValue ?? t('servers.panelHost.statusValue');
+  const unavailableReason =
+    copy?.unavailableReason ?? t('servers.panelHost.unavailableReason');
+  const refresh = copy?.refresh ?? t('common.checkAgain');
+
   const rows: { label: string; value: string | null }[] = [
-    { label: copy.hostnameLabel, value: host || null },
-    { label: copy.osLabel, value: null },
-    { label: copy.cpuLabel, value: null },
-    { label: copy.ramLabel, value: null },
+    { label: copy?.hostnameLabel ?? t('common.field.address'), value: host || null },
+    { label: copy?.osLabel ?? t('common.field.os'), value: null },
+    { label: copy?.cpuLabel ?? t('common.field.cpu'), value: null },
+    { label: copy?.ramLabel ?? t('common.field.ram'), value: null },
   ];
 
   return (
@@ -107,20 +97,20 @@ export default function PanelHostPlaceholder({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-gray-900">{copy.title}</h3>
-              <LocalNodeBadge label={copy.localBadge} title={copy.localBadgeTitle} />
+              <h3 className="truncate text-sm font-semibold text-gray-900">{title}</h3>
+              <LocalNodeBadge label={localBadge} title={localBadgeTitle} />
             </div>
             <p className="text-xs text-gray-500" suppressHydrationWarning>
-              {host || ' '}
+              {host || ' '}
             </p>
           </div>
         </div>
         <span className="inline-flex shrink-0 items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-          {copy.statusValue}
+          {statusValue}
         </span>
       </div>
 
-      <p className="mt-4 text-sm text-gray-600">{copy.body}</p>
+      <p className="mt-4 text-sm text-gray-600">{body}</p>
 
       <dl className="mt-4 grid grid-cols-2 gap-4">
         {rows.map((row) => (
@@ -130,7 +120,7 @@ export default function PanelHostPlaceholder({
               {row.value ? (
                 <span className="font-mono">{row.value}</span>
               ) : (
-                <Unavailable reason={copy.unavailableReason} />
+                <Unavailable reason={unavailableReason} />
               )}
             </dd>
           </div>
@@ -144,7 +134,7 @@ export default function PanelHostPlaceholder({
           className="mt-4 inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <RefreshCw size={14} aria-hidden="true" />
-          {copy.refresh}
+          {refresh}
         </button>
       )}
     </div>

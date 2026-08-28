@@ -1,11 +1,19 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { brand, byline } from '@/lib/brand';
+import { DEFAULT_LOCALE, resolveInitialLocale, translate, type Locale } from '@/i18n';
 
 /**
- * global-error.tsx thay the toan bo root layout khi ung dung sup do,
- * nen KHONG co Tailwind / globals.css o day: moi kieu dang phai viet inline
- * bang dung mau thuong hieu (#0B398C navy, #1791C8 cyan).
+ * global-error.tsx replaces the whole root layout when the application fails
+ * to start, so there is NO Tailwind / globals.css here: every style is written
+ * inline with the brand colours (#0B398C navy, #1791C8 cyan).
+ *
+ * For the same reason there is no I18nProvider above this component. It
+ * resolves the locale itself and calls `translate` directly, starting from the
+ * default so that the server's markup and the first client render agree. There
+ * is no language switch on this screen: the application is broken, and the one
+ * useful action is to retry or leave.
  */
 export default function GlobalError({
   error,
@@ -14,8 +22,17 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
+
+  useEffect(() => {
+    setLocale(resolveInitialLocale());
+  }, []);
+
+  const t = (key: string, params?: Record<string, string | number>) =>
+    translate(locale, key, params);
+
   return (
-    <html lang="vi">
+    <html lang={locale}>
       <body
         style={{
           margin: 0,
@@ -83,11 +100,10 @@ export default function GlobalError({
             </span>
             <div>
               <h1 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
-                Ứng dụng gặp sự cố nghiêm trọng
+                {t('errors.globalTitle')}
               </h1>
               <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#4b5563' }}>
-                {brand.productName} {byline} không thể khởi tạo giao diện. Vui lòng thử lại hoặc
-                liên hệ quản trị viên.
+                {t('errors.globalBody', { product: brand.productName, byline })}
               </p>
             </div>
           </div>
@@ -103,7 +119,7 @@ export default function GlobalError({
                 color: '#6b7280',
               }}
             >
-              Chi tiết lỗi
+              {t('errors.detailsLabel')}
             </p>
             <pre
               style={{
@@ -119,15 +135,16 @@ export default function GlobalError({
                 whiteSpace: 'pre-wrap',
               }}
             >
-              {error?.message || 'Không có thông tin chi tiết.'}
+              {error?.message || t('errors.noDetails')}
             </pre>
             {error?.digest && (
               <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: '#6b7280' }}>
-                Mã lỗi (digest): <span style={{ color: '#374151' }}>{error.digest}</span>
+                {t('errors.digestInline')}{' '}
+                <span style={{ color: '#374151' }}>{error.digest}</span>
               </p>
             )}
             <p style={{ margin: '0.75rem 0 0', fontSize: '0.875rem', color: '#4b5563' }}>
-              Hỗ trợ kỹ thuật:{' '}
+              {t('common.technicalSupport')}:{' '}
               <a
                 href={`mailto:${brand.supportEmail}`}
                 style={{ color: '#092E70', fontWeight: 500, textDecoration: 'none' }}
@@ -160,7 +177,7 @@ export default function GlobalError({
                 cursor: 'pointer',
               }}
             >
-              Thử lại
+              {t('common.retry')}
             </button>
             <a
               href="/"
@@ -175,7 +192,7 @@ export default function GlobalError({
                 textDecoration: 'none',
               }}
             >
-              Về trang chủ
+              {t('common.backToHome')}
             </a>
           </div>
         </div>
