@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/quota"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
 )
@@ -69,16 +70,33 @@ func validateJob(job *models.CronJob) error {
 type CronService struct {
 	cronRepo   *repository.CronRepository
 	serverRepo *repository.ServerRepository
+	quota      *quota.Enforcer
 }
 
-func NewCronService(cronRepo *repository.CronRepository, serverRepo *repository.ServerRepository) *CronService {
+// NewCronService takes the quota enforcer as a REQUIRED argument, so that
+// omitting quota enforcement is a compile error rather than a silent hole. See
+// NewWebsiteService for the reasoning.
+func NewCronService(
+	cronRepo *repository.CronRepository,
+	serverRepo *repository.ServerRepository,
+	quotaEnforcer *quota.Enforcer,
+) *CronService {
 	return &CronService{
 		cronRepo:   cronRepo,
 		serverRepo: serverRepo,
+		quota:      quotaEnforcer,
 	}
 }
 
 func (s *CronService) Create(ctx context.Context, req *models.CreateCronJobRequest, tenantID uuid.UUID) (*models.CronJob, error) {
+	// ENFORCEMENT POINT: the hosting package's cron job count.
+	//
+	// Before the row and before the /etc/cron.d entry, so a refusal leaves
+	// nothing scheduled.
+	if err := s.quota.Check(ctx, tenantID, quota.ResourceCronJobs); err != nil {
+		return nil, err
+	}
+
 	job := &models.CronJob{
 		TenantID: tenantID,
 		ServerID: req.ServerID,

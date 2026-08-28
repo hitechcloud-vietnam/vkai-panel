@@ -254,8 +254,12 @@ func (r *DailyReportRepository) GetSecuritySummary(ctx context.Context, tenantID
 
 func (r *DailyReportRepository) GetBackupSummary(ctx context.Context, tenantID uuid.UUID) (*models.BackupSummary, error) {
 	summary := &models.BackupSummary{}
-	_ = r.db.GetContext(ctx, &summary.TotalBackups, `SELECT COALESCE(COUNT(*), 0) FROM backup_records WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '1 day'`, tenantID)
-	_ = r.db.GetContext(ctx, &summary.Successful, `SELECT COALESCE(COUNT(*), 0) FROM backup_records WHERE tenant_id=$1 AND status='completed' AND created_at > NOW() - INTERVAL '1 day'`, tenantID)
-	_ = r.db.GetContext(ctx, &summary.Failed, `SELECT COALESCE(COUNT(*), 0) FROM backup_records WHERE tenant_id=$1 AND status='failed' AND created_at > NOW() - INTERVAL '1 day'`, tenantID)
+	// backup_records has no created_at: migration 001 timestamps a backup by
+	// when it started. These three counts asked for a column that has never
+	// existed, and because the errors were discarded the daily report simply
+	// showed zero backups every day instead of reporting the failure.
+	_ = r.db.GetContext(ctx, &summary.TotalBackups, `SELECT COALESCE(COUNT(*), 0) FROM backup_records WHERE tenant_id=$1 AND started_at > NOW() - INTERVAL '1 day'`, tenantID)
+	_ = r.db.GetContext(ctx, &summary.Successful, `SELECT COALESCE(COUNT(*), 0) FROM backup_records WHERE tenant_id=$1 AND status='completed' AND started_at > NOW() - INTERVAL '1 day'`, tenantID)
+	_ = r.db.GetContext(ctx, &summary.Failed, `SELECT COALESCE(COUNT(*), 0) FROM backup_records WHERE tenant_id=$1 AND status='failed' AND started_at > NOW() - INTERVAL '1 day'`, tenantID)
 	return summary, nil
 }

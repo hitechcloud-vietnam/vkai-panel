@@ -9,6 +9,24 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 )
 
+// Every statement in this file names its columns. SELECT * was how the previous
+// version broke: sqlx refuses to scan a row that carries a column the struct
+// does not declare, so a migration adding one column silently killed an
+// endpoint, and there was nothing in the query text to compare against the
+// schema.
+const (
+	clusterColumns = `id, tenant_id, name, description, type, status, config, created_at, updated_at`
+
+	clusterNodeColumns = `id, cluster_id, server_id, role, status, ip_address, port, weight,
+		metadata, last_heartbeat, created_at, updated_at`
+
+	loadBalancerColumns = `id, tenant_id, cluster_id, name, type, algorithm, status,
+		listen_port, ssl_port, ssl_enabled, config, health_check, created_at, updated_at`
+
+	haPairColumns = `id, tenant_id, name, primary_server_id, secondary_server_id, virtual_ip,
+		status, failover_mode, last_sync, last_failover, config, created_at, updated_at`
+)
+
 type ClusterRepository struct {
 	db *sqlx.DB
 }
@@ -33,7 +51,7 @@ func (r *ClusterRepository) Create(ctx context.Context, cluster *models.Cluster)
 func (r *ClusterRepository) GetByID(ctx context.Context, tenantID, id uuid.UUID) (*models.Cluster, error) {
 	var cluster models.Cluster
 	err := r.db.GetContext(ctx, &cluster,
-		"SELECT * FROM clusters WHERE tenant_id = $1 AND id = $2",
+		`SELECT `+clusterColumns+` FROM clusters WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
 	)
 	if err != nil {
@@ -45,7 +63,7 @@ func (r *ClusterRepository) GetByID(ctx context.Context, tenantID, id uuid.UUID)
 func (r *ClusterRepository) List(ctx context.Context, tenantID uuid.UUID) ([]models.Cluster, error) {
 	var clusters []models.Cluster
 	err := r.db.SelectContext(ctx, &clusters,
-		"SELECT * FROM clusters WHERE tenant_id = $1 ORDER BY name",
+		`SELECT `+clusterColumns+` FROM clusters WHERE tenant_id = $1 ORDER BY name`,
 		tenantID,
 	)
 	if err != nil {
@@ -100,20 +118,20 @@ func (r *ClusterRepository) Delete(ctx context.Context, tenantID, id uuid.UUID) 
 // Cluster Nodes
 func (r *ClusterRepository) AddNode(ctx context.Context, node *models.ClusterNode) error {
 	query := `
-		INSERT INTO cluster_nodes (cluster_id, server_id, role, status, weight, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, created_at, updated_at
+		INSERT INTO cluster_nodes (cluster_id, server_id, role, status, ip_address, weight, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, port, created_at, updated_at
 	`
 	return r.db.QueryRowContext(ctx, query,
 		node.ClusterID, node.ServerID, node.Role,
-		node.Status, node.Weight, node.Metadata,
-	).Scan(&node.ID, &node.CreatedAt, &node.UpdatedAt)
+		node.Status, node.IPAddress, node.Weight, node.Metadata,
+	).Scan(&node.ID, &node.Port, &node.CreatedAt, &node.UpdatedAt)
 }
 
 func (r *ClusterRepository) GetNodeByID(ctx context.Context, id uuid.UUID) (*models.ClusterNode, error) {
 	var node models.ClusterNode
 	err := r.db.GetContext(ctx, &node,
-		"SELECT * FROM cluster_nodes WHERE id = $1",
+		`SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE id = $1`,
 		id,
 	)
 	if err != nil {
@@ -125,7 +143,7 @@ func (r *ClusterRepository) GetNodeByID(ctx context.Context, id uuid.UUID) (*mod
 func (r *ClusterRepository) ListNodes(ctx context.Context, clusterID uuid.UUID) ([]models.ClusterNode, error) {
 	var nodes []models.ClusterNode
 	err := r.db.SelectContext(ctx, &nodes,
-		"SELECT * FROM cluster_nodes WHERE cluster_id = $1 ORDER BY role, server_id",
+		`SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE cluster_id = $1 ORDER BY role, server_id`,
 		clusterID,
 	)
 	if err != nil {
@@ -184,20 +202,21 @@ func (r *ClusterRepository) RemoveNode(ctx context.Context, id uuid.UUID) error 
 // Load Balancers
 func (r *ClusterRepository) CreateLoadBalancer(ctx context.Context, lb *models.LoadBalancer) error {
 	query := `
-		INSERT INTO load_balancers (tenant_id, cluster_id, name, type, listen_port, backend_port, algorithm, config, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, created_at, updated_at
+		INSERT INTO load_balancers (tenant_id, cluster_id, name, type, algorithm, status,
+			listen_port, ssl_port, ssl_enabled, config)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, health_check, created_at, updated_at
 	`
 	return r.db.QueryRowContext(ctx, query,
-		lb.TenantID, lb.ClusterID, lb.Name, lb.Type,
-		lb.ListenPort, lb.BackendPort, lb.Algorithm, lb.Config, lb.IsActive,
-	).Scan(&lb.ID, &lb.CreatedAt, &lb.UpdatedAt)
+		lb.TenantID, lb.ClusterID, lb.Name, lb.Type, lb.Algorithm, lb.Status,
+		lb.ListenPort, lb.SSLPort, lb.SSLEnabled, lb.Config,
+	).Scan(&lb.ID, &lb.HealthCheck, &lb.CreatedAt, &lb.UpdatedAt)
 }
 
 func (r *ClusterRepository) GetLoadBalancerByID(ctx context.Context, tenantID, id uuid.UUID) (*models.LoadBalancer, error) {
 	var lb models.LoadBalancer
 	err := r.db.GetContext(ctx, &lb,
-		"SELECT * FROM load_balancers WHERE tenant_id = $1 AND id = $2",
+		`SELECT `+loadBalancerColumns+` FROM load_balancers WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
 	)
 	if err != nil {
@@ -211,12 +230,12 @@ func (r *ClusterRepository) ListLoadBalancers(ctx context.Context, tenantID uuid
 	var err error
 	if clusterID != nil {
 		err = r.db.SelectContext(ctx, &lbs,
-			"SELECT * FROM load_balancers WHERE tenant_id = $1 AND cluster_id = $2 ORDER BY name",
+			`SELECT `+loadBalancerColumns+` FROM load_balancers WHERE tenant_id = $1 AND cluster_id = $2 ORDER BY name`,
 			tenantID, *clusterID,
 		)
 	} else {
 		err = r.db.SelectContext(ctx, &lbs,
-			"SELECT * FROM load_balancers WHERE tenant_id = $1 ORDER BY name",
+			`SELECT `+loadBalancerColumns+` FROM load_balancers WHERE tenant_id = $1 ORDER BY name`,
 			tenantID,
 		)
 	}
@@ -238,26 +257,31 @@ func (r *ClusterRepository) UpdateLoadBalancer(ctx context.Context, tenantID, id
 	if req.Type != nil {
 		lb.Type = *req.Type
 	}
+	if req.Algorithm != nil {
+		lb.Algorithm = *req.Algorithm
+	}
+	if req.Status != nil {
+		lb.Status = *req.Status
+	}
 	if req.ListenPort != nil {
 		lb.ListenPort = *req.ListenPort
 	}
-	if req.BackendPort != nil {
-		lb.BackendPort = *req.BackendPort
+	if req.SSLPort != nil {
+		lb.SSLPort = *req.SSLPort
 	}
-	if req.Algorithm != nil {
-		lb.Algorithm = *req.Algorithm
+	if req.SSLEnabled != nil {
+		lb.SSLEnabled = *req.SSLEnabled
 	}
 	if req.Config != nil {
 		lb.Config = *req.Config
 	}
-	if req.IsActive != nil {
-		lb.IsActive = *req.IsActive
-	}
 
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE load_balancers SET name=$1, type=$2, listen_port=$3, backend_port=$4, algorithm=$5, config=$6, is_active=$7, updated_at=NOW()
-		 WHERE tenant_id=$8 AND id=$9`,
-		lb.Name, lb.Type, lb.ListenPort, lb.BackendPort, lb.Algorithm, lb.Config, lb.IsActive,
+		`UPDATE load_balancers SET name=$1, type=$2, algorithm=$3, status=$4, listen_port=$5,
+			ssl_port=$6, ssl_enabled=$7, config=$8, updated_at=NOW()
+		 WHERE tenant_id=$9 AND id=$10`,
+		lb.Name, lb.Type, lb.Algorithm, lb.Status, lb.ListenPort,
+		lb.SSLPort, lb.SSLEnabled, lb.Config,
 		tenantID, id,
 	)
 	if err != nil {
@@ -278,20 +302,21 @@ func (r *ClusterRepository) DeleteLoadBalancer(ctx context.Context, tenantID, id
 // HA Pairs
 func (r *ClusterRepository) CreateHAPair(ctx context.Context, ha *models.HAPair) error {
 	query := `
-		INSERT INTO ha_pairs (tenant_id, name, primary_id, secondary_id, virtual_ip, status, config)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO ha_pairs (tenant_id, name, primary_server_id, secondary_server_id,
+			virtual_ip, status, failover_mode, config)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at
 	`
 	return r.db.QueryRowContext(ctx, query,
-		ha.TenantID, ha.Name, ha.PrimaryID, ha.SecondaryID,
-		ha.VirtualIP, ha.Status, ha.Config,
+		ha.TenantID, ha.Name, ha.PrimaryServerID, ha.SecondaryServerID,
+		ha.VirtualIP, ha.Status, ha.FailoverMode, ha.Config,
 	).Scan(&ha.ID, &ha.CreatedAt, &ha.UpdatedAt)
 }
 
 func (r *ClusterRepository) GetHAPairByID(ctx context.Context, tenantID, id uuid.UUID) (*models.HAPair, error) {
 	var ha models.HAPair
 	err := r.db.GetContext(ctx, &ha,
-		"SELECT * FROM ha_pairs WHERE tenant_id = $1 AND id = $2",
+		`SELECT `+haPairColumns+` FROM ha_pairs WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
 	)
 	if err != nil {
@@ -303,7 +328,7 @@ func (r *ClusterRepository) GetHAPairByID(ctx context.Context, tenantID, id uuid
 func (r *ClusterRepository) ListHAPairs(ctx context.Context, tenantID uuid.UUID) ([]models.HAPair, error) {
 	var has []models.HAPair
 	err := r.db.SelectContext(ctx, &has,
-		"SELECT * FROM ha_pairs WHERE tenant_id = $1 ORDER BY name",
+		`SELECT `+haPairColumns+` FROM ha_pairs WHERE tenant_id = $1 ORDER BY name`,
 		tenantID,
 	)
 	if err != nil {
@@ -327,14 +352,17 @@ func (r *ClusterRepository) UpdateHAPair(ctx context.Context, tenantID, id uuid.
 	if req.Status != nil {
 		ha.Status = *req.Status
 	}
+	if req.FailoverMode != nil {
+		ha.FailoverMode = *req.FailoverMode
+	}
 	if req.Config != nil {
 		ha.Config = *req.Config
 	}
 
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE ha_pairs SET name=$1, virtual_ip=$2, status=$3, config=$4, updated_at=NOW()
-		 WHERE tenant_id=$5 AND id=$6`,
-		ha.Name, ha.VirtualIP, ha.Status, ha.Config, tenantID, id,
+		`UPDATE ha_pairs SET name=$1, virtual_ip=$2, status=$3, failover_mode=$4, config=$5, updated_at=NOW()
+		 WHERE tenant_id=$6 AND id=$7`,
+		ha.Name, ha.VirtualIP, ha.Status, ha.FailoverMode, ha.Config, tenantID, id,
 	)
 	if err != nil {
 		return nil, err
@@ -350,13 +378,14 @@ func (r *ClusterRepository) TriggerFailover(ctx context.Context, tenantID, id uu
 	}
 
 	// Swap primary and secondary
-	ha.PrimaryID, ha.SecondaryID = ha.SecondaryID, ha.PrimaryID
-	ha.Status = "failover"
+	ha.PrimaryServerID, ha.SecondaryServerID = ha.SecondaryServerID, ha.PrimaryServerID
+	ha.Status = "failed-over"
 
 	_, err = r.db.ExecContext(ctx,
-		`UPDATE ha_pairs SET primary_id=$1, secondary_id=$2, status=$3, last_failover=NOW(), updated_at=NOW()
+		`UPDATE ha_pairs SET primary_server_id=$1, secondary_server_id=$2, status=$3,
+			last_failover=NOW(), updated_at=NOW()
 		 WHERE tenant_id=$4 AND id=$5`,
-		ha.PrimaryID, ha.SecondaryID, ha.Status, tenantID, id,
+		ha.PrimaryServerID, ha.SecondaryServerID, ha.Status, tenantID, id,
 	)
 	return err
 }

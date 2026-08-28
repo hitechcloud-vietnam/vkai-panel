@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
+
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 )
 
@@ -25,18 +27,21 @@ func (r *PHPRepository) CreatePHPVersion(ctx context.Context, php *models.PHPVer
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
-	extensionsJSON, err := json.Marshal(php.Extensions)
-	if err != nil {
-		return fmt.Errorf("failed to marshal extensions: %w", err)
-	}
-
 	now := time.Now()
 	php.CreatedAt = now
 	php.UpdatedAt = now
 
-	_, err = r.db.ExecContext(ctx, query,
+	// php_versions.extensions is TEXT[] (migration 002), not JSONB.
+	//
+	// This used to pass json.Marshal(php.Extensions), which for the empty
+	// slice every caller passes is the two bytes "[]". PostgreSQL answers
+	// `malformed array literal: "[]"` - `[` must introduce explicitly
+	// specified array dimensions - so CreatePHPVersion failed on EVERY call,
+	// on every install, and the panel could never record a PHP version at all.
+	// pq.Array renders the Go slice as the array literal the column expects.
+	_, err := r.db.ExecContext(ctx, query,
 		php.ID, php.Version, php.Path, php.FPMPath, php.FPMConfig, php.IniPath,
-		string(extensionsJSON), php.IsActive, php.IsDefault, php.ServerID, php.TenantID,
+		pq.Array(php.Extensions), php.IsActive, php.IsDefault, php.ServerID, php.TenantID,
 		php.CreatedAt, php.UpdatedAt,
 	)
 
@@ -52,20 +57,19 @@ func (r *PHPRepository) GetPHPVersion(ctx context.Context, id, tenantID string) 
 	`
 
 	var php models.PHPVersion
-	var extensionsJSON string
 
+	// Scanned with pq.Array for the same reason it is written with it: the
+	// column is TEXT[]. Scanning it into a string and calling json.Unmarshal
+	// produced `{redis,imagick}`, which is not JSON, so every read of a
+	// version that had extensions failed too.
 	err := r.db.QueryRowContext(ctx, query, id, tenantID).Scan(
 		&php.ID, &php.Version, &php.Path, &php.FPMPath, &php.FPMConfig, &php.IniPath,
-		&extensionsJSON, &php.IsActive, &php.IsDefault, &php.ServerID, &php.TenantID,
+		pq.Array(&php.Extensions), &php.IsActive, &php.IsDefault, &php.ServerID, &php.TenantID,
 		&php.CreatedAt, &php.UpdatedAt,
 	)
 
 	if err != nil {
 		return nil, err
-	}
-
-	if err := json.Unmarshal([]byte(extensionsJSON), &php.Extensions); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal extensions: %w", err)
 	}
 
 	return &php, nil
@@ -96,20 +100,15 @@ func (r *PHPRepository) ListPHPVersions(ctx context.Context, tenantID, serverID 
 	var phpVersions []*models.PHPVersion
 	for rows.Next() {
 		var php models.PHPVersion
-		var extensionsJSON string
 
 		err := rows.Scan(
 			&php.ID, &php.Version, &php.Path, &php.FPMPath, &php.FPMConfig, &php.IniPath,
-			&extensionsJSON, &php.IsActive, &php.IsDefault, &php.ServerID, &php.TenantID,
+			pq.Array(&php.Extensions), &php.IsActive, &php.IsDefault, &php.ServerID, &php.TenantID,
 			&php.CreatedAt, &php.UpdatedAt,
 		)
 
 		if err != nil {
 			return nil, err
-		}
-
-		if err := json.Unmarshal([]byte(extensionsJSON), &php.Extensions); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal extensions: %w", err)
 		}
 
 		phpVersions = append(phpVersions, &php)
@@ -478,3 +477,13 @@ func (r *PHPRepository) DeletePHPConfig(ctx context.Context, id, tenantID string
 	_, err := r.db.ExecContext(ctx, query, id, tenantID)
 	return err
 }
+
+// DB exposes the connection this repository was built on.
+//
+// It exists so PHPService can build the runtime repository (php_pool_settings)
+// itself rather than growing a NewPHPService parameter. Growing that parameter
+// would mean editing cmd/api/main.go, and the panel's wiring is currently being
+// changed by several people at once; a self-wiring service needs exactly one
+// line added to router.go and nothing else, which is the difference between a
+// feature that ships and a feature that sits merged and unreachable.
+func (r *PHPRepository) DB() *sqlx.DB { return r.db }

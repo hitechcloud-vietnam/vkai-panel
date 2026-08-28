@@ -274,13 +274,15 @@ func (r *ConfigRepository) GetConfigStats(ctx context.Context, tenantID uuid.UUI
 		stats.ByType[configType] = count
 	}
 
-	// Get counts by server
+	// Get counts by server. The servers table identifies a server by hostname;
+	// it has never had a name column, so this query used to fail outright and
+	// take the whole config stats endpoint down with it.
 	serverQuery := `
-		SELECT s.name, COUNT(*) as count
+		SELECT s.hostname, COUNT(*) as count
 		FROM config_snapshots cs
 		JOIN servers s ON cs.server_id = s.id
 		WHERE cs.tenant_id = $1
-		GROUP BY s.name
+		GROUP BY s.hostname
 	`
 
 	serverRows, err := r.db.QueryContext(ctx, serverQuery, tenantID)

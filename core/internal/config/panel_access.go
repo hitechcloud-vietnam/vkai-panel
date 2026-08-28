@@ -18,9 +18,14 @@ package config
 // console exactly like aaPanel does.
 
 import (
+	"bytes"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -300,6 +305,29 @@ func PanelStateFilePath() string {
 	return DefaultPanelStateFile()
 }
 
+// PanelAccessSource says where one load reads from. The zero value is the
+// production case: the process environment and the default state file.
+//
+// It exists because the configuration is loaded more than once now. The first
+// load builds the process; every later one re-derives the same configuration
+// after the state file or the environment file changed on disk, and that later
+// load must be able to read an environment that is not this process's own -
+// editing /vkai-panel/etc/.env does not change the variables a running process
+// already inherited.
+type PanelAccessSource struct {
+	// Env resolves one variable. Nil means the process environment.
+	Env EnvLookup
+
+	// StateFile overrides where the persisted settings are read from and
+	// written back to. Empty means the location PanelStateFilePath resolves.
+	StateFile string
+
+	// NoPersist stops a generated value from being written back. A reload that
+	// is only inspecting a candidate configuration must not have side effects
+	// on disk.
+	NoPersist bool
+}
+
 // LoadPanelAccess builds the effective configuration from defaults, the state
 // file and the environment, generating whatever is still missing.
 //
@@ -307,22 +335,33 @@ func PanelStateFilePath() string {
 // error when it is not (containers frequently run with a read-only /etc): the
 // panel still starts, it just prints the values again on the next boot.
 func LoadPanelAccess() (*PanelAccessConfig, error) {
+	return LoadPanelAccessFrom(PanelAccessSource{})
+}
+
+// LoadPanelAccessFrom is LoadPanelAccess against an explicit source.
+func LoadPanelAccessFrom(src PanelAccessSource) (*PanelAccessConfig, error) {
+	env := envSource{lookup: src.Env}
 	cfg := DefaultPanelAccess()
+	if path := strings.TrimSpace(src.StateFile); path != "" {
+		cfg.StateFile = path
+	} else if path := env.get("PANEL_CONFIG_FILE", "PANEL_STATE_FILE"); path != "" {
+		cfg.StateFile = path
+	}
 
 	if err := cfg.loadStateFile(); err != nil {
 		return nil, err
 	}
-	if err := cfg.applyEnv(); err != nil {
+	if err := cfg.applyEnv(env); err != nil {
 		return nil, err
 	}
-	if err := cfg.fillGenerated(); err != nil {
+	if err := cfg.fillGenerated(env); err != nil {
 		return nil, err
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	if len(cfg.Generated) > 0 {
+	if len(cfg.Generated) > 0 && !src.NoPersist {
 		// Best effort: a read-only state file must not stop the panel booting.
 		_ = cfg.Save()
 	}
@@ -365,16 +404,16 @@ func (p *PanelAccessConfig) loadStateFile() error {
 // applyEnv overlays the environment. Both the VKAI_ prefixed name and the bare
 // name are accepted, so PANEL_PORT works as documented by aaPanel-style guides
 // while VKAI_PANEL_PORT stays consistent with the rest of this panel.
-func (p *PanelAccessConfig) applyEnv() error {
-	if v, ok := envBoolOK("PANEL_ENABLED"); ok {
+func (p *PanelAccessConfig) applyEnv(env envSource) error {
+	if v, ok := env.boolOK("PANEL_ENABLED"); ok {
 		p.Enabled = v
 		p.markEnv("enabled")
 	}
-	if v := envString("PANEL_BIND", "PANEL_HOST"); v != "" {
+	if v := env.get("PANEL_BIND", "PANEL_HOST"); v != "" {
 		p.Bind = v
 		p.markEnv("bind")
 	}
-	if v := envString("PANEL_PORT"); v != "" {
+	if v := env.get("PANEL_PORT"); v != "" {
 		port, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {
 			return fmt.Errorf("panel access: PANEL_PORT=%q khong phai so", v)
@@ -382,7 +421,7 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.Port = port
 		p.markEnv("port")
 	}
-	if v := envString("PANEL_PUBLIC_PORT"); v != "" {
+	if v := env.get("PANEL_PUBLIC_PORT"); v != "" {
 		port, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {
 			return fmt.Errorf("panel access: PANEL_PUBLIC_PORT=%q khong phai so", v)
@@ -390,7 +429,7 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.PublicPort = port
 		p.markEnv("public_port")
 	}
-	if v := envString("PANEL_PUBLIC_SCHEME"); v != "" {
+	if v := env.get("PANEL_PUBLIC_SCHEME"); v != "" {
 		scheme := strings.ToLower(strings.TrimSpace(v))
 		if scheme != "http" && scheme != "https" {
 			return fmt.Errorf("panel access: PANEL_PUBLIC_SCHEME=%q chi nhan http hoac https", v)
@@ -398,7 +437,7 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.PublicScheme = scheme
 		p.markEnv("public_scheme")
 	}
-	if v := envString("PANEL_ENTRANCE"); v != "" {
+	if v := env.get("PANEL_ENTRANCE"); v != "" {
 		if strings.EqualFold(strings.TrimSpace(v), "random") {
 			entrance, err := RandomEntrance()
 			if err != nil {
@@ -410,11 +449,11 @@ func (p *PanelAccessConfig) applyEnv() error {
 		}
 		p.markEnv("entrance")
 	}
-	if v, ok := envBoolOK("PANEL_ENTRANCE_ENABLED"); ok {
+	if v, ok := env.boolOK("PANEL_ENTRANCE_ENABLED"); ok {
 		p.EntranceEnabled = v
 		p.markEnv("entrance_enabled")
 	}
-	if v := envString("PANEL_SESSION_TTL"); v != "" {
+	if v := env.get("PANEL_SESSION_TTL"); v != "" {
 		d, err := time.ParseDuration(strings.TrimSpace(v))
 		if err != nil {
 			return fmt.Errorf("panel access: VKAI_PANEL_SESSION_TTL=%q khong hop le (vi du 12h)", v)
@@ -425,36 +464,36 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.SessionTTLSeconds = int(d / time.Second)
 		p.markEnv("session_ttl")
 	}
-	if v, ok := envListOK("PANEL_ALLOWED_IPS", "PANEL_ALLOW_IPS"); ok {
+	if v, ok := env.listOK("PANEL_ALLOWED_IPS", "PANEL_ALLOW_IPS"); ok {
 		p.AllowedIPs = v
 		p.markEnv("allowed_ips")
 	}
-	if v, ok := envListOK("PANEL_TRUSTED_PROXIES"); ok {
+	if v, ok := env.listOK("PANEL_TRUSTED_PROXIES"); ok {
 		p.TrustedProxies = v
 		p.markEnv("trusted_proxies")
 	}
-	if v := envString("PANEL_DOMAIN"); v != "" {
+	if v := env.get("PANEL_DOMAIN"); v != "" {
 		p.Domain = strings.ToLower(strings.TrimSpace(v))
 		p.markEnv("domain")
 	}
 	// VKAI_PANEL_TLS_MODE is read here but applied last: it is the explicit
 	// statement of intent, so none of the older single-purpose variables below
 	// may end up contradicting it.
-	modeEnv := envString("PANEL_TLS_MODE", "PANEL_SSL_MODE")
+	modeEnv := env.get("PANEL_TLS_MODE", "PANEL_SSL_MODE")
 
-	if v := envString("PANEL_TLS_CERT", "PANEL_TLS_CERT_FILE"); v != "" {
+	if v := env.get("PANEL_TLS_CERT", "PANEL_TLS_CERT_FILE"); v != "" {
 		p.TLS.CertFile = v
 		p.TLS.Enabled = true
 		p.adoptCustomModeFromFiles(modeEnv)
 		p.markEnv("tls_cert")
 	}
-	if v := envString("PANEL_TLS_KEY", "PANEL_TLS_KEY_FILE"); v != "" {
+	if v := env.get("PANEL_TLS_KEY", "PANEL_TLS_KEY_FILE"); v != "" {
 		p.TLS.KeyFile = v
 		p.TLS.Enabled = true
 		p.adoptCustomModeFromFiles(modeEnv)
 		p.markEnv("tls_key")
 	}
-	if v, ok := envBoolOK("PANEL_TLS_SELF_SIGNED"); ok {
+	if v, ok := env.boolOK("PANEL_TLS_SELF_SIGNED"); ok {
 		p.TLS.SelfSigned = v
 		if modeEnv == "" {
 			// The legacy flag still moves the mode, so an existing deployment
@@ -470,7 +509,7 @@ func (p *PanelAccessConfig) applyEnv() error {
 		}
 		p.markEnv("tls_self_signed")
 	}
-	if v, ok := envBoolOK("PANEL_TLS_ENABLED", "PANEL_SSL"); ok {
+	if v, ok := env.boolOK("PANEL_TLS_ENABLED", "PANEL_SSL"); ok {
 		p.TLS.Enabled = v
 		p.markEnv("tls_enabled")
 	}
@@ -491,15 +530,15 @@ func (p *PanelAccessConfig) applyEnv() error {
 		p.markEnv("tls_mode")
 	}
 
-	if v := envString("PANEL_ACME_EMAIL", "PANEL_LETSENCRYPT_EMAIL", "PANEL_LE_EMAIL"); v != "" {
+	if v := env.get("PANEL_ACME_EMAIL", "PANEL_LETSENCRYPT_EMAIL", "PANEL_LE_EMAIL"); v != "" {
 		p.TLS.ACME.Email = strings.TrimSpace(v)
 		p.markEnv("acme_email")
 	}
-	if v, ok := envBoolOK("PANEL_ACME_STAGING", "PANEL_LETSENCRYPT_STAGING"); ok {
+	if v, ok := env.boolOK("PANEL_ACME_STAGING", "PANEL_LETSENCRYPT_STAGING"); ok {
 		p.TLS.ACME.UseStaging = v
 		p.markEnv("acme_staging")
 	}
-	if v := envString("PANEL_ACME_PROFILE", "PANEL_LETSENCRYPT_PROFILE"); v != "" {
+	if v := env.get("PANEL_ACME_PROFILE", "PANEL_LETSENCRYPT_PROFILE"); v != "" {
 		p.TLS.ACME.Profile = strings.ToLower(strings.TrimSpace(v))
 		p.markEnv("acme_profile")
 	}
@@ -523,8 +562,8 @@ func (p *PanelAccessConfig) adoptCustomModeFromFiles(modeEnv string) {
 // fillGenerated invents the values nobody supplied: a random port when
 // PANEL_RANDOM_PORT asks for one, and an entrance whenever the security
 // entrance is on but no path has ever been chosen.
-func (p *PanelAccessConfig) fillGenerated() error {
-	randomPort, _ := envBoolOK("PANEL_RANDOM_PORT")
+func (p *PanelAccessConfig) fillGenerated(env envSource) error {
+	randomPort, _ := env.boolOK("PANEL_RANDOM_PORT")
 	if randomPort && !p.hasEnv("port") {
 		port, err := RandomPanelPort()
 		if err != nil {
@@ -577,6 +616,37 @@ func (p *PanelAccessConfig) fillGenerated() error {
 
 // Validate rejects a configuration that would either fail to bind or quietly
 // give up the isolation the panel port exists to provide.
+// TLSInconsistency reports a configuration that asks for a certificate and
+// switches TLS off in the same breath.
+//
+// This combination shipped on a real install: VKAI_PANEL_TLS_MODE=letsencrypt
+// together with VKAI_PANEL_TLS_ENABLED=false. The resolution rule preferred the
+// explicit "off", which is defensible in isolation, and the consequence was
+// silence: the ACME client, its renewal loop and its hot certificate reload were
+// all constructed and then never asked to do anything. The panel served a
+// self-signed certificate generated once at install time that nothing would ever
+// renew, and no log line said so.
+//
+// Returning the mismatch as a value lets the caller decide - the API logs it at
+// startup and the settings endpoint shows it to an operator - without failing a
+// panel that is already running this way.
+func (p *PanelAccessConfig) TLSInconsistency() string {
+	if p.TLS.Enabled {
+		return ""
+	}
+	switch p.TLSMode() {
+	case TLSModeLetsEncrypt:
+		return "TLS mode is 'letsencrypt' but TLS is disabled for the panel: " +
+			"no certificate will be requested and none will be renewed. " +
+			"Set VKAI_PANEL_TLS_ENABLED=true so the panel terminates TLS itself, " +
+			"or set VKAI_PANEL_TLS_MODE=none if something in front of it does."
+	case TLSModeSelfSigned:
+		return "TLS mode is 'self-signed' but TLS is disabled for the panel: " +
+			"the generated certificate is never served and never renewed."
+	}
+	return ""
+}
+
 func (p *PanelAccessConfig) Validate() error {
 	if !p.Enabled {
 		return nil
@@ -1302,21 +1372,66 @@ func (p *PanelAccessConfig) IsEnvOverridden(name string) bool {
 	return p.hasEnv(name)
 }
 
-// envString returns the first non-empty value among VKAI_<name> and <name>.
-func envString(names ...string) string {
-	for _, name := range names {
-		if v := strings.TrimSpace(os.Getenv("VKAI_" + name)); v != "" {
-			return v
+// EnvLookup resolves one environment variable by name, the way os.LookupEnv
+// does. It is a parameter rather than a call to os so that a configuration can
+// be re-derived from an environment file that this process never inherited:
+// editing /vkai-panel/etc/.env does not change os.Environ of a running panel,
+// and a reload that read os.Environ would report "nothing changed" for a file
+// the operator just edited.
+type EnvLookup func(name string) (string, bool)
+
+// OSEnvLookup is the process environment.
+func OSEnvLookup(name string) (string, bool) { return os.LookupEnv(name) }
+
+// EnvFileLookup layers the contents of an environment file over a fallback,
+// which is what a reload reads: the file is the operator's intent, and anything
+// it does not mention keeps the value this process started with.
+//
+// A key that was in the file at boot and has since been deleted from it is NOT
+// unset by this - the process still carries it - which is why the reload path
+// reports such a key as needing a restart instead of pretending it applied.
+func EnvFileLookup(vars map[string]string, fallback EnvLookup) EnvLookup {
+	if fallback == nil {
+		fallback = OSEnvLookup
+	}
+	return func(name string) (string, bool) {
+		if v, ok := vars[name]; ok {
+			return v, true
 		}
-		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
-			return v
+		return fallback(name)
+	}
+}
+
+// envSource reads variables through an EnvLookup, accepting both the VKAI_
+// prefixed name and the bare one.
+type envSource struct{ lookup EnvLookup }
+
+func (e envSource) raw(name string) (string, bool) {
+	if e.lookup == nil {
+		return os.LookupEnv(name)
+	}
+	return e.lookup(name)
+}
+
+// get returns the first non-empty value among VKAI_<name> and <name>.
+func (e envSource) get(names ...string) string {
+	for _, name := range names {
+		if v, ok := e.raw("VKAI_" + name); ok {
+			if v = strings.TrimSpace(v); v != "" {
+				return v
+			}
+		}
+		if v, ok := e.raw(name); ok {
+			if v = strings.TrimSpace(v); v != "" {
+				return v
+			}
 		}
 	}
 	return ""
 }
 
-func envBoolOK(names ...string) (bool, bool) {
-	raw := envString(names...)
+func (e envSource) boolOK(names ...string) (bool, bool) {
+	raw := e.get(names...)
 	if raw == "" {
 		return false, false
 	}
@@ -1329,12 +1444,12 @@ func envBoolOK(names ...string) (bool, bool) {
 	return false, false
 }
 
-// envListOK reports whether the variable was set at all, so that an explicit
+// listOK reports whether the variable was set at all, so that an explicit
 // empty value ("allow everyone") can be distinguished from "not configured".
-func envListOK(names ...string) ([]string, bool) {
+func (e envSource) listOK(names ...string) ([]string, bool) {
 	for _, name := range names {
 		for _, key := range []string{"VKAI_" + name, name} {
-			raw, ok := os.LookupEnv(key)
+			raw, ok := e.raw(key)
 			if !ok {
 				continue
 			}
@@ -1342,6 +1457,57 @@ func envListOK(names ...string) ([]string, bool) {
 		}
 	}
 	return nil, false
+}
+
+// envString returns the first non-empty value among VKAI_<name> and <name> in
+// the process environment.
+func envString(names ...string) string { return envSource{}.get(names...) }
+
+// ParseEnvFile reads a shell-style environment file - the format systemd's
+// EnvironmentFile= and the installer both write - into a map.
+//
+// It is deliberately forgiving about what it skips (comments, blank lines,
+// lines with no '=') and strict about what it accepts: a line it cannot make
+// sense of is skipped rather than turning the whole file into an error, because
+// the alternative is a panel that refuses to reload its configuration over a
+// stray comment. A missing file is not an error either; it is the normal state
+// of an installation that configures everything through the state file.
+func ParseEnvFile(path string) (map[string]string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf("panel access: cannot read the environment file %s: %w", path, err)
+	}
+
+	vars := make(map[string]string, 32)
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		// Strip one layer of matching quotes, which is what a shell would do.
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		vars[key] = value
+	}
+
+	return vars, nil
 }
 
 func splitList(raw string) []string {
@@ -1380,3 +1546,597 @@ func primaryIPv4() string {
 	}
 	return ""
 }
+
+// ---------------------------------------------------------------------------
+// Operator-supplied certificates
+// ---------------------------------------------------------------------------
+//
+// An operator pastes a certificate and a private key into the panel. What
+// arrives is text, and every way it can be wrong ends the same way: the panel
+// stops answering HTTPS and the person who could fix it is on the other side of
+// the connection that just broke. So the pair is proven here, before anything
+// is written, and each failure names the check that rejected it.
+
+// Certificate check names. They travel to the UI in the error payload so the
+// interface can point at the field the operator has to fix.
+const (
+	CertCheckCertPEM      = "certificate_pem"
+	CertCheckKeyPEM       = "private_key_pem"
+	CertCheckKeyEncrypted = "private_key_encrypted"
+	CertCheckKeyMatch     = "key_matches_certificate"
+	CertCheckValidity     = "validity_period"
+	CertCheckChain        = "chain_complete"
+	CertCheckHostnames    = "hostname_coverage"
+	CertCheckLoad         = "tls_load"
+)
+
+// CertExpiryWarningWindow is how far ahead an expiry is worth warning about.
+// Thirty days is long enough to obtain a replacement by any means, including
+// one that involves a human at a certificate authority.
+const CertExpiryWarningWindow = 30 * 24 * time.Hour
+
+// CertificateError is a rejected certificate or key, with the check that
+// rejected it. Check is a stable identifier; Message is written for a person.
+type CertificateError struct {
+	Check   string
+	Message string
+	// Overridable marks a rejection an operator is allowed to insist past -
+	// hostname coverage and chain completeness, both of which can be
+	// deliberately unusual. A pair that does not parse or whose key does not
+	// match is never overridable: it cannot serve a single handshake.
+	Overridable bool
+}
+
+func (e *CertificateError) Error() string { return e.Check + ": " + e.Message }
+
+// CertificateInspection is everything the panel can say about a certificate
+// pair without holding the key. It is what GET /panel/settings returns for the
+// TLS section, and it deliberately has no field that could carry key material.
+type CertificateInspection struct {
+	Subject      string    `json:"subject"`
+	Issuer       string    `json:"issuer"`
+	SerialNumber string    `json:"serial_number"`
+	Fingerprint  string    `json:"fingerprint"`
+	NotBefore    time.Time `json:"not_before"`
+	NotAfter     time.Time `json:"not_after"`
+
+	ExpiresInDays int  `json:"expires_in_days"`
+	Expired       bool `json:"expired"`
+	NotYetValid   bool `json:"not_yet_valid"`
+	ExpiringSoon  bool `json:"expiring_soon"`
+
+	DNSNames    []string `json:"dns_names"`
+	IPAddresses []string `json:"ip_addresses"`
+
+	SelfSigned    bool `json:"self_signed"`
+	ChainLength   int  `json:"chain_length"`
+	ChainComplete bool `json:"chain_complete"`
+
+	KeyType string `json:"key_type"`
+	KeyBits int    `json:"key_bits"`
+
+	// Warnings are conditions that do not stop the pair being served.
+	Warnings []string `json:"warnings"`
+}
+
+// CoversHost reports whether the certificate is valid for a host name or IP
+// address the panel is actually reached as.
+func (i *CertificateInspection) CoversHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return true
+	}
+	host = strings.TrimSuffix(host, ".")
+	if ip := net.ParseIP(host); ip != nil {
+		for _, candidate := range i.IPAddresses {
+			if parsed := net.ParseIP(candidate); parsed != nil && parsed.Equal(ip) {
+				return true
+			}
+		}
+		// A certificate may also carry a bare address as a DNS name. It is not
+		// how a browser matches, so it does not count here.
+		return false
+	}
+	for _, name := range i.DNSNames {
+		if matchDNSName(name, host) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchDNSName compares one SAN entry against a host, honouring the single
+// leading wildcard label that X.509 allows and nothing else.
+func matchDNSName(pattern, host string) bool {
+	pattern = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(pattern), "."))
+	host = strings.ToLower(host)
+	if pattern == host {
+		return true
+	}
+	if !strings.HasPrefix(pattern, "*.") {
+		return false
+	}
+	suffix := pattern[1:] // ".example.com"
+	if !strings.HasSuffix(host, suffix) {
+		return false
+	}
+	label := host[:len(host)-len(suffix)]
+	return label != "" && !strings.Contains(label, ".")
+}
+
+// InspectCertificatePair validates a pasted certificate and private key and
+// reports what they are. Every return of a *CertificateError names the check
+// that failed; the inspection is returned alongside whenever enough of the
+// certificate parsed to describe it, so the UI can show the operator what they
+// pasted next to the reason it was refused.
+//
+// The order of the checks is the order in which a failure makes the later ones
+// meaningless, so the first message an operator sees is the cause and not a
+// consequence.
+func InspectCertificatePair(certPEM, keyPEM []byte) (*CertificateInspection, error) {
+	chain, err := decodeCertificateChain(certPEM)
+	if err != nil {
+		return nil, err
+	}
+	leaf := chain[0]
+
+	key, keyType, keyBits, err := decodePrivateKey(keyPEM)
+	if err != nil {
+		return nil, err
+	}
+
+	inspection := describeCertificate(chain)
+	inspection.KeyType = keyType
+	inspection.KeyBits = keyBits
+
+	// The key must belong to this certificate. A mismatched pair loads from
+	// disk and then fails every single handshake, which from outside is
+	// indistinguishable from the panel being down.
+	if !publicKeyMatches(leaf.PublicKey, key) {
+		return inspection, &CertificateError{
+			Check:   CertCheckKeyMatch,
+			Message: "The private key does not belong to this certificate. Paste the key that was generated with this certificate's signing request.",
+		}
+	}
+
+	// Proven the way the listener will prove it, so nothing can pass here and
+	// fail in crypto/tls afterwards.
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		return inspection, &CertificateError{
+			Check:   CertCheckLoad,
+			Message: "The certificate and key parse individually but cannot be loaded together: " + err.Error(),
+		}
+	}
+
+	now := time.Now()
+	if now.Before(leaf.NotBefore) {
+		return inspection, &CertificateError{
+			Check: CertCheckValidity,
+			Message: fmt.Sprintf("This certificate is not valid until %s. Check the clock on this machine, or wait until it becomes valid.",
+				leaf.NotBefore.UTC().Format(time.RFC3339)),
+		}
+	}
+	if now.After(leaf.NotAfter) {
+		return inspection, &CertificateError{
+			Check: CertCheckValidity,
+			Message: fmt.Sprintf("This certificate expired on %s. Browsers refuse an expired certificate, so serving it would take the panel off the network.",
+				leaf.NotAfter.UTC().Format(time.RFC3339)),
+		}
+	}
+
+	return inspection, nil
+}
+
+// decodeCertificateChain parses every CERTIFICATE block, leaf first.
+func decodeCertificateChain(certPEM []byte) ([]*x509.Certificate, error) {
+	rest := certPEM
+	chain := make([]*x509.Certificate, 0, 3)
+
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			return nil, &CertificateError{
+				Check: CertCheckCertPEM,
+				Message: fmt.Sprintf("The certificate box contains a %q block. Paste the certificate itself, which begins with -----BEGIN CERTIFICATE-----.",
+					block.Type),
+			}
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, &CertificateError{
+				Check:   CertCheckCertPEM,
+				Message: "A certificate block is not a valid X.509 certificate: " + err.Error(),
+			}
+		}
+		chain = append(chain, cert)
+	}
+
+	if len(chain) == 0 {
+		return nil, &CertificateError{
+			Check:   CertCheckCertPEM,
+			Message: "No certificate was found. Paste the PEM text, including the -----BEGIN CERTIFICATE----- and -----END CERTIFICATE----- lines.",
+		}
+	}
+
+	return chain, nil
+}
+
+// decodePrivateKey parses an RSA, EC or PKCS#8 private key and names what it
+// found, so the UI can say "RSA 2048" rather than "a key".
+func decodePrivateKey(keyPEM []byte) (any, string, int, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		return nil, "", 0, &CertificateError{
+			Check:   CertCheckKeyPEM,
+			Message: "No private key was found. Paste the PEM text, including the -----BEGIN ... PRIVATE KEY----- and -----END ... PRIVATE KEY----- lines.",
+		}
+	}
+
+	// An encrypted key would parse as garbage and produce an unreadable error.
+	// Both the legacy header form and the PKCS#8 block type are named here
+	// because "decrypt it first" is the only useful thing to say about either.
+	if _, encrypted := block.Headers["DEK-Info"]; encrypted || block.Type == "ENCRYPTED PRIVATE KEY" {
+		return nil, "", 0, &CertificateError{
+			Check:   CertCheckKeyEncrypted,
+			Message: "This private key is passphrase-protected. The panel has nowhere to hold a passphrase across a restart, so decrypt the key first (openssl rsa -in key.pem -out key-decrypted.pem) and paste the decrypted key.",
+		}
+	}
+
+	switch block.Type {
+	case "RSA PRIVATE KEY", "EC PRIVATE KEY", "PRIVATE KEY":
+	default:
+		return nil, "", 0, &CertificateError{
+			Check: CertCheckKeyPEM,
+			Message: fmt.Sprintf("The private key box contains a %q block, which is not a private key. A certificate belongs in the certificate box.",
+				block.Type),
+		}
+	}
+
+	var (
+		key any
+		err error
+	)
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		key, err = x509.ParseECPrivateKey(block.Bytes)
+	default:
+		key, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+	}
+	if err != nil {
+		return nil, "", 0, &CertificateError{
+			Check:   CertCheckKeyPEM,
+			Message: "The private key could not be parsed: " + err.Error(),
+		}
+	}
+
+	switch typed := key.(type) {
+	case *rsa.PrivateKey:
+		return key, "RSA", typed.N.BitLen(), nil
+	case *ecdsa.PrivateKey:
+		return key, "ECDSA " + typed.Curve.Params().Name, typed.Curve.Params().BitSize, nil
+	case ed25519.PrivateKey:
+		return key, "Ed25519", 256, nil
+	default:
+		return nil, "", 0, &CertificateError{
+			Check:   CertCheckKeyPEM,
+			Message: "The private key is of a type this panel cannot serve TLS with. Use an RSA or ECDSA key.",
+		}
+	}
+}
+
+// publicKeyMatches reports whether a private key belongs to a certificate.
+func publicKeyMatches(pub any, priv any) bool {
+	type equaler interface{ Equal(x crypto.PublicKey) bool }
+
+	var candidate crypto.PublicKey
+	switch typed := priv.(type) {
+	case *rsa.PrivateKey:
+		candidate = &typed.PublicKey
+	case *ecdsa.PrivateKey:
+		candidate = &typed.PublicKey
+	case ed25519.PrivateKey:
+		candidate = typed.Public()
+	default:
+		return false
+	}
+
+	if cmp, ok := pub.(equaler); ok {
+		return cmp.Equal(candidate)
+	}
+	return false
+}
+
+// describeCertificate builds the inspection from a parsed chain, including the
+// chain completeness verdict.
+func describeCertificate(chain []*x509.Certificate) *CertificateInspection {
+	leaf := chain[0]
+
+	inspection := &CertificateInspection{
+		Subject:      leaf.Subject.String(),
+		Issuer:       leaf.Issuer.String(),
+		SerialNumber: leaf.SerialNumber.String(),
+		Fingerprint:  fingerprintDER(leaf.Raw),
+		NotBefore:    leaf.NotBefore,
+		NotAfter:     leaf.NotAfter,
+		DNSNames:     append([]string{}, leaf.DNSNames...),
+		IPAddresses:  []string{},
+		SelfSigned:   isSelfIssued(leaf),
+		ChainLength:  len(chain),
+		Warnings:     []string{},
+	}
+	for _, ip := range leaf.IPAddresses {
+		inspection.IPAddresses = append(inspection.IPAddresses, ip.String())
+	}
+
+	now := time.Now()
+	inspection.Expired = now.After(leaf.NotAfter)
+	inspection.NotYetValid = now.Before(leaf.NotBefore)
+	inspection.ExpiresInDays = int(leaf.NotAfter.Sub(now).Hours() / 24)
+	inspection.ExpiringSoon = !inspection.Expired && leaf.NotAfter.Sub(now) < CertExpiryWarningWindow
+
+	if inspection.ExpiringSoon {
+		inspection.Warnings = append(inspection.Warnings, fmt.Sprintf(
+			"This certificate expires in %d days, on %s. Replace it before then.",
+			inspection.ExpiresInDays, leaf.NotAfter.UTC().Format("2006-01-02")))
+	}
+
+	inspection.ChainComplete = chainIsComplete(chain)
+	if !inspection.ChainComplete {
+		inspection.Warnings = append(inspection.Warnings, ChainIncompleteMessage(chain))
+	}
+
+	return inspection
+}
+
+// ChainIncompleteMessage explains, in the operator's terms, what is missing.
+func ChainIncompleteMessage(chain []*x509.Certificate) string {
+	leaf := chain[0]
+	if isSelfIssued(leaf) {
+		return "This certificate signed itself, so no browser will trust it without the operator installing it manually. That is fine for a private deployment and wrong for a public one."
+	}
+	return fmt.Sprintf(
+		"The chain is incomplete: this certificate was issued by %q and that issuer's certificate was not pasted with it. Browsers that do not already hold the intermediate will reject the connection. Paste the full chain your certificate authority supplied - the certificate first, then each intermediate.",
+		leaf.Issuer.CommonName)
+}
+
+// chainIsComplete reports whether the pasted blocks lead to a trusted root.
+//
+// It verifies against the system trust store with the pasted certificates
+// (other than the leaf) offered as intermediates. A self-issued leaf can never
+// pass: it is trusted only by whoever installed it, which is a decision the
+// operator makes explicitly rather than one this function makes for them.
+func chainIsComplete(chain []*x509.Certificate) bool {
+	leaf := chain[0]
+	if isSelfIssued(leaf) {
+		return false
+	}
+
+	intermediates := x509.NewCertPool()
+	for _, cert := range chain[1:] {
+		intermediates.AddCert(cert)
+	}
+
+	roots, err := x509.SystemCertPool()
+	if err != nil || roots == nil {
+		// Without a trust store there is nothing to verify against. Fall back to
+		// the structural question - is the issuer of each certificate present -
+		// rather than claiming a completeness that was never checked.
+		return issuerPresent(chain)
+	}
+
+	_, err = leaf.Verify(x509.VerifyOptions{
+		Intermediates: intermediates,
+		Roots:         roots,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		// The name is checked separately, against the host the panel answers
+		// as, which is a different question from whether the chain builds.
+	})
+	return err == nil
+}
+
+// issuerPresent is the structural fallback: every certificate but the last has
+// its issuer in the chain.
+func issuerPresent(chain []*x509.Certificate) bool {
+	if len(chain) < 2 {
+		return false
+	}
+	for i := 0; i < len(chain)-1; i++ {
+		if !bytes.Equal(chain[i].RawIssuer, chain[i+1].RawSubject) {
+			return false
+		}
+	}
+	return true
+}
+
+func isSelfIssued(cert *x509.Certificate) bool {
+	return bytes.Equal(cert.RawIssuer, cert.RawSubject)
+}
+
+func fingerprintDER(der []byte) string {
+	sum := sha256.Sum256(der)
+	parts := make([]string, 0, len(sum))
+	for _, b := range sum {
+		parts = append(parts, fmt.Sprintf("%02X", b))
+	}
+	return "SHA256:" + strings.Join(parts, ":")
+}
+
+// InspectCertificateFile describes the certificate on disk, without the key.
+// It is what the settings endpoint reports for a certificate the panel is
+// already serving, whoever produced it.
+func InspectCertificateFile(certFile string) (*CertificateInspection, error) {
+	if strings.TrimSpace(certFile) == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(certFile)
+	if err != nil {
+		return nil, err
+	}
+	chain, err := decodeCertificateChain(raw)
+	if err != nil {
+		return nil, err
+	}
+	return describeCertificate(chain), nil
+}
+
+// CustomPanelCertPaths is where a pasted certificate pair is stored.
+//
+// It is deliberately NOT the panel.crt/panel.key pair that the self-signed
+// generator and the ACME renewal loop both write: those files are rewritten
+// without asking, and an operator's pasted certificate landing there would be
+// silently replaced by a renewal weeks later - the kind of defect that is only
+// noticed when somebody asks why the certificate changed back.
+func CustomPanelCertPaths() (certFile, keyFile string) {
+	dir := PanelSSLDir()
+	return filepath.Join(dir, "panel-custom.crt"), filepath.Join(dir, "panel-custom.key")
+}
+
+// IsManagedCertPath reports whether a path belongs to the pair this panel
+// generates and renews for itself.
+func IsManagedCertPath(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	dir := PanelSSLDir()
+	return path == filepath.Join(dir, "panel.crt") || path == filepath.Join(dir, "panel.key")
+}
+
+// InstallCustomPair writes a validated certificate pair to disk.
+//
+// The key is written first and at 0600, before the certificate that points at
+// it, and both go through a temporary file and a rename: a crash in the middle
+// must never leave a certificate that does not match the key on disk, because
+// that combination fails every handshake on the next start - when nobody is
+// watching and the operator's way back in is the thing that broke.
+//
+// The previous pair, if any, is returned so the caller can put it back.
+func InstallCustomPair(certFile, keyFile string, certPEM, keyPEM []byte) (previous *CertificateBackup, err error) {
+	if strings.TrimSpace(certFile) == "" || strings.TrimSpace(keyFile) == "" {
+		return nil, fmt.Errorf("panel access: no path to store the certificate pair at")
+	}
+	if err := os.MkdirAll(filepath.Dir(certFile), 0o750); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {
+		return nil, err
+	}
+
+	previous = backupPair(certFile, keyFile)
+
+	if err := writePanelFileAtomic(keyFile, keyPEM, 0o600); err != nil {
+		return previous, err
+	}
+	if err := writePanelFileAtomic(certFile, certPEM, 0o644); err != nil {
+		// Put the key back: a new key beside an old certificate is exactly the
+		// mismatch this function exists to prevent.
+		previous.Restore(certFile, keyFile)
+		return previous, err
+	}
+
+	return previous, nil
+}
+
+// CertificateBackup is the pair that was on disk before a replacement, held in
+// memory so a failed change can be undone without another disk read.
+type CertificateBackup struct {
+	CertPEM  []byte
+	KeyPEM   []byte
+	CertMode os.FileMode
+	KeyMode  os.FileMode
+	Existed  bool
+}
+
+// Restore puts the previous pair back, or removes the files when there was no
+// previous pair. It reports no error: it runs on a path that is already
+// failing, and there is nothing left to fall back to.
+func (b *CertificateBackup) Restore(certFile, keyFile string) {
+	if b == nil || !b.Existed {
+		_ = os.Remove(certFile)
+		_ = os.Remove(keyFile)
+		return
+	}
+	_ = writePanelFileAtomic(keyFile, b.KeyPEM, b.KeyMode)
+	_ = writePanelFileAtomic(certFile, b.CertPEM, b.CertMode)
+}
+
+func backupPair(certFile, keyFile string) *CertificateBackup {
+	backup := &CertificateBackup{CertMode: 0o644, KeyMode: 0o600}
+
+	certPEM, certErr := os.ReadFile(certFile)
+	keyPEM, keyErr := os.ReadFile(keyFile)
+	if certErr != nil || keyErr != nil {
+		return backup
+	}
+
+	backup.Existed = true
+	backup.CertPEM, backup.KeyPEM = certPEM, keyPEM
+	if info, err := os.Stat(certFile); err == nil {
+		backup.CertMode = info.Mode().Perm()
+	}
+	if info, err := os.Stat(keyFile); err == nil {
+		backup.KeyMode = info.Mode().Perm()
+	}
+	return backup
+}
+
+func writePanelFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return fmt.Errorf("panel access: cannot write %s: %w", tmp, err)
+	}
+	if err := os.Chmod(tmp, perm); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("panel access: cannot replace %s: %w", path, err)
+	}
+	return nil
+}
+
+// FingerprintDER is the SHA-256 fingerprint of a DER-encoded certificate, in
+// the form an operator sees in a browser.
+func FingerprintDER(der []byte) string { return fingerprintDER(der) }
+
+// ManagedPanelCertPaths is where the panel keeps the certificate pair it
+// produces and renews for itself, in the self-signed and automatic modes.
+func ManagedPanelCertPaths() (certFile, keyFile string) {
+	dir := PanelSSLDir()
+	return filepath.Join(dir, "panel.crt"), filepath.Join(dir, "panel.key")
+}
+
+// panelEnvVariables maps the marker recorded in EnvOverrides onto the
+// environment variable an operator would actually edit.
+var panelEnvVariables = map[string]string{
+	"enabled":          "VKAI_PANEL_ENABLED",
+	"bind":             "VKAI_PANEL_BIND",
+	"port":             "VKAI_PANEL_PORT",
+	"public_port":      "VKAI_PANEL_PUBLIC_PORT",
+	"public_scheme":    "VKAI_PANEL_PUBLIC_SCHEME",
+	"entrance":         "VKAI_PANEL_ENTRANCE",
+	"entrance_enabled": "VKAI_PANEL_ENTRANCE_ENABLED",
+	"session_ttl":      "VKAI_PANEL_SESSION_TTL",
+	"allowed_ips":      "VKAI_PANEL_ALLOWED_IPS",
+	"trusted_proxies":  "VKAI_PANEL_TRUSTED_PROXIES",
+	"domain":           "VKAI_PANEL_DOMAIN",
+	"tls_enabled":      "VKAI_PANEL_TLS_ENABLED",
+	"tls_mode":         "VKAI_PANEL_TLS_MODE",
+	"tls_self_signed":  "VKAI_PANEL_TLS_SELF_SIGNED",
+	"tls_cert":         "VKAI_PANEL_TLS_CERT",
+	"tls_key":          "VKAI_PANEL_TLS_KEY",
+	"acme_email":       "VKAI_PANEL_ACME_EMAIL",
+	"acme_staging":     "VKAI_PANEL_ACME_STAGING",
+	"acme_profile":     "VKAI_PANEL_ACME_PROFILE",
+}
+
+// PanelEnvVariable is the environment variable that pins a setting, or "" when
+// the marker is not one this package knows.
+func PanelEnvVariable(marker string) string { return panelEnvVariables[marker] }

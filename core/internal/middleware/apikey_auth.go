@@ -37,6 +37,12 @@ type APIKeyPrincipal struct {
 	TenantID    uuid.UUID
 	Permissions []string
 	RoleIDs     []string
+
+	// Scopes is what the key itself was granted, in the grammar of
+	// internal/auth/scope.go. Permissions above is what the ACCOUNT behind the
+	// key may do; a request has to satisfy both, and RequireScope
+	// (apikey_scope.go) is what checks them.
+	Scopes []string
 }
 
 // APIKeyValidator verifies a raw key. It must return an error for every
@@ -82,10 +88,20 @@ func APIKeyAuth(validate APIKeyValidator) gin.HandlerFunc {
 
 		c.Set("user_id", principal.UserID.String())
 		c.Set("tenant_id", principal.TenantID.String())
-		c.Set("api_key_id", principal.KeyID.String())
-		c.Set("auth_method", "api_key")
+		c.Set(APIKeyIDKey, principal.KeyID.String())
+		c.Set(AuthMethodKey, "api_key")
 		c.Set("role_ids", principal.RoleIDs)
 		c.Set("permissions", principal.Permissions)
+
+		// The key's own grant. Scopes is set even when it is empty, because
+		// RequireScope has to be able to tell "no key on this request" from "a
+		// key that was granted nothing" - the first is a caller using the
+		// wrong credential, the second is a key that authorises nothing.
+		scopes := principal.Scopes
+		if scopes == nil {
+			scopes = []string{}
+		}
+		c.Set(APIKeyScopesKey, scopes)
 
 		c.Next()
 	}

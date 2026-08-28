@@ -88,6 +88,9 @@ func (h *MailServerHandler) CreateAccount(c *gin.Context) {
 	}
 	account, err := h.service.CreateAccount(c.Request.Context(), tenantID, req)
 	if err != nil {
+		if WriteQuotaError(c, err) {
+			return
+		}
 		h.logger.Error("Failed to create mail account", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create account"})
 		return

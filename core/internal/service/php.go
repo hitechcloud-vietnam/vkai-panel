@@ -14,6 +14,10 @@ import (
 type PHPService struct {
 	phpRepo *repository.PHPRepository
 	logger  *zap.Logger
+
+	// rt is the host-side half of this service - the FPM manager and the
+	// per-pool settings repository - built on first use. See php_runtime.go.
+	rt phpRuntime
 }
 
 func NewPHPService(phpRepo *repository.PHPRepository, logger *zap.Logger) *PHPService {

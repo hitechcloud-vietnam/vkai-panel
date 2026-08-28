@@ -7,16 +7,25 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/quota"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 )
 
 type MailServerService struct {
 	repo   *repository.MailServerRepository
 	logger *zap.Logger
+	quota  *quota.Enforcer
 }
 
-func NewMailServerService(repo *repository.MailServerRepository, logger *zap.Logger) *MailServerService {
-	return &MailServerService{repo: repo, logger: logger}
+// NewMailServerService takes the quota enforcer as a REQUIRED argument, so that
+// omitting quota enforcement is a compile error rather than a silent hole. See
+// NewWebsiteService for the reasoning.
+func NewMailServerService(
+	repo *repository.MailServerRepository,
+	logger *zap.Logger,
+	quotaEnforcer *quota.Enforcer,
+) *MailServerService {
+	return &MailServerService{repo: repo, logger: logger, quota: quotaEnforcer}
 }
 
 func (s *MailServerService) CreateDomain(ctx context.Context, tenantID uuid.UUID, req models.CreateDomainRequest) (*models.MailDomain, error) {
@@ -36,6 +45,11 @@ func (s *MailServerService) DeleteDomain(ctx context.Context, id uuid.UUID) erro
 }
 
 func (s *MailServerService) CreateAccount(ctx context.Context, tenantID uuid.UUID, req models.CreateAccountRequest) (*models.MailAccount, error) {
+	// ENFORCEMENT POINT: the hosting package's mailbox count.
+	if err := s.quota.Check(ctx, tenantID, quota.ResourceMailboxes); err != nil {
+		return nil, err
+	}
+
 	// In production, hash the password here
 	return s.repo.CreateAccount(ctx, tenantID, req, req.Password)
 }

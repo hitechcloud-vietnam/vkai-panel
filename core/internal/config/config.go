@@ -291,3 +291,88 @@ func isLocalHost(host string) bool {
 	}
 	return false
 }
+
+// ---------------------------------------------------------------------------
+// What a running process cannot change about itself
+// ---------------------------------------------------------------------------
+
+// RestartRequiredEnvKeys names every environment variable whose value is baked
+// into an object built once at start-up, together with the reason.
+//
+// This table is the honest half of hot reload. The panel now applies its own
+// access settings without a restart, and the temptation that comes with that is
+// to report success for everything. These are the settings for which that would
+// be a lie:
+//
+//	the database pool is opened once and handed to every repository in the
+//	process; changing the credentials in a file does not reconnect it, and
+//	silently reconnecting it underneath in-flight transactions would be worse
+//	than asking for a restart;
+//
+//	the Redis client is held by the rate limiter, the session store and the job
+//	queue, each of which captured it at construction;
+//
+//	the JWT secret signs tokens that are already in operators' browsers, and it
+//	also derives the entrance cookie key. Rotating it live would invalidate
+//	every session at an unpredictable moment;
+//
+//	the filesystem layout is resolved into absolute paths at start-up by every
+//	component that owns a directory.
+//
+// A change to any of these is recorded, reported through the settings endpoint
+// and logged as needing a restart - never applied and never claimed.
+func RestartRequiredEnvKeys() map[string]string {
+	const (
+		database = "The database connection pool is opened once at start-up and shared by every part of the panel. Restart the panel service to reconnect with the new credentials."
+		redis    = "The Redis client is held by the rate limiter and the job queue, both built at start-up. Restart the panel service to connect to the new address."
+		jwt      = "The signing secret is held by the token manager and derives the entrance cookie key. Restart the panel service to rotate it; every operator will have to sign in again."
+		secret   = "The master key decrypts stored two-factor secrets and is read once at start-up. Restart the panel service to change it."
+		layout   = "The filesystem layout is resolved into absolute paths at start-up. Restart the panel service to move the installation."
+		ui       = "The interface proxy resolves its upstream once at start-up. Restart the panel service to point it somewhere else."
+		logging  = "The log level and rotation are fixed when the logger is built. Restart the panel service to change them."
+		legacy   = "The legacy server address is only used when the panel access gate is switched off, and is read once at start-up."
+	)
+
+	keys := map[string]string{
+		"VKAI_UI_UPSTREAM": ui,
+		"UI_UPSTREAM":      ui,
+		"VKAI_SECRET_KEY":  secret,
+		"VKAI_LOG_LEVEL":   logging,
+		"LOG_LEVEL":        logging,
+		"VKAI_SERVER_HOST": legacy,
+		"VKAI_SERVER_PORT": legacy,
+		"SERVER_HOST":      legacy,
+		"SERVER_PORT":      legacy,
+	}
+
+	for _, name := range []string{
+		"VKAI_DATABASE_HOST", "VKAI_DATABASE_PORT", "VKAI_DATABASE_USER",
+		"VKAI_DATABASE_PASSWORD", "VKAI_DATABASE_DBNAME", "VKAI_DATABASE_SSLMODE",
+		"VKAI_DB_HOST", "VKAI_DB_PORT", "VKAI_DB_USER", "VKAI_DB_PASSWORD",
+		"VKAI_DB_NAME", "VKAI_DB_SSLMODE",
+		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
+	} {
+		keys[name] = database
+	}
+
+	for _, name := range []string{
+		"VKAI_REDIS_HOST", "VKAI_REDIS_PORT", "VKAI_REDIS_PASSWORD", "VKAI_REDIS_DB",
+		"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB",
+	} {
+		keys[name] = redis
+	}
+
+	for _, name := range []string{"VKAI_JWT_SECRET", "JWT_SECRET", "VKAI_JWT_ISSUER", "JWT_ISSUER"} {
+		keys[name] = jwt
+	}
+
+	for _, name := range []string{
+		EnvPanelRoot, EnvWebRoot, EnvBackupRoot, EnvLogRoot,
+		EnvEtcRoot, EnvSSLRoot, EnvTmpRoot,
+		"PANEL_ROOT", "WEB_ROOT", "BACKUP_ROOT", "LOG_ROOT", "ETC_ROOT", "SSL_ROOT", "TMP_ROOT",
+	} {
+		keys[name] = layout
+	}
+
+	return keys
+}
