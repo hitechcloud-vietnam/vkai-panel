@@ -1,7 +1,7 @@
 -- Email Marketing Module Tables
--- Migration 012
+-- Migration 015
 
-CREATE TABLE IF NOT EXISTS email_campaigns (
+CREATE TABLE email_campaigns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -26,10 +26,10 @@ CREATE TABLE IF NOT EXISTS email_campaigns (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_campaigns_tenant ON email_campaigns(tenant_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_email_campaigns_status ON email_campaigns(status) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_campaigns_tenant ON email_campaigns(tenant_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_campaigns_status ON email_campaigns(status) WHERE deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS email_contacts (
+CREATE TABLE email_contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -45,10 +45,10 @@ CREATE TABLE IF NOT EXISTS email_contacts (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_contacts_tenant ON email_contacts(tenant_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_email_contacts_email ON email_contacts(email) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_contacts_tenant ON email_contacts(tenant_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_contacts_email ON email_contacts(email) WHERE deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS email_lists (
+CREATE TABLE email_lists (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -60,16 +60,16 @@ CREATE TABLE IF NOT EXISTS email_lists (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_lists_tenant ON email_lists(tenant_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_lists_tenant ON email_lists(tenant_id) WHERE deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS email_list_contacts (
+CREATE TABLE email_list_contacts (
     list_id UUID NOT NULL REFERENCES email_lists(id) ON DELETE CASCADE,
     contact_id UUID NOT NULL REFERENCES email_contacts(id) ON DELETE CASCADE,
     added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (list_id, contact_id)
 );
 
-CREATE TABLE IF NOT EXISTS email_templates (
+CREATE TABLE email_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -83,9 +83,9 @@ CREATE TABLE IF NOT EXISTS email_templates (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_templates_tenant ON email_templates(tenant_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_templates_tenant ON email_templates(tenant_id) WHERE deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS email_send_logs (
+CREATE TABLE email_send_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id UUID NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
     contact_id UUID NOT NULL REFERENCES email_contacts(id) ON DELETE CASCADE,
@@ -99,11 +99,11 @@ CREATE TABLE IF NOT EXISTS email_send_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_send_logs_campaign ON email_send_logs(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_email_send_logs_contact ON email_send_logs(contact_id);
-CREATE INDEX IF NOT EXISTS idx_email_send_logs_status ON email_send_logs(status);
+CREATE INDEX idx_email_send_logs_campaign ON email_send_logs(campaign_id);
+CREATE INDEX idx_email_send_logs_contact ON email_send_logs(contact_id);
+CREATE INDEX idx_email_send_logs_status ON email_send_logs(status);
 
-CREATE TABLE IF NOT EXISTS email_automations (
+CREATE TABLE email_automations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -116,4 +116,4 @@ CREATE TABLE IF NOT EXISTS email_automations (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_email_automations_tenant ON email_automations(tenant_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_email_automations_tenant ON email_automations(tenant_id) WHERE deleted_at IS NULL;

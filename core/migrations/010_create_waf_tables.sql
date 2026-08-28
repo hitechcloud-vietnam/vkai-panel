@@ -1,7 +1,7 @@
 -- WAF (Web Application Firewall) tables
 
 -- WAF Rules
-CREATE TABLE IF NOT EXISTS waf_rules (
+CREATE TABLE waf_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS waf_rules (
 );
 
 -- WAF Policies
-CREATE TABLE IF NOT EXISTS waf_policies (
+CREATE TABLE waf_policies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS waf_policies (
 );
 
 -- WAF Events
-CREATE TABLE IF NOT EXISTS waf_events (
+CREATE TABLE waf_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     rule_id UUID REFERENCES waf_rules(id) ON DELETE SET NULL,
@@ -44,10 +44,10 @@ CREATE TABLE IF NOT EXISTS waf_events (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_waf_rules_tenant_id ON waf_rules(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_waf_rules_enabled ON waf_rules(enabled);
-CREATE INDEX IF NOT EXISTS idx_waf_policies_tenant_id ON waf_policies(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_waf_events_tenant_id ON waf_events(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_waf_events_created_at ON waf_events(created_at);
-CREATE INDEX IF NOT EXISTS idx_waf_events_source_ip ON waf_events(source_ip);
-CREATE INDEX IF NOT EXISTS idx_waf_events_attack_type ON waf_events(attack_type);
+CREATE INDEX idx_waf_rules_tenant_id ON waf_rules(tenant_id);
+CREATE INDEX idx_waf_rules_enabled ON waf_rules(enabled);
+CREATE INDEX idx_waf_policies_tenant_id ON waf_policies(tenant_id);
+CREATE INDEX idx_waf_events_tenant_id ON waf_events(tenant_id);
+CREATE INDEX idx_waf_events_created_at ON waf_events(created_at);
+CREATE INDEX idx_waf_events_source_ip ON waf_events(source_ip);
+CREATE INDEX idx_waf_events_attack_type ON waf_events(attack_type);

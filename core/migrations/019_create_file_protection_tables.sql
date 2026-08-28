@@ -1,7 +1,7 @@
--- Migration 014: Create File Protection tables
+-- Migration 019: Create File Protection tables
 -- File integrity monitoring, change events, quarantine
 
-CREATE TABLE IF NOT EXISTS file_protection_rules (
+CREATE TABLE file_protection_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS file_protection_rules (
 
 CREATE INDEX idx_file_protection_rules_tenant ON file_protection_rules(tenant_id);
 
-CREATE TABLE IF NOT EXISTS file_integrity_records (
+CREATE TABLE file_integrity_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rule_id UUID NOT NULL REFERENCES file_protection_rules(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -35,7 +35,7 @@ CREATE INDEX idx_file_integrity_rule ON file_integrity_records(rule_id);
 CREATE INDEX idx_file_integrity_tenant ON file_integrity_records(tenant_id);
 CREATE UNIQUE INDEX idx_file_integrity_path ON file_integrity_records(rule_id, file_path);
 
-CREATE TABLE IF NOT EXISTS file_change_events (
+CREATE TABLE file_change_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rule_id UUID NOT NULL REFERENCES file_protection_rules(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -55,7 +55,7 @@ CREATE INDEX idx_file_change_events_tenant ON file_change_events(tenant_id);
 CREATE INDEX idx_file_change_events_rule ON file_change_events(rule_id);
 CREATE INDEX idx_file_change_events_created ON file_change_events(created_at);
 
-CREATE TABLE IF NOT EXISTS file_quarantine (
+CREATE TABLE file_quarantine (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     original_path VARCHAR(1000) NOT NULL,

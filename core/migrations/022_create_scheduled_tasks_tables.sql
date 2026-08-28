@@ -1,5 +1,5 @@
--- Migration 017: Scheduled Tasks Pro tables
-CREATE TABLE IF NOT EXISTS scheduled_tasks (
+-- Migration 022: Scheduled Tasks Pro tables
+CREATE TABLE scheduled_tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     name VARCHAR(200) NOT NULL,
@@ -31,11 +31,11 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_tenant ON scheduled_tasks(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks(is_enabled);
-CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_type ON scheduled_tasks(task_type);
+CREATE INDEX idx_scheduled_tasks_tenant ON scheduled_tasks(tenant_id);
+CREATE INDEX idx_scheduled_tasks_enabled ON scheduled_tasks(is_enabled);
+CREATE INDEX idx_scheduled_tasks_type ON scheduled_tasks(task_type);
 
-CREATE TABLE IF NOT EXISTS task_executions (
+CREATE TABLE task_executions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     task_id UUID NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES tenants(id),
@@ -51,12 +51,12 @@ CREATE TABLE IF NOT EXISTS task_executions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_executions_task ON task_executions(task_id);
-CREATE INDEX IF NOT EXISTS idx_task_executions_tenant ON task_executions(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_task_executions_status ON task_executions(status);
-CREATE INDEX IF NOT EXISTS idx_task_executions_created ON task_executions(created_at DESC);
+CREATE INDEX idx_task_executions_task ON task_executions(task_id);
+CREATE INDEX idx_task_executions_tenant ON task_executions(tenant_id);
+CREATE INDEX idx_task_executions_status ON task_executions(status);
+CREATE INDEX idx_task_executions_created ON task_executions(created_at DESC);
 
-CREATE TABLE IF NOT EXISTS task_templates (
+CREATE TABLE task_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     name VARCHAR(200) NOT NULL,
@@ -70,9 +70,9 @@ CREATE TABLE IF NOT EXISTS task_templates (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_templates_tenant ON task_templates(tenant_id);
+CREATE INDEX idx_task_templates_tenant ON task_templates(tenant_id);
 
-CREATE TABLE IF NOT EXISTS task_groups (
+CREATE TABLE task_groups (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id),
     name VARCHAR(200) NOT NULL,
@@ -83,4 +83,4 @@ CREATE TABLE IF NOT EXISTS task_groups (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_groups_tenant ON task_groups(tenant_id);
+CREATE INDEX idx_task_groups_tenant ON task_groups(tenant_id);

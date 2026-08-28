@@ -2,7 +2,7 @@
 -- File integrity monitoring, intrusion detection, audit trail
 
 -- Protected paths (files/directories under monitoring)
-CREATE TABLE IF NOT EXISTS tamper_protected_paths (
+CREATE TABLE tamper_protected_paths (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     path TEXT NOT NULL,
@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS tamper_protected_paths (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_tamper_paths_tenant ON tamper_protected_paths(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tamper_paths_enabled ON tamper_protected_paths(tenant_id, is_enabled);
+CREATE INDEX idx_tamper_paths_tenant ON tamper_protected_paths(tenant_id);
+CREATE INDEX idx_tamper_paths_enabled ON tamper_protected_paths(tenant_id, is_enabled);
 
 -- File baselines (checksums of monitored files)
-CREATE TABLE IF NOT EXISTS tamper_baselines (
+CREATE TABLE tamper_baselines (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     protected_id UUID NOT NULL REFERENCES tamper_protected_paths(id) ON DELETE CASCADE,
@@ -39,11 +39,11 @@ CREATE TABLE IF NOT EXISTS tamper_baselines (
     scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(tenant_id, protected_id, file_path)
 );
-CREATE INDEX IF NOT EXISTS idx_tamper_baselines_tenant ON tamper_baselines(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tamper_baselines_protected ON tamper_baselines(tenant_id, protected_id);
+CREATE INDEX idx_tamper_baselines_tenant ON tamper_baselines(tenant_id);
+CREATE INDEX idx_tamper_baselines_protected ON tamper_baselines(tenant_id, protected_id);
 
 -- Tamper alerts (integrity violations)
-CREATE TABLE IF NOT EXISTS tamper_alerts (
+CREATE TABLE tamper_alerts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     protected_id UUID NOT NULL REFERENCES tamper_protected_paths(id) ON DELETE CASCADE,
@@ -62,12 +62,12 @@ CREATE TABLE IF NOT EXISTS tamper_alerts (
     notes TEXT DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_tamper_alerts_tenant ON tamper_alerts(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tamper_alerts_unresolved ON tamper_alerts(tenant_id, is_resolved) WHERE is_resolved = false;
-CREATE INDEX IF NOT EXISTS idx_tamper_alerts_created ON tamper_alerts(tenant_id, created_at DESC);
+CREATE INDEX idx_tamper_alerts_tenant ON tamper_alerts(tenant_id);
+CREATE INDEX idx_tamper_alerts_unresolved ON tamper_alerts(tenant_id, is_resolved) WHERE is_resolved = false;
+CREATE INDEX idx_tamper_alerts_created ON tamper_alerts(tenant_id, created_at DESC);
 
 -- Scan results
-CREATE TABLE IF NOT EXISTS tamper_scan_results (
+CREATE TABLE tamper_scan_results (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     protected_id UUID NOT NULL REFERENCES tamper_protected_paths(id) ON DELETE CASCADE,
@@ -82,12 +82,12 @@ CREATE TABLE IF NOT EXISTS tamper_scan_results (
     scan_log TEXT DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_tamper_scans_tenant ON tamper_scan_results(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tamper_scans_protected ON tamper_scan_results(tenant_id, protected_id);
-CREATE INDEX IF NOT EXISTS idx_tamper_scans_created ON tamper_scan_results(tenant_id, created_at DESC);
+CREATE INDEX idx_tamper_scans_tenant ON tamper_scan_results(tenant_id);
+CREATE INDEX idx_tamper_scans_protected ON tamper_scan_results(tenant_id, protected_id);
+CREATE INDEX idx_tamper_scans_created ON tamper_scan_results(tenant_id, created_at DESC);
 
 -- Audit logs
-CREATE TABLE IF NOT EXISTS tamper_audit_logs (
+CREATE TABLE tamper_audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     action VARCHAR(50) NOT NULL, -- scan, baseline_update, alert_resolved, path_added, path_removed, path_updated
@@ -98,5 +98,5 @@ CREATE TABLE IF NOT EXISTS tamper_audit_logs (
     username VARCHAR(100) DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_tamper_audit_tenant ON tamper_audit_logs(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tamper_audit_created ON tamper_audit_logs(tenant_id, created_at DESC);
+CREATE INDEX idx_tamper_audit_tenant ON tamper_audit_logs(tenant_id);
+CREATE INDEX idx_tamper_audit_created ON tamper_audit_logs(tenant_id, created_at DESC);

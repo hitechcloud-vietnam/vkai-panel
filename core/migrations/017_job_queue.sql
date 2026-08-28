@@ -1,16 +1,25 @@
--- Migration: 013_job_queue.sql
+-- Migration: 017_job_queue.sql
 -- Description: Job queue system tables
+--
+-- This migration owns the jobs table. It is the shape
+-- internal/repository/job.go and internal/job.JobRecord use, and it is the
+-- only definition of jobs in this schema.
 
 -- Jobs table for tracking async jobs
-CREATE TABLE IF NOT EXISTS jobs (
+CREATE TABLE jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id VARCHAR(255) UNIQUE,
+    -- A row is inserted before the task reaches Redis, so task_id is empty
+    -- until the queue hands one back. JobRecord.TaskID is a plain string, so
+    -- the column is NOT NULL and the uniqueness of real task ids is enforced
+    -- by the partial unique index below rather than by a column constraint.
+    task_id VARCHAR(255) NOT NULL DEFAULT '',
     task_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     queue VARCHAR(50) NOT NULL DEFAULT 'default',
     payload JSONB,
     result JSONB,
-    error TEXT,
+    -- JobRecord.Error is a plain string, so this column must never be NULL.
+    error TEXT NOT NULL DEFAULT '',
     retry_count INTEGER NOT NULL DEFAULT 0,
     max_retries INTEGER NOT NULL DEFAULT 3,
     scheduled_at TIMESTAMPTZ,
@@ -25,18 +34,18 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 -- Indexes for jobs
-CREATE INDEX IF NOT EXISTS idx_jobs_task_id ON jobs(task_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_task_type ON jobs(task_type);
-CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(queue);
-CREATE INDEX IF NOT EXISTS idx_jobs_tenant_id ON jobs(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_server_id ON jobs(server_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_at ON jobs(scheduled_at);
+CREATE UNIQUE INDEX idx_jobs_task_id ON jobs(task_id) WHERE task_id <> '';
+CREATE INDEX idx_jobs_task_type ON jobs(task_type);
+CREATE INDEX idx_jobs_status ON jobs(status);
+CREATE INDEX idx_jobs_queue ON jobs(queue);
+CREATE INDEX idx_jobs_tenant_id ON jobs(tenant_id);
+CREATE INDEX idx_jobs_server_id ON jobs(server_id);
+CREATE INDEX idx_jobs_user_id ON jobs(user_id);
+CREATE INDEX idx_jobs_created_at ON jobs(created_at);
+CREATE INDEX idx_jobs_scheduled_at ON jobs(scheduled_at);
 
 -- Job schedules for recurring jobs
-CREATE TABLE IF NOT EXISTS job_schedules (
+CREATE TABLE job_schedules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     task_type VARCHAR(100) NOT NULL,
@@ -54,9 +63,9 @@ CREATE TABLE IF NOT EXISTS job_schedules (
 );
 
 -- Indexes for job schedules
-CREATE INDEX IF NOT EXISTS idx_job_schedules_tenant_id ON job_schedules(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_job_schedules_enabled ON job_schedules(enabled);
-CREATE INDEX IF NOT EXISTS idx_job_schedules_next_run_at ON job_schedules(next_run_at);
+CREATE INDEX idx_job_schedules_tenant_id ON job_schedules(tenant_id);
+CREATE INDEX idx_job_schedules_enabled ON job_schedules(enabled);
+CREATE INDEX idx_job_schedules_next_run_at ON job_schedules(next_run_at);
 
 -- Seed permissions for job management
 INSERT INTO permissions (resource, action) VALUES

@@ -1,8 +1,8 @@
--- Migration: 014_config_rollback.sql
+-- Migration: 018_config_rollback.sql
 -- Description: Configuration rollback system tables
 
 -- Config snapshots table
-CREATE TABLE IF NOT EXISTS config_snapshots (
+CREATE TABLE config_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     config_type VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -20,21 +20,21 @@ CREATE TABLE IF NOT EXISTS config_snapshots (
 );
 
 -- Indexes for config snapshots
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_config_type ON config_snapshots(config_type);
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_name ON config_snapshots(name);
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_server_id ON config_snapshots(server_id);
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_tenant_id ON config_snapshots(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_is_active ON config_snapshots(is_active);
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_version ON config_snapshots(version);
-CREATE INDEX IF NOT EXISTS idx_config_snapshots_created_at ON config_snapshots(created_at);
+CREATE INDEX idx_config_snapshots_config_type ON config_snapshots(config_type);
+CREATE INDEX idx_config_snapshots_name ON config_snapshots(name);
+CREATE INDEX idx_config_snapshots_server_id ON config_snapshots(server_id);
+CREATE INDEX idx_config_snapshots_tenant_id ON config_snapshots(tenant_id);
+CREATE INDEX idx_config_snapshots_is_active ON config_snapshots(is_active);
+CREATE INDEX idx_config_snapshots_version ON config_snapshots(version);
+CREATE INDEX idx_config_snapshots_created_at ON config_snapshots(created_at);
 
 -- Unique constraint for active snapshots
-CREATE UNIQUE INDEX IF NOT EXISTS idx_config_snapshots_active 
+CREATE UNIQUE INDEX idx_config_snapshots_active 
 ON config_snapshots(config_type, name, server_id) 
 WHERE is_active = true;
 
 -- Config templates table
-CREATE TABLE IF NOT EXISTS config_templates (
+CREATE TABLE config_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     config_type VARCHAR(50) NOT NULL,
@@ -48,9 +48,9 @@ CREATE TABLE IF NOT EXISTS config_templates (
 );
 
 -- Indexes for config templates
-CREATE INDEX IF NOT EXISTS idx_config_templates_config_type ON config_templates(config_type);
-CREATE INDEX IF NOT EXISTS idx_config_templates_tenant_id ON config_templates(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_config_templates_is_default ON config_templates(is_default);
+CREATE INDEX idx_config_templates_config_type ON config_templates(config_type);
+CREATE INDEX idx_config_templates_tenant_id ON config_templates(tenant_id);
+CREATE INDEX idx_config_templates_is_default ON config_templates(is_default);
 
 -- Seed permissions for config management
 INSERT INTO permissions (resource, action) VALUES

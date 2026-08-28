@@ -73,7 +73,7 @@ Quy mô mã nguồn hiện tại: 43 handler, khoảng 35 service, 33 repository
 | Nhóm | Trạng thái | Vị trí trong repo |
 |---|---|---|
 | Xác thực JWT + refresh token | Hoạt động | `core/internal/auth/jwt.go`, `middleware/auth.go` |
-| RBAC 8 vai trò, quyền dạng `resource.action` | Hoạt động ở mức khung | `core/internal/rbac/rbac.go`, `migrations/015_create_multi_user_tables.sql` |
+| RBAC 8 vai trò, quyền dạng `resource.action` | Hoạt động ở mức khung | `core/internal/rbac/rbac.go`, `migrations/020_create_multi_user_tables.sql` |
 | Đa tenant, cách ly theo `tenant_id` ở mọi bảng | Hoạt động | `models/models.go`, toàn bộ repository |
 | Quản lý máy chủ + agent heartbeat | Cơ bản | `agent/cmd/main.go`, `handler/server.go` |
 | Website, domain, vhost | Hoạt động | `service/website.go`, `webserver/*.go` |
@@ -91,15 +91,15 @@ Quy mô mã nguồn hiện tại: 43 handler, khoảng 35 service, 33 repository
 | Reverse proxy | CRUD | `service/reverseproxy.go` |
 | Git deployment + webhook secret | CRUD + khung | `service/gitdeployment.go` |
 | WordPress: site, plugin, theme | **Chỉ là metadata trong DB**, chưa gọi WP-CLI | `service/wordpress.go` |
-| Mail server: domain, account, alias, DKIM key, queue, spam filter | Mô hình dữ liệu khá đầy đủ | `models/mail_server.go`, `migrations/013_create_mail_server_tables.sql` |
+| Mail server: domain, account, alias, DKIM key, queue, spam filter | Mô hình dữ liệu khá đầy đủ | `models/mail_server.go`, `migrations/016_create_mail_server_tables.sql` |
 | Email marketing | CRUD | `service/email_marketing.go` |
 | Sao lưu website/CSDL/file, lịch, dọn dẹp | **Chỉ ghi ra thư mục local** (`/vkai-panel/www/backup`, đổi được bằng `VKAI_BACKUP_ROOT`) | `service/backup.go` |
 | Giám sát: metric, alert, dashboard | Ghi metric và đánh giá ngưỡng | `service/monitoring.go` |
 | Quản lý log tập trung | CRUD | `service/log.go` |
 | Thông báo: notification, template, channel, preference | **Lưu DB, chưa có bộ gửi thật** | `service/notification.go` |
-| Nhật ký kiểm toán | Có bảng và truy vấn | `models/audit.go`, `migrations/011_audit_logging.sql` |
+| Nhật ký kiểm toán | Có bảng và truy vấn | `models/audit.go`, `migrations/012_audit_logging.sql` |
 | WAF: rule, policy, event | CRUD | `service/waf.go`, `migrations/010_create_waf_tables.sql` |
-| Tamper Proof (giám sát toàn vẹn file, baseline SHA-256/512, alert, scan result) | **Điểm mạnh thật sự**, hiếm panel nào có | `models/tamper_proof.go`, `migrations/018_create_tamper_proof_tables.sql` |
+| Tamper Proof (giám sát toàn vẹn file, baseline SHA-256/512, alert, scan result) | **Điểm mạnh thật sự**, hiếm panel nào có | `models/tamper_proof.go`, `migrations/023_create_tamper_proof_tables.sql` |
 | File Protection | CRUD | `service/file_protection.go` |
 | Thống kê website (visitor, quốc gia) | Có | `repository/website_stats.go` |
 | Báo cáo hàng ngày | Có | `service/daily_report.go` |
@@ -108,7 +108,7 @@ Quy mô mã nguồn hiện tại: 43 handler, khoảng 35 service, 33 repository
 | API key có scope, hash SHA-256, lưu prefix 12 ký tự | Có tạo/thu hồi | `service/apikey.go` |
 | Hàng đợi công việc asynq (backup, restore, deploy, ssl, cleanup, healthcheck, metric, logrotate, notification) | Khung đầy đủ, 9 handler còn TODO | `internal/job/queue.go` |
 | WebSocket hub + terminal web (xterm.js) | Có | `handler/websocket.go`, `app/(dashboard)/terminal` |
-| Rollback cấu hình | Có | `service/config.go`, `migrations/014_config_rollback.sql` |
+| Rollback cấu hình | Có | `service/config.go`, `migrations/018_config_rollback.sql` |
 | CLI `vkai` (server, site, ssl, db, backup, firewall, user, service) | Có | `core/internal/cli/` |
 | Cài đặt systemd không cần Docker | Có | `deploy/install.sh`, `deploy/systemd/` |
 | Security headers HTTP (HSTS, CSP, X-Frame-Options...) | Có | `middleware/middleware.go` |
@@ -724,7 +724,7 @@ từ giả định này.
 ### 4.10. Nâng cấp Tamper Proof - phát hiện xâm nhập file (P1)
 
 - **Hiện trạng - điểm mạnh cần khai thác:** `models/tamper_proof.go` và
-  `migrations/018_create_tamper_proof_tables.sql` đã có kiến trúc tốt: `ProtectedPath`
+  `migrations/023_create_tamper_proof_tables.sql` đã có kiến trúc tốt: `ProtectedPath`
   (đường dẫn, đệ quy, thuật toán, mẫu bỏ qua, cảnh báo theo loại thay đổi),
   `FileBaseline` (checksum, kích thước, quyền, chủ sở hữu, thời gian sửa),
   `TamperAlert` (phân loại và mức nghiêm trọng, quy trình xử lý),
