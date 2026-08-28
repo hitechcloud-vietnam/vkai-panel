@@ -407,12 +407,39 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+// LoginResponse answers both steps of sign-in.
+//
+// Exactly one half is ever populated. Either the caller is signed in - tokens
+// and user - or the account owes a second factor and the caller gets a
+// challenge and nothing else: no access token, no refresh token, no user
+// record. Every field is omitempty so that a challenge response carries no
+// empty token fields for a client to mistake for a session.
 type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int    `json:"expires_in"`
-	TokenType    string `json:"token_type"`
-	User         User   `json:"user"`
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int    `json:"expires_in,omitempty"`
+	TokenType    string `json:"token_type,omitempty"`
+	User         *User  `json:"user,omitempty"`
+
+	// TwoFactorRequired tells the client to ask for a code. It is only ever
+	// true on a response to a caller who has already proved the password, so it
+	// discloses nothing to anyone who has not.
+	TwoFactorRequired bool `json:"two_factor_required,omitempty"`
+
+	// ChallengeToken is the single-use, short-lived, pre-two-factor token that
+	// the exchange endpoint takes in place of the password.
+	ChallengeToken string `json:"challenge_token,omitempty"`
+
+	// ChallengeExpiresIn is the remaining life of the challenge in seconds.
+	ChallengeExpiresIn int `json:"challenge_expires_in,omitempty"`
+}
+
+// TwoFactorLoginRequest is the body of the exchange endpoint: the challenge
+// from the password step plus one code. The code may be a TOTP code or one
+// recovery code; the server tells them apart by shape.
+type TwoFactorLoginRequest struct {
+	ChallengeToken string `json:"challenge_token" binding:"required"`
+	Code           string `json:"code" binding:"required"`
 }
 
 type RefreshRequest struct {

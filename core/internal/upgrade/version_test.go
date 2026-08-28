@@ -1,7 +1,9 @@
 package upgrade
 
 import (
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -159,5 +161,101 @@ func TestVersionIsPreRelease(t *testing.T) {
 	}
 	if !MustParseVersion("1.0.0").Equal(MustParseVersion("v1.0.0+meta")) {
 		t.Error("1.0.0 and v1.0.0+meta should compare equal")
+	}
+}
+
+// TestParseVersionRejectsPathsHiddenInBuildMetadata is the regression test for
+// a hole the audit found by walking backwards from the filesystem: a version
+// string becomes a directory name under /vkai-panel/releases, and build
+// metadata was copied into it unchecked because the specification says it takes
+// no part in ordering. "1.0.0+/../../../../root/.ssh" parsed, validated, and
+// then chose where the release was written - as root.
+func TestParseVersionRejectsPathsHiddenInBuildMetadata(t *testing.T) {
+	t.Parallel()
+
+	hostile := []string{
+		"1.0.0+/../../../../root/.ssh",
+		"1.0.0+x/../../../../etc/systemd/system/evil",
+		"1.0.0+..",
+		"1.0.0+a/b",
+		`1.0.0+a\b`,
+		"1.0.0-rc.1+/etc",
+		"1.0.0+a..b/c",
+		"1.0.0+\x00",
+	}
+	for _, in := range hostile {
+		if v, err := ParseVersion(in); err == nil {
+			t.Errorf("ParseVersion(%q) = %v, want a refusal", in, v)
+		}
+		m := Manifest{Version: in, TarballURL: "https://example.test/x.tgz", SHA256: sha256Hex([]byte("x"))}
+		if err := m.Validate(); err == nil {
+			t.Errorf("Manifest.Validate accepted version %q", in)
+		}
+	}
+
+	// And the path helpers refuse to be turned into a traversal even when
+	// handed a version that never went through ParseVersion, because that is
+	// the check that still holds if a caller is added later.
+	u, err := New(Config{Root: "/vkai-panel"}, Deps{PID: 7})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, in := range hostile {
+		dir := u.ReleaseDir(in)
+		if !strings.HasPrefix(dir, "/vkai-panel/releases/") {
+			t.Errorf("ReleaseDir(%q) = %q, outside the releases directory", in, dir)
+		}
+		if strings.Contains(strings.TrimPrefix(dir, "/vkai-panel/releases/"), "/") {
+			t.Errorf("ReleaseDir(%q) = %q, which is more than one path element", in, dir)
+		}
+		staging := u.stagingDir(in)
+		if filepath.Dir(staging) != "/vkai-panel/releases" {
+			t.Errorf("stagingDir(%q) = %q, outside the releases directory", in, staging)
+		}
+	}
+}
+
+// A version that is greater than everything is not by itself an attack - the
+// feed chooses the numbers - but the ways of crafting one that a parser gets
+// wrong are: a component that overflows, or a second spelling of a version that
+// already exists.
+func TestParseVersionRejectsCraftedComponents(t *testing.T) {
+	t.Parallel()
+
+	for _, in := range []string{
+		"99999999999999999999.0.0", // overflows int64
+		"1.99999999999999999999.0",
+		"01.0.0", // a second spelling of 1.0.0
+		"1.02.0",
+		"1.0.00",
+		strings.Repeat("9", 200) + ".0.0", // longer than a version may be
+	} {
+		if v, err := ParseVersion(in); err == nil {
+			t.Errorf("ParseVersion(%q) = %v, want a refusal", in, v)
+		}
+	}
+
+	// A large but legal version still parses and still orders correctly. A
+	// feed can always publish 9999999.0.0; what matters is that it does not
+	// thereby become unorderable or unprintable.
+	big, err := ParseVersion("9999999.0.0")
+	if err != nil {
+		t.Fatalf("ParseVersion(9999999.0.0): %v", err)
+	}
+	if !MustParseVersion("2.0.0").LessThan(big) {
+		t.Error("9999999.0.0 should order above 2.0.0")
+	}
+	if big.Canonical() != "9999999.0.0" {
+		t.Errorf("Canonical = %q", big.Canonical())
+	}
+}
+
+func TestVersionCanonicalIgnoresBuildMetadataAndV(t *testing.T) {
+	t.Parallel()
+	if got := MustParseVersion("v1.2.3+build.7").Canonical(); got != "1.2.3" {
+		t.Errorf("Canonical = %q, want 1.2.3", got)
+	}
+	if got := MustParseVersion("2.0.0-rc.1").Canonical(); got != "2.0.0-rc.1" {
+		t.Errorf("Canonical = %q, want 2.0.0-rc.1", got)
 	}
 }

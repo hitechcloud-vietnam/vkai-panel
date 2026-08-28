@@ -71,4 +71,30 @@
 //   - It is not a replacement for rotating the CA if the CA key itself leaks.
 //     If that happens, every certificate is worthless and the fix is a new CA
 //     and a re-enrolment of every agent.
+//
+// # The channel this replaces, and how a fleet crosses
+//
+// The static token is not gone on an installation that upgrades: every row in
+// `servers` still carries agent_token, and the agents in the field still hold
+// it. Deleting it in the same release that adds this package would strand every
+// one of them, so both channels are live for exactly one upgrade. legacy.go is
+// that crossing - what it costs, what closes it, and how far it has got.
+//
+// What an operator does to move one server across:
+//
+//  1. In the panel, Servers -> the server -> Add agent, which mints a
+//     single-use enrolment token that expires in thirty minutes and carries
+//     this CA's fingerprint.
+//  2. On the managed server, set VKAI_AGENT_ENROLMENT_TOKEN to it and restart
+//     the agent. It generates a key that never leaves the machine, trades the
+//     token for a certificate, and pins the CA the token named.
+//  3. That server's static token stops authenticating at that moment - not when
+//     the operator gets round to it. Gateway.Authenticate refuses a token whose
+//     server holds a certificate.
+//  4. Retiring the token (ServerService.RetireStaticToken) replaces the value in
+//     the database with one that cannot authenticate, so the old string is gone
+//     from the row as well as from the decision.
+//
+// The panel counts what is left at every start. When that count is zero across
+// the installed base, the column goes; see migrations/pending/agent_pki.sql.
 package agentpki

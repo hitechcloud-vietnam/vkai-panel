@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -633,5 +634,188 @@ func TestStepStringsAreStable(t *testing.T) {
 	}
 	if !strings.Contains(string(blob), `"step":"health_check"`) {
 		t.Errorf("event JSON = %s, want the step as a name", blob)
+	}
+}
+
+// A dump is not a backup until something has read it back. The default
+// configuration runs pg_restore --list over the file, which parses the whole
+// archive - including its trailer - without touching a database.
+func TestUpgradeReadsTheDatabaseDumpBack(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+	env.publish("1.1.0", "")
+
+	res, err := env.u.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.DatabaseBackupVerified {
+		t.Error("the dump was not verified; DatabaseBackupVerified is false")
+	}
+	verifications := env.runner.callsMatching("pg_restore")
+	if len(verifications) != 1 || !strings.Contains(verifications[0], res.DatabaseBackupPath) {
+		t.Errorf("dump verification calls = %v, want one pg_restore over %s", verifications, res.DatabaseBackupPath)
+	}
+	if res.DatabaseBackupSHA256 == "" {
+		t.Error("no digest was recorded for the dump")
+	}
+	onDisk, err := fileSHA256(res.DatabaseBackupPath)
+	if err != nil {
+		t.Fatalf("hash the dump: %v", err)
+	}
+	if onDisk != res.DatabaseBackupSHA256 {
+		t.Errorf("recorded digest %s does not match the file (%s)", res.DatabaseBackupSHA256, onDisk)
+	}
+
+	// The digest is in the state file too, which is where an engineer
+	// rebuilding the machine by hand will look.
+	raw, err := os.ReadFile(env.u.StateFile())
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	var st state
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatalf("parse state: %v", err)
+	}
+	if st.LastDatabaseBackupSHA256 != res.DatabaseBackupSHA256 {
+		t.Errorf("state digest = %q, want %q", st.LastDatabaseBackupSHA256, res.DatabaseBackupSHA256)
+	}
+}
+
+// A dump that exists, is non-empty, and cannot be restored is the failure mode
+// the old "it exited zero and the file is there" check could not see.
+func TestUpgradeAbortsWhenTheDumpCannotBeReadBack(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+	env.publish("1.1.0", "")
+	env.runner.verifyFails = true
+
+	res, err := env.u.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "could not be read back") {
+		t.Fatalf("Run error = %v, want the unreadable dump to abort the upgrade", err)
+	}
+	if res.Switched || res.Succeeded {
+		t.Errorf("result = %+v, want nothing switched", res)
+	}
+	if env.currentTarget() != "1.0.0" {
+		t.Errorf("current = %s, want 1.0.0", env.currentTarget())
+	}
+	// The file is kept: it is the only evidence of what went wrong.
+	if res.DatabaseBackupPath == "" || !exists(res.DatabaseBackupPath) {
+		t.Errorf("the unreadable dump at %q was deleted; it is the only thing left to look at", res.DatabaseBackupPath)
+	}
+	if len(env.runner.callsMatching("systemctl restart")) != 0 {
+		t.Error("services were restarted despite the dump being unusable")
+	}
+}
+
+// An operator who has no way to read the dump back can say so, and is then
+// told nothing was verified rather than being quietly told it was.
+func TestDumpVerificationCanBeTurnedOff(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", func(c *Config) { c.Database.SkipVerify = true })
+	env.publish("1.1.0", "")
+
+	res, err := env.u.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.DatabaseBackupVerified {
+		t.Error("DatabaseBackupVerified is true even though verification was skipped")
+	}
+	if len(env.runner.callsMatching("pg_restore")) != 0 {
+		t.Error("the dump was read back even though verification was skipped")
+	}
+}
+
+// The disk check that matters happens before the download, not after it: there
+// is no point pulling a release onto a machine that cannot hold it, and
+// discovering that after the extraction is how a disk ends up full.
+func TestDiskIsCheckedBeforeAnythingIsDownloaded(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+	m := env.publish("1.1.0", "")
+	env.u.deps.DiskFree = func(string) (uint64, error) { return 1 << 20, nil }
+
+	_, err := env.u.Run(context.Background())
+	var pre *PreflightError
+	if !errors.As(err, &pre) {
+		t.Fatalf("Run error = %#v, want *PreflightError", err)
+	}
+	if env.http.hitCount(m.TarballURL) != 0 {
+		t.Error("the tarball was downloaded onto a disk that could not hold it")
+	}
+	entries, _ := os.ReadDir(filepath.Join(env.root, "tmp"))
+	if len(entries) != 0 {
+		t.Errorf("temporary files were written despite the disk check failing: %d entries", len(entries))
+	}
+}
+
+// A download of a different length is a different file, and saying so is
+// clearer than letting it fail as a checksum mismatch.
+func TestDownloadOfTheWrongLengthIsRefused(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+	m := env.publish("1.1.0", "")
+	m.SizeBytes += 512
+	env.publishManifests(m)
+
+	res, err := env.u.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "bytes, but the manifest says") {
+		t.Fatalf("Run error = %v, want the length mismatch to be named", err)
+	}
+	if res.Switched {
+		t.Error("the switch happened despite the download being the wrong length")
+	}
+	tmpEntries, _ := os.ReadDir(filepath.Join(env.root, "tmp"))
+	for _, e := range tmpEntries {
+		if strings.HasSuffix(e.Name(), ".tar.gz") {
+			t.Errorf("the rejected download %s was left on disk", e.Name())
+		}
+	}
+}
+
+// An archive that would escape the staging directory must fail the upgrade with
+// the installation untouched - the extractor's own tests prove the refusal, this
+// one proves Run is wired to it.
+func TestUpgradeRefusesAnArchiveThatWouldEscapeStaging(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+
+	evil := buildTarGz(t, []tarEntry{
+		{Name: "VERSION", Body: "1.1.0\n"},
+		{Name: "a", Typeflag: tar.TypeSymlink, Linkname: "."},
+		{Name: "a/b", Typeflag: tar.TypeSymlink, Linkname: ".."},
+		{Name: "b/c/etc/cron.d/pwn", Body: "* * * * * root /bin/sh\n"},
+	})
+	url := testTarBase + "vkai-panel-1.1.0.tar.gz"
+	env.http.serve(url, evil)
+	env.publishManifests(Manifest{
+		Version:    "1.1.0",
+		TarballURL: url,
+		SHA256:     sha256Hex(evil),
+		SizeBytes:  int64(len(evil)),
+	})
+
+	res, err := env.u.Run(context.Background())
+	var unsafeErr *UnsafeArchiveError
+	if !errors.As(err, &unsafeErr) {
+		t.Fatalf("Run error = %v, want *UnsafeArchiveError", err)
+	}
+	if res.Switched || res.Succeeded {
+		t.Errorf("result = %+v, want nothing switched", res)
+	}
+	if env.currentTarget() != "1.0.0" {
+		t.Errorf("current = %s, want 1.0.0", env.currentTarget())
+	}
+	if exists(filepath.Join(env.root, "etc", "cron.d")) {
+		t.Fatal("the extraction escaped the staging directory")
+	}
+	// The staging directory is cleaned up rather than left half-written.
+	releaseEntries, _ := os.ReadDir(filepath.Join(env.root, "releases"))
+	for _, e := range releaseEntries {
+		if strings.HasPrefix(e.Name(), ".staging-") {
+			t.Errorf("staging directory %s was left behind after a refused archive", e.Name())
+		}
 	}
 }

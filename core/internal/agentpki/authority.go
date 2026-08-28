@@ -115,6 +115,13 @@ type Authority struct {
 
 	replay *replayGuard
 
+	// hookMu guards the revocation observers. They are called after a
+	// revocation has been written, so a caller that holds live connections to
+	// an agent can drop them there and then.
+	hookMu      sync.Mutex
+	revokeHooks []func(agentID string)
+	enrolHooks  []func(serverID, agentID string)
+
 	// rotateMu serialises rotation of the panel's own certificate. Without it
 	// two concurrent handshakes could both decide to rotate and issue two
 	// certificates where one was needed.
@@ -559,9 +566,81 @@ func (a *Authority) recordRotation(ctx context.Context, agentID, hostname, serve
 	return a.store.PutAgent(ctx, existing)
 }
 
+// AgentForServer finds the agent enrolled for one panel server record, so a
+// caller can tell whether that server has moved off the deprecated static
+// token. It returns ErrNotFound when the server has never enrolled.
+func (a *Authority) AgentForServer(ctx context.Context, serverID string) (*AgentRecord, error) {
+	if serverID == "" {
+		return nil, ErrNotFound
+	}
+	records, err := a.store.ListAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, rec := range records {
+		if rec.Role == RoleAgent && rec.ServerID == serverID {
+			return rec, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 // ============================================================
 // REVOCATION
 // ============================================================
+
+// OnRevoke registers an observer called with the agent id after a revocation
+// has been recorded.
+//
+// It exists because a deny list alone only bites on the next handshake, and a
+// pooled connection opened before the revocation would not make one. The panel
+// client uses this to close what it already has open, which is the difference
+// between "revoked at the next connection" and "revoked at the next connection
+// or in ninety seconds, whichever is later".
+func (a *Authority) OnRevoke(fn func(agentID string)) {
+	if fn == nil {
+		return
+	}
+	a.hookMu.Lock()
+	a.revokeHooks = append(a.revokeHooks, fn)
+	a.hookMu.Unlock()
+}
+
+// OnEnrol registers an observer called after an agent has traded its enrolment
+// token for its first certificate, with the panel server record it was minted
+// for (which may be empty) and the new agent id.
+//
+// It is how the crossing off the deprecated static token is recorded without
+// this package knowing that a database exists: the panel registers a callback
+// that writes the server's channel down. The refusal of the old token does not
+// depend on that write - Gateway.Authenticate asks the store directly - so a
+// failed callback costs a report, not a guarantee.
+func (a *Authority) OnEnrol(fn func(serverID, agentID string)) {
+	if fn == nil {
+		return
+	}
+	a.hookMu.Lock()
+	a.enrolHooks = append(a.enrolHooks, fn)
+	a.hookMu.Unlock()
+}
+
+func (a *Authority) fireEnrolled(serverID, agentID string) {
+	a.hookMu.Lock()
+	hooks := append([]func(string, string){}, a.enrolHooks...)
+	a.hookMu.Unlock()
+	for _, hook := range hooks {
+		hook(serverID, agentID)
+	}
+}
+
+func (a *Authority) fireRevoked(agentID string) {
+	a.hookMu.Lock()
+	hooks := append([]func(string){}, a.revokeHooks...)
+	a.hookMu.Unlock()
+	for _, hook := range hooks {
+		hook(agentID)
+	}
+}
 
 // Revoke puts every serial an agent holds on the deny list and marks the record
 // revoked. It takes effect on the next handshake, panel side, without waiting
@@ -598,6 +677,7 @@ func (a *Authority) Revoke(ctx context.Context, agentID, reason string) error {
 		zap.String("agent_id", agentID),
 		zap.Strings("serials", serials),
 		zap.String("reason", reason))
+	a.fireRevoked(agentID)
 	return nil
 }
 

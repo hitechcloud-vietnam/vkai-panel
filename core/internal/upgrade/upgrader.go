@@ -5,8 +5,12 @@ package upgrade
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +91,20 @@ type DatabaseBackupConfig struct {
 	Timeout time.Duration
 	// EstimateBytes is how much disk preflight reserves for the dump.
 	EstimateBytes int64
+
+	// VerifyCommand reads the dump back and fails if it is not a dump.
+	// "the command exited zero and produced a non-empty file" is not the
+	// same claim as "this file can be restored", and the difference is only
+	// discovered on the worst day. With the default pg_dump configuration
+	// this defaults to pg_restore --list, which parses the archive's table
+	// of contents without touching a database.
+	VerifyCommand string
+	// VerifyArgs are its arguments, with {{dest}} and {{database}}
+	// substituted the same way as Args.
+	VerifyArgs []string
+	// SkipVerify turns the read-back off. Setting it means the upgrade
+	// proceeds on a dump nothing has proved is readable.
+	SkipVerify bool
 }
 
 // Config is everything about this installation that the upgrader needs.
@@ -98,6 +116,27 @@ type Config struct {
 
 	// FeedURL is where the release manifest is published.
 	FeedURL string
+
+	// ReleasePublicKeys are ed25519 public keys, hex encoded, that may sign
+	// a release manifest. When at least one is configured every manifest in
+	// the feed must carry a valid signature over ManifestSigningPayload,
+	// and the feed host stops being able to choose what this machine
+	// installs as root. When none is configured the manifest is
+	// authenticated by TLS alone - see the package documentation, which
+	// says plainly what that means.
+	ReleasePublicKeys []string
+
+	// AllowPreRelease lets the upgrader move to a pre-release such as
+	// 2.0.0-rc.1. Off by default: an unattended upgrade running as root
+	// must not install a release candidate because the feed published one.
+	// An installation already running a pre-release sees them regardless.
+	AllowPreRelease bool
+
+	// AllowInsecureURLs permits a plaintext http feed or tarball URL, for a
+	// mirror on a network the operator trusts. Off by default, because
+	// without signatures TLS is the only authentication an unsigned release
+	// has.
+	AllowInsecureURLs bool
 
 	// CurrentVersion is the version running now. When empty it is read from
 	// the state file, and failing that from the current symlink's target.
@@ -199,6 +238,9 @@ type Upgrader struct {
 	cfg  Config
 	deps Deps
 
+	// releaseKeys are Config.ReleasePublicKeys, decoded once by New.
+	releaseKeys []ed25519.PublicKey
+
 	// events is the transcript of the run in progress. It is reset at the
 	// start of Run and copied into the Result, so a caller that supplied no
 	// Progress callback still gets the whole sequence back.
@@ -266,13 +308,30 @@ func New(cfg Config, deps Deps) (*Upgrader, error) {
 		if cfg.Database.Timeout <= 0 {
 			cfg.Database.Timeout = 30 * time.Minute
 		}
+		if !cfg.Database.SkipVerify && strings.TrimSpace(cfg.Database.VerifyCommand) == "" {
+			// Only defaulted for the dump command we know the shape
+			// of. A custom dump command has to say how to read its
+			// output back, or say it does not want it verified.
+			if cfg.Database.Command == "pg_dump" {
+				cfg.Database.VerifyCommand = "pg_restore"
+				cfg.Database.VerifyArgs = []string{"--list", "{{dest}}"}
+			}
+		}
 	}
 	if cfg.Database.EstimateBytes <= 0 {
 		cfg.Database.EstimateBytes = DefaultDatabaseDumpEstimate
 	}
 
+	keys, err := parseReleaseKeys(cfg.ReleasePublicKeys)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkFeedURL(cfg.FeedURL, cfg.AllowInsecureURLs); err != nil {
+		return nil, err
+	}
+
 	if deps.HTTP == nil {
-		deps.HTTP = &http.Client{Timeout: 0}
+		deps.HTTP = &http.Client{Timeout: 0, CheckRedirect: refuseInsecureRedirect(cfg.AllowInsecureURLs)}
 	}
 	if deps.Runner == nil {
 		deps.Runner = ExecRunner{}
@@ -290,7 +349,70 @@ func New(cfg Config, deps Deps) (*Upgrader, error) {
 		deps.PID = os.Getpid()
 	}
 
-	return &Upgrader{cfg: cfg, deps: deps}, nil
+	return &Upgrader{cfg: cfg, deps: deps, releaseKeys: keys}, nil
+}
+
+// parseReleaseKeys decodes the configured signing keys once, so a typo in the
+// configuration is a startup failure rather than an upgrade that refuses every
+// release at three in the morning.
+func parseReleaseKeys(hexKeys []string) ([]ed25519.PublicKey, error) {
+	var keys []ed25519.PublicKey
+	for i, h := range hexKeys {
+		trimmed := strings.TrimSpace(h)
+		if trimmed == "" {
+			continue
+		}
+		raw, err := hex.DecodeString(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("release public key %d is not hexadecimal: %w", i, err)
+		}
+		if len(raw) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("release public key %d is %d bytes, want %d", i, len(raw), ed25519.PublicKeySize)
+		}
+		keys = append(keys, ed25519.PublicKey(raw))
+	}
+	return keys, nil
+}
+
+// checkFeedURL refuses a feed this package would fetch over a channel nobody
+// authenticates. An empty FeedURL is allowed: Check is what needs it, and an
+// Upgrader built only to read state or take the lock does not.
+func checkFeedURL(raw string, allowInsecure bool) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("feed URL %q is not a URL: %w", raw, err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecure {
+			return nil
+		}
+		return fmt.Errorf("feed URL %q is plaintext http; set AllowInsecureURLs only for a mirror on a trusted network", raw)
+	default:
+		return fmt.Errorf("feed URL %q has scheme %q; only https is supported", raw, parsed.Scheme)
+	}
+}
+
+// refuseInsecureRedirect stops the default client from being walked off TLS.
+// Go follows redirects across schemes, so a feed host - or anyone who can
+// answer for it - could otherwise redirect the tarball download to plaintext
+// http and choose what this machine installs as root.
+func refuseInsecureRedirect(allowInsecure bool) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if !allowInsecure && strings.EqualFold(req.URL.Scheme, "http") {
+			return fmt.Errorf("refusing a redirect to plaintext %s", req.URL)
+		}
+		return nil
+	}
 }
 
 // Config returns a copy of the resolved configuration, defaults filled in.
@@ -325,8 +447,25 @@ func (u *Upgrader) DatabaseBackupDir() string {
 }
 
 // ReleaseDir is the final directory of one release.
+//
+// The version becomes a path element, so it is reduced to one here rather than
+// joined verbatim. Versions reaching this point have been through ParseVersion,
+// which no longer accepts a separator anywhere - including in build metadata,
+// which is where "1.0.0+/../../../../root/.ssh" got in and turned this Join
+// into a write outside the installation root. Both checks stay: this one is the
+// one that still holds if a caller ever passes a version that did not come from
+// a manifest.
 func (u *Upgrader) ReleaseDir(version string) string {
-	return filepath.Join(u.ReleasesDir(), version)
+	return filepath.Join(u.ReleasesDir(), releaseSegment(version))
+}
+
+// releaseSegment reduces a version to a single, harmless path element.
+func releaseSegment(version string) string {
+	seg := sanitizeForFilename(strings.TrimSpace(version))
+	if seg == "" || seg == "." || seg == ".." || strings.ContainsAny(seg, `/\`) {
+		return "release"
+	}
+	return seg
 }
 
 // stagingDir is where a release is extracted before preflight promotes it. It
@@ -335,7 +474,7 @@ func (u *Upgrader) ReleaseDir(version string) string {
 // release: prune and version listing both ignore anything that is not a plain
 // version.
 func (u *Upgrader) stagingDir(version string) string {
-	return filepath.Join(u.ReleasesDir(), fmt.Sprintf(".staging-%s-%d", version, u.deps.PID))
+	return filepath.Join(u.ReleasesDir(), fmt.Sprintf(".staging-%s-%d", releaseSegment(version), u.deps.PID))
 }
 
 // ---------------------------------------------------------------- progress
@@ -389,6 +528,11 @@ type CheckResult struct {
 	Blocked bool `json:"blocked"`
 	// InstallFirst names the version to install before the blocked release.
 	InstallFirst string `json:"install_first,omitempty"`
+	// SignaturesChecked is true when release signatures were verified,
+	// which is to say when Config.ReleasePublicKeys was set. When it is
+	// false the feed was trusted on TLS alone, and a caller showing this to
+	// an operator should say so.
+	SignaturesChecked bool `json:"signatures_checked"`
 }
 
 // Result is the outcome of Run. It is returned even when the upgrade failed,
@@ -409,6 +553,14 @@ type Result struct {
 	// DatabaseBackupPath is where the pre-upgrade dump was written. Empty
 	// when the database backup was not configured or was never reached.
 	DatabaseBackupPath string `json:"database_backup_path,omitempty"`
+	// DatabaseBackupSHA256 is that file's digest as it was written, so the
+	// operator restoring it can tell it is the same file.
+	DatabaseBackupSHA256 string `json:"database_backup_sha256,omitempty"`
+	// DatabaseBackupVerified is true when the dump was read back by
+	// Config.Database.VerifyCommand rather than merely created.
+	DatabaseBackupVerified bool `json:"database_backup_verified"`
+	// SignaturesChecked is true when the manifest signature was verified.
+	SignaturesChecked bool `json:"signatures_checked"`
 	// Switched is true once the current symlink pointed at the new release,
 	// whether or not it stayed there.
 	Switched bool `json:"switched"`

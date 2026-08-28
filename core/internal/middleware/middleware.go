@@ -230,9 +230,17 @@ func RateLimitWith(limit int, window time.Duration) gin.HandlerFunc {
 // AuthRateLimit is the original strict budget for login and refresh: five
 // attempts per address per fifteen minutes, counted in this process.
 //
-// Superseded by ProtectCredentialEndpoints, which is what actually defends the
-// credential endpoints now. This one has three problems that a single counter
-// always has:
+// Nothing installs it. internal/handler/router.go used to put it on the /auth
+// group; it was removed when ProtectCredentialEndpoints was mounted on the
+// engine, because two limiters on one path do not add up to a policy - the
+// effective limit becomes whichever is tighter by accident, and here that was
+// always this one, so the layered limiter's behaviour would never have been
+// reached. The credential endpoints are defended by
+// ProtectCredentialEndpoints and by that alone.
+//
+// It is kept only so an operator running a deployment without the counter
+// store can put a crude ceiling on a route by hand. It has the three problems
+// a single counter always has:
 //
 //   - it is per process, so a two-instance deployment allows ten attempts, not
 //     five, and neither instance can see the other's;
@@ -241,9 +249,9 @@ func RateLimitWith(limit int, window time.Duration) gin.HandlerFunc {
 //   - it counts requests rather than failures, so a busy legitimate user is
 //     charged for their successes.
 //
-// It is kept, unchanged, because internal/handler/router.go still installs it
-// and because a second, cruder ceiling in front of the real one costs nothing.
-// New credential endpoints should not reach for it.
+// New credential endpoints should not reach for it: they are covered by the
+// route table in credential_routes.go, and a new path under a family already
+// listed there is guarded the day it is written.
 func AuthRateLimit() gin.HandlerFunc {
 	return RateLimitWith(5, 15*time.Minute)
 }

@@ -64,6 +64,11 @@ func (u *Upgrader) Run(ctx context.Context) (*Result, error) {
 	res.Manifest = target
 	res.ToVersion = target.Version
 	res.ReleaseDir = u.ReleaseDir(target.Version)
+	res.SignaturesChecked = check.SignaturesChecked
+	// The lock was taken before the feed was read, so it could not name a
+	// version then. It can now, and a second upgrade arriving in the next
+	// twenty minutes deserves to be told what the first one is doing.
+	lock.recordVersion(target.Version)
 	u.succeeded(StepCheck, fmt.Sprintf("%s is available (running %s)", target.Version, check.CurrentVersion))
 
 	// From here on, temporary files are ours to clean up whatever happens.
@@ -78,6 +83,12 @@ func (u *Upgrader) Run(ctx context.Context) (*Result, error) {
 
 	// -------------------------------------------------- download
 	u.started(StepDownload)
+	// The checks that do not need the release on disk happen before a byte
+	// of it is fetched: there is no point pulling a gigabyte onto a disk
+	// that cannot hold it, or upgrading an installation that is already down.
+	if err := u.earlyPreflight(ctx, target); err != nil {
+		return res, u.failed(StepDownload, err)
+	}
 	tarball, sum, err := u.download(ctx, target)
 	if err != nil {
 		return res, u.failed(StepDownload, err)
@@ -109,12 +120,22 @@ func (u *Upgrader) Run(ctx context.Context) (*Result, error) {
 	// -------------------------------------------------- database backup
 	u.started(StepBackupDatabase)
 	if u.cfg.Database.Enabled {
-		path, err := u.backupDatabase(ctx, res.FromVersion, res.ToVersion)
+		backup, err := u.backupDatabase(ctx, res.FromVersion, res.ToVersion)
 		if err != nil {
+			// The path is recorded even on failure: a dump that was
+			// written but could not be read back is still the file an
+			// engineer will want to look at.
+			res.DatabaseBackupPath = backup.Path
 			return res, u.failed(StepBackupDatabase, err)
 		}
-		res.DatabaseBackupPath = path
-		u.succeeded(StepBackupDatabase, "Database dumped to "+path)
+		res.DatabaseBackupPath = backup.Path
+		res.DatabaseBackupSHA256 = backup.SHA256
+		res.DatabaseBackupVerified = backup.Verified
+		msg := "Database dumped to " + backup.Path
+		if backup.Verified {
+			msg += " and read back successfully"
+		}
+		u.succeeded(StepBackupDatabase, msg)
 	} else {
 		u.skipped(StepBackupDatabase, "No database backup is configured for this installation")
 	}
@@ -161,10 +182,11 @@ func (u *Upgrader) Run(ctx context.Context) (*Result, error) {
 
 	// -------------------------------------------------- record
 	if err := u.saveState(state{
-		CurrentVersion:     res.ToVersion,
-		PreviousVersion:    res.FromVersion,
-		LastUpgradeAt:      u.deps.Clock.Now().UTC(),
-		LastDatabaseBackup: res.DatabaseBackupPath,
+		CurrentVersion:           res.ToVersion,
+		PreviousVersion:          res.FromVersion,
+		LastUpgradeAt:            u.deps.Clock.Now().UTC(),
+		LastDatabaseBackup:       res.DatabaseBackupPath,
+		LastDatabaseBackupSHA256: res.DatabaseBackupSHA256,
 	}); err != nil {
 		// The upgrade worked; only the bookkeeping did not. Say so and
 		// carry on rather than rolling back a healthy installation.
@@ -211,9 +233,14 @@ func (u *Upgrader) stage(tarball, staging string, m Manifest) error {
 	if err := os.RemoveAll(staging); err != nil {
 		return fmt.Errorf("clear stale staging directory %s: %w", staging, err)
 	}
+	// The digest is passed down rather than assumed: extractTarGz verifies
+	// it against the file descriptor it is about to decompress, so there is
+	// no path to the tar reader - this one, a retry, or one added later -
+	// that does not check the archive first.
 	if err := extractTarGz(tarball, staging, extractOptions{
-		MaxBytes:   u.cfg.MaxExtractBytes,
-		MaxEntries: u.cfg.MaxArchiveEntries,
+		ExpectedSHA256: m.SHA256,
+		MaxBytes:       u.cfg.MaxExtractBytes,
+		MaxEntries:     u.cfg.MaxArchiveEntries,
 	}); err != nil {
 		_ = os.RemoveAll(staging)
 		return err

@@ -17,6 +17,15 @@ var (
 	ErrInvalidClaims  = errors.New("invalid token claims")
 	ErrWrongTokenType = errors.New("token is not valid for this operation")
 	ErrRevokedToken   = errors.New("token has been revoked")
+
+	// ErrChallengeSpent means a two-factor challenge was presented for a
+	// second time. A challenge buys exactly one exchange attempt.
+	ErrChallengeSpent = errors.New("two-factor challenge has already been used")
+
+	// ErrSingleUseUnavailable means the manager has no revocation store, so it
+	// cannot prove a challenge is being used for the first time. The two-factor
+	// exchange refuses rather than accepting a challenge it cannot spend.
+	ErrSingleUseUnavailable = errors.New("single-use tokens require a revocation store")
 )
 
 // Token types. They are carried in the "typ" claim AND enforced by using a
@@ -25,7 +34,23 @@ var (
 const (
 	TokenTypeAccess  = "access"
 	TokenTypeRefresh = "refresh"
+
+	// TokenTypeTwoFactorChallenge is the half-authenticated token minted when
+	// the password was right and a second factor is still owed. It is a
+	// distinct type - own "typ" claim, own signing key - rather than an access
+	// token carrying a flag, precisely so that no code path can mistake it for
+	// a credential: every request-path validator asks for TokenTypeAccess, and
+	// a challenge fails that check at the signature, before any claim is read.
+	//
+	// It carries no roles and no permissions. Even if some future middleware
+	// did accept it, there is nothing in it to authorise.
+	TokenTypeTwoFactorChallenge = "2fa_challenge"
 )
+
+// DefaultTwoFactorChallengeTTL is how long the password step buys. Minutes, not
+// hours: it is the window in which a stolen challenge is worth stealing, and a
+// person reading six digits off a phone needs one.
+const DefaultTwoFactorChallengeTTL = 5 * time.Minute
 
 type TokenClaims struct {
 	UserID      uuid.UUID `json:"user_id"`
@@ -49,6 +74,20 @@ type TokenPair struct {
 type RevocationStore interface {
 	Revoke(jti string, expiresAt time.Time)
 	IsRevoked(jti string) bool
+}
+
+// SingleUseStore is the optional extension a revocation store implements when
+// it can revoke a jti and report whether it was still live in one atomic step.
+// That is what makes a two-factor challenge single use even when two requests
+// carry the same challenge at the same instant. A store that does not implement
+// it falls back to check-then-revoke, which is racy under exactly concurrent
+// replay; the shared (Redis backed) store must implement this.
+type SingleUseStore interface {
+	RevocationStore
+
+	// Consume revokes jti and reports true when this call was the one that
+	// revoked it. A second call for the same jti returns false.
+	Consume(jti string, expiresAt time.Time) bool
 }
 
 // memoryRevocationStore is the default store. It keeps revoked ids until they
@@ -79,6 +118,20 @@ func (s *memoryRevocationStore) Revoke(jti string, expiresAt time.Time) {
 	}
 }
 
+// Consume implements SingleUseStore.
+func (s *memoryRevocationStore) Consume(jti string, expiresAt time.Time) bool {
+	if jti == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if exp, ok := s.revoked[jti]; ok && time.Now().Before(exp) {
+		return false
+	}
+	s.revoked[jti] = expiresAt
+	return true
+}
+
 func (s *memoryRevocationStore) IsRevoked(jti string) bool {
 	if jti == "" {
 		return false
@@ -95,8 +148,10 @@ func (s *memoryRevocationStore) IsRevoked(jti string) bool {
 type JWTManager struct {
 	accessSecret    []byte
 	refreshSecret   []byte
+	challengeSecret []byte
 	accessTokenTTL  time.Duration
 	refreshTokenTTL time.Duration
+	challengeTTL    time.Duration
 	issuer          string
 	revocations     RevocationStore
 }
@@ -113,8 +168,10 @@ func NewJWTManager(secret string, accessTTL, refreshTTL time.Duration, issuer st
 	return &JWTManager{
 		accessSecret:    deriveKey(secret, TokenTypeAccess),
 		refreshSecret:   deriveKey(secret, TokenTypeRefresh),
+		challengeSecret: deriveKey(secret, TokenTypeTwoFactorChallenge),
 		accessTokenTTL:  accessTTL,
 		refreshTokenTTL: refreshTTL,
+		challengeTTL:    DefaultTwoFactorChallengeTTL,
 		issuer:          issuer,
 		revocations:     newMemoryRevocationStore(),
 	}
@@ -133,6 +190,8 @@ func (m *JWTManager) secretFor(tokenType string) ([]byte, error) {
 		return m.accessSecret, nil
 	case TokenTypeRefresh:
 		return m.refreshSecret, nil
+	case TokenTypeTwoFactorChallenge:
+		return m.challengeSecret, nil
 	default:
 		return nil, ErrWrongTokenType
 	}
@@ -277,4 +336,135 @@ func (m *JWTManager) RevokeToken(tokenStr, tokenType string) error {
 	}
 	m.Revoke(claims)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Two-factor challenge
+// ---------------------------------------------------------------------------
+
+// TwoFactorChallenge is what the password step returns when the account owes a
+// second factor. It is not a credential: it authorises exactly one call to the
+// two-factor exchange and nothing else.
+type TwoFactorChallenge struct {
+	Token string `json:"challenge_token"`
+	// ExpiresIn is the remaining life in seconds, for a client that wants to
+	// show a countdown.
+	ExpiresIn int `json:"expires_in"`
+	// ExpiresAt is the hard deadline. A continuation challenge minted after a
+	// mistyped code inherits this instant, so retrying can never extend the
+	// window the password step opened.
+	ExpiresAt time.Time `json:"-"`
+}
+
+// SetTwoFactorChallengeTTL overrides how long a challenge lives. A
+// non-positive duration restores the default.
+func (m *JWTManager) SetTwoFactorChallengeTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = DefaultTwoFactorChallengeTTL
+	}
+	m.challengeTTL = ttl
+}
+
+// TwoFactorChallengeTTL reports the configured challenge lifetime.
+func (m *JWTManager) TwoFactorChallengeTTL() time.Duration {
+	if m.challengeTTL <= 0 {
+		return DefaultTwoFactorChallengeTTL
+	}
+	return m.challengeTTL
+}
+
+// GenerateTwoFactorChallenge mints a fresh challenge for a user whose password
+// has just been accepted.
+func (m *JWTManager) GenerateTwoFactorChallenge(userID, tenantID uuid.UUID) (*TwoFactorChallenge, error) {
+	return m.newChallenge(userID, tenantID, time.Now().Add(m.TwoFactorChallengeTTL()))
+}
+
+// GenerateTwoFactorChallengeUntil mints a continuation challenge that expires
+// no later than deadline. It is what a failed exchange hands back so the user
+// retypes the code rather than the password, without the retry buying a single
+// second of extra life. The deadline is also capped at the configured TTL, so a
+// caller cannot mint a long-lived challenge by passing a distant instant.
+func (m *JWTManager) GenerateTwoFactorChallengeUntil(userID, tenantID uuid.UUID, deadline time.Time) (*TwoFactorChallenge, error) {
+	max := time.Now().Add(m.TwoFactorChallengeTTL())
+	if deadline.After(max) {
+		deadline = max
+	}
+	return m.newChallenge(userID, tenantID, deadline)
+}
+
+func (m *JWTManager) newChallenge(userID, tenantID uuid.UUID, expiresAt time.Time) (*TwoFactorChallenge, error) {
+	now := time.Now()
+	if !expiresAt.After(now) {
+		return nil, ErrExpiredToken
+	}
+
+	// No username, no email, no roles, no permissions. The challenge names the
+	// account it belongs to and says nothing else: it is handed to a caller who
+	// has proved a password and nothing more, and it must not become a way to
+	// read the account's shape.
+	claims := &TokenClaims{
+		UserID:    userID,
+		TenantID:  tenantID,
+		TokenType: TokenTypeTwoFactorChallenge,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.issuer,
+			Subject:   userID.String(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        uuid.New().String(),
+		},
+	}
+
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.challengeSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TwoFactorChallenge{
+		Token:     signed,
+		ExpiresIn: int(time.Until(expiresAt).Seconds()),
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// SpendTwoFactorChallenge validates a challenge AND spends it, in that order,
+// returning its claims. Every exchange attempt spends the challenge it was
+// given, whether the code that came with it was right or wrong, which is what
+// makes a challenge single use: a captured challenge is worth exactly one guess
+// out of a million, and a replay of a challenge that already succeeded is
+// refused outright.
+func (m *JWTManager) SpendTwoFactorChallenge(tokenStr string) (*TokenClaims, error) {
+	claims, err := m.validate(tokenStr, TokenTypeTwoFactorChallenge)
+	if err != nil {
+		// A spent challenge reads as revoked; name it for what it is.
+		if errors.Is(err, ErrRevokedToken) {
+			return nil, ErrChallengeSpent
+		}
+		return nil, err
+	}
+
+	expiresAt := time.Now().Add(m.TwoFactorChallengeTTL())
+	if claims.ExpiresAt != nil {
+		expiresAt = claims.ExpiresAt.Time
+	}
+
+	if m.revocations == nil {
+		// Refuse rather than accept a challenge that cannot be spent: an
+		// unspendable challenge is a replayable one.
+		return nil, ErrSingleUseUnavailable
+	}
+
+	if store, ok := m.revocations.(SingleUseStore); ok {
+		if !store.Consume(claims.ID, expiresAt) {
+			return nil, ErrChallengeSpent
+		}
+		return claims, nil
+	}
+
+	// Fallback for a store that only offers revoke/check. validate() has
+	// already rejected a revoked jti; revoking here closes the window for every
+	// non-concurrent replay.
+	m.revocations.Revoke(claims.ID, expiresAt)
+	return claims, nil
 }

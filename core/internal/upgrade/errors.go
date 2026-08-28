@@ -45,6 +45,10 @@ type IncompatibleJumpError struct {
 	From string
 	// To is the release that was refused.
 	To string
+	// BlockedBy names the release whose min_upgrade_from is the obstacle,
+	// when that is not To itself: the jump steps over it, so its migration
+	// would be skipped. Empty when To is its own obstacle.
+	BlockedBy string
 	// MinUpgradeFrom is what that release demands.
 	MinUpgradeFrom string
 	// InstallFirst is the version to install before retrying. When the feed
@@ -54,20 +58,38 @@ type IncompatibleJumpError struct {
 }
 
 func (e *IncompatibleJumpError) Error() string {
+	obstacle := e.To
+	if e.BlockedBy != "" {
+		obstacle = e.BlockedBy
+		return fmt.Sprintf(
+			"cannot upgrade from %s straight to %s: it would skip %s, which requires at least %s to be installed first; install %s, then run the upgrade again",
+			e.From, e.To, obstacle, e.MinUpgradeFrom, e.InstallFirst)
+	}
 	return fmt.Sprintf(
 		"cannot upgrade from %s straight to %s: %s requires at least %s to be installed first; install %s, then run the upgrade again",
-		e.From, e.To, e.To, e.MinUpgradeFrom, e.InstallFirst)
+		e.From, e.To, obstacle, e.MinUpgradeFrom, e.InstallFirst)
 }
 
-// ChecksumMismatchError is returned when the downloaded tarball does not hash
-// to what the manifest promised. The archive is deleted unopened.
+// ChecksumMismatchError is returned when a tarball does not hash to what the
+// manifest promised, either after the download - in which case the archive is
+// deleted unopened - or immediately before extraction, where the check is made
+// against the open file descriptor rather than the path.
 type ChecksumMismatchError struct {
-	URL      string
+	// URL is the download the digest was promised for. Empty when the
+	// mismatch was found at extraction time.
+	URL string
+	// Path is the file on disk that failed. Empty when the mismatch was
+	// found while downloading.
+	Path     string
 	Expected string
 	Actual   string
 }
 
 func (e *ChecksumMismatchError) Error() string {
+	if e.Path != "" {
+		return fmt.Sprintf("checksum mismatch for %s: expected sha256 %s, the file on disk hashes to %s; refusing to extract it",
+			e.Path, e.Expected, e.Actual)
+	}
 	return fmt.Sprintf("checksum mismatch for %s: manifest says sha256 %s, download hashes to %s; the archive was deleted without being opened",
 		e.URL, e.Expected, e.Actual)
 }
