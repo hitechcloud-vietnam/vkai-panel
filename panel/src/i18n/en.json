@@ -135,7 +135,12 @@
     "files": "Files",
     "ftp": "FTP",
     "emailServer": "Email Server",
-    "logs": "Logs"
+    "logs": "Logs",
+    "appStore": "App Store",
+    "domains": "Domains",
+    "multiWebServer": "Multi-WebServer",
+    "firewallWaf": "Firewall & WAF",
+    "cronJobs": "Cron jobs"
   },
   "sidebar": {
     "ariaLabel": "Main navigation",

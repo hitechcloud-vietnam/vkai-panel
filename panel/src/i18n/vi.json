@@ -135,7 +135,12 @@
     "files": "Quản lý tệp",
     "ftp": "FTP",
     "emailServer": "Máy chủ email",
-    "logs": "Nhật ký"
+    "logs": "Nhật ký",
+    "appStore": "Kho ứng dụng",
+    "domains": "Tên miền",
+    "multiWebServer": "Đa web server",
+    "firewallWaf": "Tường lửa & WAF",
+    "cronJobs": "Tác vụ Cron"
   },
   "sidebar": {
     "ariaLabel": "Điều hướng chính",
