@@ -229,6 +229,169 @@
       "placeholder": "Select a server",
       "localBadgeTitle": "The machine this panel runs on. The panel manages it directly.",
       "noNode": "No server is registered yet, so this action has nowhere to run."
+    },
+    "detail": {
+      "title": "Server",
+      "backToList": "All servers",
+      "loadFailed": "This server could not be read",
+      "loadFailedBody": "The panel could not read this machine. Try again; if it keeps failing, the API is not answering.",
+      "metricsFailed": "The stored sample for this machine could not be read",
+      "sampleFailed": "The live reading for this machine could not be read",
+      "countersNote": "The network figures above are counters: bytes since the machine last booted, not traffic per second.",
+      "unavailableMeasurements": "The source could not measure: {items}.",
+      "notFound": {
+        "title": "No such server",
+        "body": "Nothing with this identifier belongs to your account. It may have been removed, or the link may point at a machine on another account - the panel answers both the same way on purpose, so a node id cannot be probed for existence."
+      },
+      "denied": {
+        "title": "You may not read this server",
+        "body": "Your account does not carry the \"server\" permission, which every route under /servers requires. Ask an administrator to grant it."
+      },
+      "neverReported": {
+        "title": "This machine has never reported",
+        "body": "No sample has ever arrived from it, so every live figure below is unavailable rather than zero. Check that the agent is installed, running, and able to reach this panel."
+      },
+      "stale": {
+        "title": "These figures are old",
+        "body": "The last reading was taken {when}. What you see is what was measured then, not what the machine is doing now."
+      },
+      "monitoringDenied": {
+        "title": "Live figures are not available to your account",
+        "body": "The collector's endpoints carry the \"monitoring\" permission, which your account does not have. The machine's own details below are unaffected."
+      },
+      "duration": {
+        "days": "{n}d",
+        "hours": "{n}h",
+        "minutes": "{n}m"
+      },
+      "reason": {
+        "noSample": "Not available: no reading of this machine has been stored - nothing has reported a sample yet, or metric collection is switched off on this panel.",
+        "noStoredMetric": "Not available: no agent on this machine has reported a sample yet.",
+        "noHeartbeat": "Not available: this machine has never reported in.",
+        "monitoringDenied": "Not available: reading live figures needs the \"monitoring\" permission, which your account does not have.",
+        "noTags": "Not available: no tag has been set on this machine.",
+        "noAgentVersion": "Not available: the API has not reported an agent version for this machine."
+      },
+      "field": {
+        "hostname": "Hostname",
+        "ipv6": "IPv6 address",
+        "sshPort": "SSH port",
+        "cores": "CPU cores",
+        "ramTotal": "Installed memory",
+        "diskTotal": "Disk size",
+        "swap": "Swap",
+        "load": "Load average",
+        "role": "Role",
+        "location": "Location",
+        "tags": "Tags",
+        "agentVersion": "Agent version",
+        "lastSeen": "Last seen",
+        "registered": "Registered",
+        "uptime": "Uptime",
+        "bootTime": "Booted",
+        "sampledAt": "Live reading taken",
+        "sampleSource": "Reading source",
+        "storedSample": "Stored sample taken",
+        "transferred": "Transferred since boot"
+      },
+      "section": {
+        "identity": "Identity and hardware",
+        "agent": "Agent and readings",
+        "filesystems": "Filesystems",
+        "interfaces": "Network interfaces",
+        "history": "History",
+        "websites": "Websites on this machine",
+        "databases": "Databases on this machine",
+        "panelHost": "Panel host verification",
+        "terminal": "Terminal"
+      },
+      "filesystems": {
+        "description": "Every filesystem this machine reported in its last reading.",
+        "emptyTitle": "No filesystem reported",
+        "emptyBody": "The last reading of this machine carried no filesystem list. A machine that has never been measured reports nothing at all.",
+        "mountpoint": "Mount point",
+        "device": "Device",
+        "fstype": "Type",
+        "used": "Used",
+        "total": "Size",
+        "usage": "Usage",
+        "inodes": "Inodes used",
+        "root": "root",
+        "readOnly": "read only",
+        "noInodes": "Not available: this machine did not report an inode count for this filesystem."
+      },
+      "interfaces": {
+        "description": "Byte and packet counters since the machine last booted.",
+        "emptyTitle": "No network interface reported",
+        "emptyBody": "The last reading of this machine carried no interface list.",
+        "name": "Interface",
+        "bytesIn": "Received",
+        "bytesOut": "Sent",
+        "packetsIn": "Packets in",
+        "packetsOut": "Packets out"
+      },
+      "history": {
+        "description": "Readings the collector has kept for this machine. A break in a line is a stretch nothing was measured in - not a stretch of zero.",
+        "rangeLabel": "Time range",
+        "range": {
+          "1h": "1 hour",
+          "6h": "6 hours",
+          "24h": "24 hours"
+        },
+        "utilisation": "Processor and memory",
+        "network": "Network",
+        "in": "In",
+        "out": "Out",
+        "failed": "The history could not be read",
+        "deniedTitle": "History is not available to your account",
+        "deniedBody": "Reading a time series needs the \"monitoring\" permission, which your account does not have.",
+        "emptyTitle": "Nothing measured in this window",
+        "emptyBody": "The collector has stored no reading for this machine over the range selected. If the machine has never been measured, a shorter range will be empty too.",
+        "retention": "This panel keeps {days} days of readings.",
+        "truncated": "The range asked for reaches further back than this panel keeps, so the chart starts where the stored readings do."
+      },
+      "websites": {
+        "count": {
+          "one": "{count} website here",
+          "other": "{count} websites here"
+        },
+        "emptyTitle": "No website on this machine",
+        "emptyBody": "None of your websites is hosted here.",
+        "deniedTitle": "The website list is not available to your account",
+        "deniedBody": "Listing websites needs the \"website\" permission, which your account does not have.",
+        "partial": "Only the first {scanned} of your {total} websites were read, so this list may be incomplete."
+      },
+      "databases": {
+        "count": {
+          "one": "{count} database",
+          "other": "{count} databases"
+        },
+        "countUnavailable": "Not available: the database list could not be read, so how many sit on this engine is unknown.",
+        "port": "Port",
+        "emptyTitle": "No database engine on this machine",
+        "emptyBody": "No MySQL, MariaDB or PostgreSQL installation is registered against this machine.",
+        "deniedTitle": "The database list is not available to your account",
+        "deniedBody": "Listing databases needs the \"database\" permission, which your account does not have."
+      },
+      "panelHost": {
+        "description": "This is the machine the panel is installed on. These are the checks the panel makes on that claim.",
+        "registered": "Registered",
+        "verified": "Identity verified",
+        "healthy": "Reporting now",
+        "witness": "Verified by",
+        "registeredAt": "Registered at",
+        "lastVerified": "Last verified",
+        "lastMismatch": "Last mismatch",
+        "verdict": "Verdict",
+        "noMismatch": "Not available: no mismatch has been recorded for this machine.",
+        "mismatchTitle": "The stored identity does not describe this machine",
+        "mismatchBody": "The panel's record of this node no longer matches the machine it is running on. Until that is resolved, treat every figure on this page as belonging to an unknown host."
+      },
+      "terminal": {
+        "localBody": "The terminal opens a shell on this machine, because this is the machine the panel runs on.",
+        "remoteBody": "The terminal opens a shell on the machine the panel runs on, not on this node. This panel has no endpoint that opens a shell on a remote node.",
+        "open": "Open terminal"
+      }
     }
   },
   "dashboard": {
