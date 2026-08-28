@@ -147,11 +147,24 @@ function main() {
   }
 
   if (mode === 'check') {
-    if (current !== wanted) {
+    // Absent is not drift. The file is deliberately not committed (see
+    // .gitignore) and every build, dev server and type-check regenerates it, so
+    // a clean checkout never has one - which is exactly the state CI runs in.
+    // Treating "missing" as a failure made this check impossible to satisfy.
+    // Only a file that exists AND disagrees with VERSION is a real problem,
+    // because that is the one that can be compiled into a bundle.
+    if (current !== null && current !== wanted) {
       fail(
-        `${path.relative(REPO_ROOT, GENERATED_FILE)} is missing or stale for version ${version}.\n` +
+        `${path.relative(REPO_ROOT, GENERATED_FILE)} is stale: it does not match version ${version}.\n` +
           'Run "make sync-version", or build the UI, which regenerates it.'
       );
+    }
+    if (current === null) {
+      console.log(
+        `gen-version: ${version} - package.json is in sync; ` +
+          `${path.relative(REPO_ROOT, GENERATED_FILE)} will be generated at build time.`
+      );
+      return;
     }
     console.log(`gen-version: ${version} - everything is in sync.`);
     return;

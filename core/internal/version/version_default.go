@@ -11,4 +11,4 @@ package version
 
 // defaultVersion is the version a build reports when no linker flags were
 // passed, that is, a plain "go build ./...".
-const defaultVersion = "0.3.0"
+const defaultVersion = "0.5.0"
