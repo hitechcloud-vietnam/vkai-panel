@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { deploymentApi, api } from '@/services/api';
+import { errorMessage } from '@/lib/apiError';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -177,7 +178,7 @@ export default function DeploymentsPage() {
         const err: any = deployRes.reason;
         console.error('Failed to load deployments:', err);
         setDeployments([]);
-        setError(err?.response?.data?.error || 'Failed to load deployments');
+        setError(errorMessage(err, 'Failed to load deployments'));
       }
 
       if (serversRes.status === 'fulfilled') {
@@ -191,7 +192,7 @@ export default function DeploymentsPage() {
       console.error('Failed to load deployments:', err);
       setDeployments([]);
       setServers([]);
-      setError(err?.response?.data?.error || 'Failed to load deployments');
+      setError(errorMessage(err, 'Failed to load deployments'));
     } finally {
       setLoading(false);
     }
@@ -382,7 +383,7 @@ export default function DeploymentsPage() {
       setForm(EMPTY_FORM);
       fetchDeployments();
     } catch (err: any) {
-      setFormError(err?.response?.data?.error || 'Failed to save deployment');
+      setFormError(errorMessage(err, 'Failed to save deployment'));
     } finally {
       setSubmitting(false);
     }
@@ -397,7 +398,7 @@ export default function DeploymentsPage() {
     } catch (err: any) {
       setToast({
         type: 'error',
-        message: err?.response?.data?.error || 'Failed to trigger deployment',
+        message: errorMessage(err, 'Failed to trigger deployment'),
       });
     } finally {
       setDeployingId(null);
@@ -416,7 +417,7 @@ export default function DeploymentsPage() {
     } catch (err: any) {
       setToast({
         type: 'error',
-        message: err?.response?.data?.error || 'Failed to delete deployment',
+        message: errorMessage(err, 'Failed to delete deployment'),
       });
     } finally {
       setDeleting(false);
@@ -443,7 +444,7 @@ export default function DeploymentsPage() {
       setLogsTotal(0);
       setToast({
         type: 'error',
-        message: err?.response?.data?.error || 'Failed to load deployment logs',
+        message: errorMessage(err, 'Failed to load deployment logs'),
       });
     } finally {
       setLogsLoading(false);
@@ -460,7 +461,7 @@ export default function DeploymentsPage() {
     } catch (err: any) {
       setToast({
         type: 'error',
-        message: err?.response?.data?.error || 'Failed to clear logs',
+        message: errorMessage(err, 'Failed to clear logs'),
       });
     }
   };

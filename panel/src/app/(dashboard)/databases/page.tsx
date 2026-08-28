@@ -29,19 +29,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { api, databaseApi } from '@/services/api';
+import { api, databaseApi, serverApi, unwrapList } from '@/services/api';
+import ServerScopeField, {
+  SERVER_SCOPE_COPY_EN,
+} from '@/components/servers/ServerScopeField';
+import { defaultServerId, isLocalNode, serverLabel } from '@/lib/servers';
+import type { ManagedServer } from '@/types/server';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface InfrastructureServer {
-  id: string;
-  name: string;
-  hostname: string;
-  ip_address: string;
-  status: string;
-}
 
 interface DBServer {
   id: string;
@@ -147,6 +144,17 @@ const TH_CLASS =
 const TABS_TRIGGER_CLASS =
   'text-gray-600 data-[state=active]:bg-brand-50 data-[state=active]:text-brand-700 data-[state=active]:shadow-none focus-visible:ring-brand-500';
 
+/**
+ * How a database server reads in a picker: the engine, the node it runs on, and
+ * its port.
+ */
+function dbServerOptionLabel(
+  server: DBServer,
+  infraName: (serverId: string) => string
+): string {
+  return `${(server.type || '').toUpperCase()} – ${infraName(server.server_id)} (${server.port})`;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -155,7 +163,7 @@ export default function DatabasesPage() {
   // Data
   const [servers, setServers] = useState<DBServer[]>([]);
   const [databases, setDatabases] = useState<DBEntry[]>([]);
-  const [infraServers, setInfraServers] = useState<InfrastructureServer[]>([]);
+  const [infraServers, setInfraServers] = useState<ManagedServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -203,11 +211,13 @@ export default function DatabasesPage() {
       const [serversRes, databasesRes, infraRes] = await Promise.all([
         api.get('/api/v1/databases/servers'),
         databaseApi.list(),
-        api.get('/api/v1/servers'),
+        serverApi.list({ page: 1, per_page: 200 }),
       ]);
-      setServers(Array.isArray(serversRes?.data?.data) ? serversRes.data.data : []);
-      setDatabases(Array.isArray(databasesRes?.data?.data) ? databasesRes.data.data : []);
-      setInfraServers(Array.isArray(infraRes?.data?.data) ? infraRes.data.data : []);
+      setServers(unwrapList<DBServer>(serversRes));
+      setDatabases(unwrapList<DBEntry>(databasesRes));
+      // GET /api/v1/servers is paginated: read it through unwrapList or the
+      // machine the panel runs on never reaches the picker below.
+      setInfraServers(unwrapList<ManagedServer>(infraRes));
     } catch (err: any) {
       console.error('Failed to load database data:', err);
       setServers([]);
@@ -236,7 +246,7 @@ export default function DatabasesPage() {
 
   const safeServers: DBServer[] = Array.isArray(servers) ? servers : [];
   const safeDatabases: DBEntry[] = Array.isArray(databases) ? databases : [];
-  const safeInfraServers: InfrastructureServer[] = Array.isArray(infraServers)
+  const safeInfraServers: ManagedServer[] = Array.isArray(infraServers)
     ? infraServers
     : [];
 
@@ -249,10 +259,17 @@ export default function DatabasesPage() {
     created_at: db?.created_at,
   }));
 
+  /** Database servers a new database can actually be created on. */
+  const activeDBServers = safeServers.filter((s) => s?.status === 'active');
+
+  /** The machine this panel runs on, when it is among the managed nodes. */
+  const localInfraNode = safeInfraServers.find((s) => isLocalNode(s)) || null;
+
   const getInfraServerName = (serverId: string) => {
     if (!serverId) return '—';
     const server = safeInfraServers.find((s) => s?.id === serverId);
-    return server?.name || String(serverId).slice(0, 8) + '…';
+    // Nodes have no display name - the hostname is the name. See lib/servers.
+    return server ? serverLabel(server) : String(serverId).slice(0, 8) + '…';
   };
 
   const getServerDisplayName = (dbServerId: string) => {
@@ -260,7 +277,9 @@ export default function DatabasesPage() {
     const dbServer = safeServers.find((s) => s?.id === dbServerId);
     if (!dbServer) return String(dbServerId).slice(0, 8) + '…';
     const infra = safeInfraServers.find((s) => s?.id === dbServer.server_id);
-    return infra?.name || (dbServer.type || 'db') + ' (' + String(dbServerId).slice(0, 8) + ')';
+    return infra
+      ? serverLabel(infra)
+      : (dbServer.type || 'db') + ' (' + String(dbServerId).slice(0, 8) + ')';
   };
 
   const formatBytes = (bytes: number) => {
@@ -692,7 +711,12 @@ export default function DatabasesPage() {
                 </div>
                 <Button
                   onClick={() => {
-                    setServerForm(EMPTY_SERVER_FORM);
+                    // The node is answered before the dialog opens: on a
+                    // single-node panel it is the machine the panel runs on.
+                    setServerForm({
+                      ...EMPTY_SERVER_FORM,
+                      server_id: defaultServerId(safeInfraServers),
+                    });
                     setFormError(null);
                     setShowServerForm(true);
                   }}
@@ -710,10 +734,23 @@ export default function DatabasesPage() {
                   <h3 className="mt-3 text-sm font-semibold text-gray-900">
                     No database servers
                   </h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    {serverSearch
-                      ? 'No servers match your search'
-                      : 'Add your first database server to get started'}
+                  {/*
+                    A fresh install has a node - the machine the panel runs on -
+                    so the useful thing to say is that MySQL or PostgreSQL can
+                    be registered on it right here, not that the list is empty.
+                  */}
+                  <p className="mx-auto mt-1 max-w-lg text-sm text-gray-600">
+                    {serverSearch ? (
+                      'No servers match your search'
+                    ) : localInfraNode ? (
+                      <>
+                        Register the MySQL or PostgreSQL running on{' '}
+                        <span className="font-mono">{serverLabel(localInfraNode)}</span>, the
+                        machine this panel runs on, and your websites can start using it.
+                      </>
+                    ) : (
+                      'Register the database engine running on one of your machines to get started.'
+                    )}
                   </p>
                 </div>
               ) : (
@@ -744,8 +781,16 @@ export default function DatabasesPage() {
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
                                 {getDbTypeIcon(server.type)}
-                                <span className="text-sm font-medium text-gray-900">
-                                  {infra?.name || 'Unknown'}
+                                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-900">
+                                  {infra ? serverLabel(infra) : 'Unknown'}
+                                  {isLocalNode(infra) && (
+                                    <span
+                                      title="The machine this panel runs on."
+                                      className="rounded-md border border-brand-200 bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700"
+                                    >
+                                      Panel host
+                                    </span>
+                                  )}
                                 </span>
                               </div>
                             </td>
@@ -775,11 +820,11 @@ export default function DatabasesPage() {
                                   openDeleteConfirm(
                                     'server',
                                     server.id,
-                                    infra?.name || server.type,
+                                    infra ? serverLabel(infra) : server.type,
                                   )
                                 }
                                 className={DANGER_ICON_BUTTON_CLASS}
-                                aria-label={`Delete server ${infra?.name || server.type}`}
+                                aria-label={`Delete server ${infra ? serverLabel(infra) : server.type}`}
                                 title="Delete server"
                               >
                                 <Trash2 size={16} />
@@ -819,7 +864,13 @@ export default function DatabasesPage() {
                 </div>
                 <Button
                   onClick={() => {
-                    setDatabaseForm(EMPTY_DATABASE_FORM);
+                    // One active database server means one answer; the picker
+                    // in the dialog only appears when there is a choice.
+                    const active = safeServers.filter((srv) => srv?.status === 'active');
+                    setDatabaseForm({
+                      ...EMPTY_DATABASE_FORM,
+                      database_server_id: active.length === 1 ? active[0].id : '',
+                    });
                     setFormError(null);
                     setShowDatabaseForm(true);
                   }}
@@ -1084,35 +1135,14 @@ export default function DatabasesPage() {
                   {formError}
                 </div>
               )}
-              <div>
-                <label
-                  htmlFor="server-infra"
-                  className="mb-1.5 block text-sm font-medium text-gray-700"
-                >
-                  Infrastructure Server <span className="text-red-600">*</span>
-                </label>
-                <Select
-                  value={serverForm.server_id}
-                  onValueChange={(v) =>
-                    setServerForm((prev) => ({ ...prev, server_id: v }))
-                  }
-                >
-                  <SelectTrigger
-                    id="server-infra"
-                    aria-label="Infrastructure server"
-                    className={SELECT_TRIGGER_CLASS}
-                  >
-                    <SelectValue placeholder="Select a server" />
-                  </SelectTrigger>
-                  <SelectContent className="border-gray-200 bg-white">
-                    {safeInfraServers.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name} ({s.ip_address || s.hostname})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* One node means one answer; the picker appears only with a real choice. */}
+              <ServerScopeField
+                id="server-infra"
+                servers={safeInfraServers}
+                value={serverForm.server_id}
+                onChange={(id) => setServerForm((prev) => ({ ...prev, server_id: id }))}
+                copy={SERVER_SCOPE_COPY_EN}
+              />
               <div>
                 <label
                   htmlFor="server-type"
@@ -1256,33 +1286,46 @@ export default function DatabasesPage() {
                 >
                   Database Server <span className="text-red-600">*</span>
                 </label>
-                <Select
-                  value={databaseForm.database_server_id}
-                  onValueChange={(v) =>
-                    setDatabaseForm((prev) => ({
-                      ...prev,
-                      database_server_id: v,
-                    }))
-                  }
-                >
-                  <SelectTrigger
-                    id="db-server"
-                    aria-label="Database server"
-                    className={SELECT_TRIGGER_CLASS}
+                {/*
+                  With one database engine running there is nothing to choose:
+                  the field states where the database will be created instead of
+                  making the operator answer a question with one answer.
+                */}
+                {activeDBServers.length === 1 ? (
+                  <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {dbServerOptionLabel(activeDBServers[0], getInfraServerName)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      The only database server running, so the database is created there.
+                    </p>
+                  </div>
+                ) : (
+                  <Select
+                    value={databaseForm.database_server_id}
+                    onValueChange={(v) =>
+                      setDatabaseForm((prev) => ({
+                        ...prev,
+                        database_server_id: v,
+                      }))
+                    }
                   >
-                    <SelectValue placeholder="Select a database server" />
-                  </SelectTrigger>
-                  <SelectContent className="border-gray-200 bg-white">
-                    {safeServers
-                      .filter((s) => s?.status === 'active')
-                      .map((s) => (
+                    <SelectTrigger
+                      id="db-server"
+                      aria-label="Database server"
+                      className={SELECT_TRIGGER_CLASS}
+                    >
+                      <SelectValue placeholder="Select a database server" />
+                    </SelectTrigger>
+                    <SelectContent className="border-gray-200 bg-white">
+                      {activeDBServers.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
-                          {(s.type || '').toUpperCase()} –{' '}
-                          {getInfraServerName(s.server_id)} ({s.port})
+                          {dbServerOptionLabel(s, getInfraServerName)}
                         </SelectItem>
                       ))}
-                  </SelectContent>
-                </Select>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div>
                 <label

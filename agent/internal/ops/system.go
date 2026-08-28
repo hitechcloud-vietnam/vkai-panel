@@ -1,218 +1,136 @@
 package ops
 
-// Host facts and resource usage.
+// The host reports, as the panel asks for them.
 //
-// These read /proc directly wherever /proc has the answer, rather than shelling
-// out to cat and parsing its output. Fewer processes, no argument ever reaching
-// a shell, and a failure to read one file does not lose the whole report.
+// The collection itself lives in internal/metrics. What this file adds is the
+// wire shape: a flat set of fields the panel has been decoding since before any
+// of this existed, alongside the full sample underneath it.
+//
+// The flat fields are kept because a panel and an agent are upgraded at
+// different times, on different machines, by different people, and an agent
+// that stops answering the question the running panel knows how to ask is an
+// agent that has taken a server off the dashboard. They differ from the old
+// ones in one way that matters: every one of them is a pointer, so a metric
+// that could not be collected is absent from the JSON rather than present as
+// zero. A panel decoding an absent field gets the zero it would have got
+// before; a panel that looks at "unavailable" first can tell the difference
+// between a machine at rest and a machine it cannot see.
 
 import (
 	"context"
-	"os"
-	"runtime"
-	"strconv"
-	"strings"
+
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/metrics"
 )
 
 // SystemInfo is the static picture of a host.
 type SystemInfo struct {
-	Hostname  string  `json:"hostname"`
-	OS        string  `json:"os"`
-	OSPretty  string  `json:"os_pretty,omitempty"`
-	Kernel    string  `json:"kernel"`
-	Arch      string  `json:"arch"`
-	CPUCores  int     `json:"cpu_cores"`
-	RAMTotal  int64   `json:"ram_total"`
-	DiskTotal int64   `json:"disk_total"`
-	Uptime    int64   `json:"uptime"`
-	Load1     float64 `json:"load1"`
-	Load5     float64 `json:"load5"`
-	Load15    float64 `json:"load15"`
+	// The flat fields the panel already decodes.
+	Hostname  string   `json:"hostname"`
+	OS        string   `json:"os"`
+	OSPretty  string   `json:"os_pretty,omitempty"`
+	Kernel    string   `json:"kernel,omitempty"`
+	Arch      string   `json:"arch"`
+	CPUCores  int      `json:"cpu_cores"`
+	RAMTotal  *int64   `json:"ram_total,omitempty"`
+	DiskTotal *int64   `json:"disk_total,omitempty"`
+	Uptime    *int64   `json:"uptime,omitempty"`
+	Load1     *float64 `json:"load1,omitempty"`
+	Load5     *float64 `json:"load5,omitempty"`
+	Load15    *float64 `json:"load15,omitempty"`
+
+	// Host carries everything the flat fields cannot: the distribution's own
+	// identifiers, the processor model, whether this is a guest.
+	Host metrics.Host `json:"host"`
+
+	// Unavailable names the metric groups that could not be read. It is empty
+	// on a healthy host, and it is the field to look at before believing any
+	// absent number above.
+	Unavailable []string `json:"unavailable,omitempty"`
 }
 
 // Metrics is the moving picture.
 type Metrics struct {
-	CPUPercent float64 `json:"cpu_percent"`
-	RAMUsed    int64   `json:"ram_used"`
-	RAMTotal   int64   `json:"ram_total"`
-	DiskUsed   int64   `json:"disk_used"`
-	DiskTotal  int64   `json:"disk_total"`
-	NetIn      int64   `json:"net_in"`
-	NetOut     int64   `json:"net_out"`
+	// The flat fields the panel already decodes. CPUPercent is now a measured
+	// percentage: the difference between two readings of /proc/stat, rather
+	// than the one minute load average divided by the core count, which is a
+	// different quantity that was being reported under this name.
+	CPUPercent *float64 `json:"cpu_percent,omitempty"`
+	RAMUsed    *int64   `json:"ram_used,omitempty"`
+	RAMTotal   *int64   `json:"ram_total,omitempty"`
+	DiskUsed   *int64   `json:"disk_used,omitempty"`
+	DiskTotal  *int64   `json:"disk_total,omitempty"`
+	NetIn      *int64   `json:"net_in,omitempty"`
+	NetOut     *int64   `json:"net_out,omitempty"`
+
+	// Sample is the full reading: per-mount disk, per-core CPU, per-interface
+	// network, swap, inodes, and the availability of each group.
+	Sample metrics.Sample `json:"sample"`
+
+	// Unavailable names the metric groups that could not be read.
+	Unavailable []string `json:"unavailable,omitempty"`
 }
 
-// CollectSystemInfo gathers the static facts. Anything unreadable is left at
-// its zero value rather than failing the call: a partial report is more useful
-// to an operator than no report.
-func CollectSystemInfo(ctx context.Context, run CommandRunner) SystemInfo {
-	if run == nil {
-		run = defaultRunner
+// CollectSystemInfo gathers the static facts, using the given collector. A nil
+// collector reads the real host.
+func CollectSystemInfo(ctx context.Context, collector *metrics.Collector) SystemInfo {
+	if collector == nil {
+		collector = metrics.NewCollector()
 	}
-	info := SystemInfo{
-		OS:       runtime.GOOS,
-		Arch:     runtime.GOARCH,
-		CPUCores: runtime.NumCPU(),
-	}
-	info.Hostname, _ = os.Hostname()
-	info.OSPretty = osPrettyName()
+	return SystemInfoFrom(collector.CollectHost(), collector.Sample(ctx))
+}
 
-	if out, err := run(ctx, "uname", "-r"); err == nil {
-		info.Kernel = strings.TrimSpace(string(out))
+// SystemInfoFrom projects a host description and one sample onto the wire
+// shape. It is separate from collection so the periodic report can build both
+// the static and the moving picture from a single sample. Taking a second
+// sample for the static half would be worse than wasteful: two readings of
+// /proc/stat taken microseconds apart have no elapsed CPU time between them,
+// and the CPU group of the second one would correctly report that it cannot
+// measure anything.
+func SystemInfoFrom(host metrics.Host, sample metrics.Sample) SystemInfo {
+	info := SystemInfo{
+		Hostname:    host.Hostname,
+		OS:          host.OS,
+		OSPretty:    host.OSPretty,
+		Kernel:      host.Kernel,
+		Arch:        host.Architecture,
+		CPUCores:    host.CPUCores,
+		Host:        host,
+		Unavailable: sample.Unavailable(),
 	}
-	memTotal, _ := readMemInfo()
-	info.RAMTotal = memTotal
-	info.DiskTotal, _ = readDisk(ctx, run)
-	info.Uptime = readUptime()
-	info.Load1, info.Load5, info.Load15 = readLoadAverage()
+	info.RAMTotal = sample.Memory.TotalBytes
+	info.Uptime = sample.Uptime.Seconds
+	info.Load1, info.Load5, info.Load15 = sample.Load.One, sample.Load.Five, sample.Load.Fifteen
+	if root, found := sample.Disks.Root(); found {
+		info.DiskTotal = root.TotalBytes
+	}
 	return info
 }
 
 // CollectMetrics gathers current usage.
-func CollectMetrics(ctx context.Context, run CommandRunner) Metrics {
-	if run == nil {
-		run = defaultRunner
+func CollectMetrics(ctx context.Context, collector *metrics.Collector) Metrics {
+	if collector == nil {
+		collector = metrics.NewCollector()
 	}
-	var m Metrics
-	total, available := readMemInfo()
-	m.RAMTotal = total
-	if total > 0 && available > 0 && available <= total {
-		m.RAMUsed = total - available
+	return FromSample(collector.Sample(ctx))
+}
+
+// FromSample projects a sample onto the wire shape. It is separate from
+// collection so the periodic report can send one sample without taking a
+// second one for the flat view.
+func FromSample(sample metrics.Sample) Metrics {
+	m := Metrics{Sample: sample, Unavailable: sample.Unavailable()}
+	m.CPUPercent = sample.CPU.UsagePercent
+	m.RAMUsed = sample.Memory.UsedBytes
+	m.RAMTotal = sample.Memory.TotalBytes
+	m.NetIn = sample.Network.BytesIn
+	m.NetOut = sample.Network.BytesOut
+	// The flat disk figures describe the root filesystem, which is what they
+	// have always described. Everything mounted elsewhere - and on a host that
+	// keeps sites on a data volume that is everything that matters - is in
+	// Sample.Disks.Mounts.
+	if root, found := sample.Disks.Root(); found {
+		m.DiskTotal = root.TotalBytes
+		m.DiskUsed = root.UsedBytes
 	}
-	m.DiskTotal, m.DiskUsed = readDisk(ctx, run)
-	m.NetIn, m.NetOut = readNetwork()
-	m.CPUPercent = cpuPercentFromLoad()
 	return m
-}
-
-func osPrettyName() string {
-	data, err := os.ReadFile("/etc/os-release")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if value, ok := strings.CutPrefix(line, "PRETTY_NAME="); ok {
-			return strings.Trim(strings.TrimSpace(value), `"`)
-		}
-	}
-	return ""
-}
-
-// readMemInfo returns total and available memory in bytes.
-func readMemInfo() (total, available int64) {
-	data, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 0, 0
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		value, convErr := strconv.ParseInt(fields[1], 10, 64)
-		if convErr != nil {
-			continue
-		}
-		switch fields[0] {
-		case "MemTotal:":
-			total = value * 1024
-		case "MemAvailable:":
-			available = value * 1024
-		}
-	}
-	return total, available
-}
-
-// readDisk returns the total and used bytes of the root filesystem. df is used
-// rather than statfs because the agent must build without cgo and without
-// golang.org/x/sys, which is where the syscall wrapper lives.
-func readDisk(ctx context.Context, run CommandRunner) (total, used int64) {
-	out, err := run(ctx, "df", "-B1", "--output=size,used", "/")
-	if err != nil {
-		return 0, 0
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) < 2 {
-		return 0, 0
-	}
-	fields := strings.Fields(lines[len(lines)-1])
-	if len(fields) < 2 {
-		return 0, 0
-	}
-	total, _ = strconv.ParseInt(fields[0], 10, 64)
-	used, _ = strconv.ParseInt(fields[1], 10, 64)
-	return total, used
-}
-
-func readUptime() int64 {
-	data, err := os.ReadFile("/proc/uptime")
-	if err != nil {
-		return 0
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) == 0 {
-		return 0
-	}
-	seconds, err := strconv.ParseFloat(fields[0], 64)
-	if err != nil {
-		return 0
-	}
-	return int64(seconds)
-}
-
-func readLoadAverage() (one, five, fifteen float64) {
-	data, err := os.ReadFile("/proc/loadavg")
-	if err != nil {
-		return 0, 0, 0
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) < 3 {
-		return 0, 0, 0
-	}
-	one, _ = strconv.ParseFloat(fields[0], 64)
-	five, _ = strconv.ParseFloat(fields[1], 64)
-	fifteen, _ = strconv.ParseFloat(fields[2], 64)
-	return one, five, fifteen
-}
-
-// readNetwork sums the bytes in and out across every interface except loopback.
-func readNetwork() (in, out int64) {
-	data, err := os.ReadFile("/proc/net/dev")
-	if err != nil {
-		return 0, 0
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		name, rest, found := strings.Cut(line, ":")
-		if !found {
-			continue
-		}
-		if strings.TrimSpace(name) == "lo" {
-			continue
-		}
-		fields := strings.Fields(rest)
-		if len(fields) < 9 {
-			continue
-		}
-		received, _ := strconv.ParseInt(fields[0], 10, 64)
-		transmitted, _ := strconv.ParseInt(fields[8], 10, 64)
-		in += received
-		out += transmitted
-	}
-	return in, out
-}
-
-// cpuPercentFromLoad turns the one minute load average into a percentage of the
-// machine's cores. It is an approximation and is labelled as one: a real
-// percentage needs two samples of /proc/stat separated in time, which is the
-// panel's job to ask for twice, not the agent's job to block on.
-func cpuPercentFromLoad() float64 {
-	one, _, _ := readLoadAverage()
-	cores := float64(runtime.NumCPU())
-	if cores <= 0 {
-		return 0
-	}
-	percent := one / cores * 100
-	if percent > 100 {
-		return 100
-	}
-	return percent
 }

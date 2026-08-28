@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/metrics"
 )
 
 // fakeRunner records what was executed instead of touching systemd.
@@ -155,5 +160,100 @@ func TestPKISyncPassesTheDenyListOn(t *testing.T) {
 	}
 	if len(received) != 2 {
 		t.Fatalf("pki.sync passed on %v, want two serials", received)
+	}
+}
+
+// ============================================================
+// METRICS THROUGH THE OPERATION SURFACE
+// ============================================================
+
+// A dashboard showing 0% CPU because collection failed is worse than one
+// showing a gap: nobody investigates a quiet machine. The panel must be able to
+// tell the two apart from the operation's result alone.
+func TestSystemMetricsReportsAnUncollectableHostAsUnavailableAndNotAsZero(t *testing.T) {
+	// A /proc that is not there. Every group fails to collect.
+	broken := &metrics.Collector{
+		ProcRoot:    filepath.Join(t.TempDir(), "no-proc"),
+		CPUInterval: time.Millisecond,
+	}
+	registry := New(Deps{
+		Run:           (&fakeRunner{}).run,
+		Logger:        log.New(io.Discard, "", 0),
+		Collector:     broken,
+		ApplyDenyList: func([]string) {},
+		Info:          func() AgentInfo { return AgentInfo{} },
+	})
+
+	result, err := registry.Dispatch(context.Background(), "system.metrics", nil)
+	if err != nil {
+		t.Fatalf("system.metrics failed outright instead of degrading: %v", err)
+	}
+	reported := result.(Metrics)
+
+	if len(reported.Unavailable) == 0 {
+		t.Fatal("a host whose /proc cannot be read reported no unavailable metrics")
+	}
+	if reported.CPUPercent != nil {
+		t.Fatalf("an uncollectable CPU was reported as %.2f%%", *reported.CPUPercent)
+	}
+	if reported.RAMTotal != nil || reported.RAMUsed != nil || reported.DiskTotal != nil {
+		t.Fatalf("uncollectable metrics were reported as numbers: %+v", reported)
+	}
+
+	// What the panel actually receives.
+	encoded, err := json.Marshal(reported)
+	if err != nil {
+		t.Fatalf("cannot encode the result: %v", err)
+	}
+	for _, forbidden := range []string{`"cpu_percent"`, `"ram_used"`, `"disk_used"`} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("the encoded result carries %s for a metric that was never collected: %s",
+				forbidden, encoded)
+		}
+	}
+	if !strings.Contains(string(encoded), `"unavailable"`) {
+		t.Fatalf("the encoded result does not name what could not be collected: %s", encoded)
+	}
+}
+
+// The named operations the panel drives a node with. This is the list, and it
+// is asserted rather than described so that removing one is a test failure
+// rather than a silent capability loss.
+func TestTheOperationSurfaceIsExactlyTheNamedOperations(t *testing.T) {
+	registry, _ := newRegistry(t, false)
+	want := []string{
+		"agent.info",
+		"disk.usage",
+		"log.list",
+		"log.read",
+		"pki.sync",
+		"service.control",
+		"service.list",
+		"service.status",
+		"system.info",
+		"system.metrics",
+	}
+	got := registry.Names()
+	if len(got) != len(want) {
+		t.Fatalf("the agent offers %v, want %v", got, want)
+	}
+	for idx := range want {
+		if got[idx] != want[idx] {
+			t.Fatalf("the agent offers %v, want %v", got, want)
+		}
+	}
+}
+
+// Every operation must refuse an argument object it does not understand, so a
+// panel talking to the wrong agent version is told rather than having an
+// argument silently ignored.
+func TestEveryOperationRefusesAnArgumentItDoesNotImplement(t *testing.T) {
+	registry, _ := newRegistry(t, false)
+	for _, name := range registry.Names() {
+		_, err := registry.Dispatch(context.Background(), name,
+			json.RawMessage(`{"definitely_not_an_argument":true}`))
+		if !errors.Is(err, ErrInvalidArgument) {
+			t.Fatalf("%s accepted an argument it does not implement (error was %v)", name, err)
+		}
 	}
 }

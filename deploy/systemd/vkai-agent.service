@@ -3,8 +3,13 @@
 # Installed as: /etc/systemd/system/vkai-agent.service
 #
 # The agent collects system metrics and performs host level operations, which is
-# why it runs as root. It is OPTIONAL: enable it with
-# "systemctl enable --now vkai-agent".
+# why it runs as root.
+#
+# On the machine the panel is installed on this unit is NOT optional: it is what
+# makes that machine a managed node rather than an entry in a table. The
+# installer enables and starts it through "vkai node register", which also mints
+# the single-use token it enrols with. On any OTHER machine it is enabled by the
+# operator after pasting an enrolment token minted in the panel.
 #
 # A native Go binary, NOT a container. Every path goes through the symlink
 # /vkai-panel/current -> running release.
@@ -29,6 +34,13 @@ StandardError=journal
 SyslogIdentifier=vkai-agent
 
 EnvironmentFile=/vkai-panel/etc/.env
+# The node's own settings: which panel to talk to, where its identity lives and,
+# for the few seconds between minting and spending, the enrolment token. It is a
+# SEPARATE file because the installer rewrites .env wholesale on every run and
+# this must survive that. Written by "vkai node register". The leading "-" keeps
+# the agent startable on a machine that has not been registered yet, where the
+# only thing it can do is say so.
+EnvironmentFile=-/vkai-panel/etc/agent.env
 
 # --- Hardening ---------------------------------------------------------------
 # The agent reads /proc and /sys to report resource usage, but must not write
@@ -46,7 +58,13 @@ ReadWritePaths=/vkai-panel/www
 # enrolment and rewritten on every rotation, so it must be writable, and it
 # lives outside /vkai-panel/current so an upgrade does not take the identity
 # with it. Override with VKAI_AGENT_STATE_DIR.
-ReadWritePaths=/vkai-panel/ssl/agent
+#
+# The "-" matters: systemd refuses to start a unit whose ReadWritePaths names a
+# path that does not exist, and this directory is created at registration time.
+# Without it a machine that has never been registered cannot even start the
+# agent to be told why. "vkai node register" creates the directory before it
+# starts the unit, so the writable mount is there when it is needed.
+ReadWritePaths=-/vkai-panel/ssl/agent
 
 LimitNOFILE=65536
 

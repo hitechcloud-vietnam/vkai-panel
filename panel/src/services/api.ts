@@ -1,5 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 
+import type { CreateWebsiteRequest, IssueLetsEncryptRequest } from '@/types/server';
+
 // Base URL an toan: mac dinh dung same-origin ('') de request di qua nginx/rewrites.
 // Neu co NEXT_PUBLIC_API_URL thi bo dau '/' thua o cuoi de tranh '//api/v1'.
 const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -72,11 +74,30 @@ export function unwrap<T = any>(res: any, fallback: T | null = null): T | null {
 }
 
 /**
- * Lay danh sach an toan: Go serialize nil slice thanh null nen luon ep ve mang.
+ * Read a list out of a response, whatever envelope it arrived in.
+ *
+ * Two shapes are in use and both are correct. A handler that calls
+ * utils.Success returns the slice directly under `data`; one that calls
+ * utils.Paginated returns `data: { items, total, page, per_page, total_pages }`.
+ * GET /api/v1/servers and GET /api/v1/websites are paginated, so a caller that
+ * only understood the first shape saw an empty list no matter how many rows the
+ * database held.
+ *
+ * Go serialises a nil slice as null, so the result is always an array.
  */
 export function unwrapList<T = any>(res: any): T[] {
   const value = unwrap<any>(res, null);
-  return Array.isArray(value) ? (value as T[]) : [];
+  if (Array.isArray(value)) return value as T[];
+  const items = (value as Record<string, unknown> | null)?.items;
+  return Array.isArray(items) ? (items as T[]) : [];
+}
+
+/** Total row count from a paginated response, or the length of a plain list. */
+export function unwrapTotal(res: any): number | null {
+  const value = unwrap<any>(res, null);
+  if (Array.isArray(value)) return value.length;
+  const total = (value as Record<string, unknown> | null)?.total;
+  return typeof total === 'number' && Number.isFinite(total) ? total : null;
 }
 
 // Request interceptor to add auth token
@@ -173,20 +194,33 @@ export const authApi = {
 };
 
 // Server API
+//
+// `list` is paginated: read it through unwrapList, never response.data.data.
+// A panel that manages only its own host still has one row here - the installer
+// registers the machine it installed on - so this endpoint is the single source
+// for "which machines does this panel drive".
 export const serverApi = {
-  list: () => api.get('/api/v1/servers'),
+  list: (params?: { page?: number; per_page?: number }) =>
+    api.get('/api/v1/servers', { params }),
   get: (id: string) => api.get(`/api/v1/servers/${id}`),
   create: (data: any) => api.post('/api/v1/servers', data),
   update: (id: string, data: any) => api.put(`/api/v1/servers/${id}`, data),
   delete: (id: string) => api.delete(`/api/v1/servers/${id}`),
+  /** Latest sample for one node. 404 while no agent has reported yet. */
+  metrics: (id: string) => api.get(`/api/v1/servers/${id}/metrics`),
   heartbeat: (id: string) => api.post(`/api/v1/servers/${id}/heartbeat`),
 };
 
 // Website API
+//
+// `list` is paginated - see serverApi.list. `create` needs a server_id: a
+// website always lands on a node, and on a single-node panel that node is the
+// panel host, chosen for the operator rather than asked about.
 export const websiteApi = {
-  list: () => api.get('/api/v1/websites'),
+  list: (params?: { page?: number; per_page?: number }) =>
+    api.get('/api/v1/websites', { params }),
   get: (id: string) => api.get(`/api/v1/websites/${id}`),
-  create: (data: any) => api.post('/api/v1/websites', data),
+  create: (data: CreateWebsiteRequest) => api.post('/api/v1/websites', data),
   update: (id: string, data: any) => api.put(`/api/v1/websites/${id}`, data),
   delete: (id: string) => api.delete(`/api/v1/websites/${id}`),
 };
@@ -200,10 +234,23 @@ export const databaseApi = {
 };
 
 // SSL API
+//
+// There is no generic POST /api/v1/ssl: a certificate is either issued by Let's
+// Encrypt or uploaded, and the two take different bodies.
 export const sslApi = {
   list: () => api.get('/api/v1/ssl'),
   get: (id: string) => api.get(`/api/v1/ssl/${id}`),
-  create: (data: any) => api.post('/api/v1/ssl', data),
+  expiring: () => api.get('/api/v1/ssl/expiring'),
+  issueLetsEncrypt: (data: IssueLetsEncryptRequest) =>
+    api.post('/api/v1/ssl/letsencrypt', data),
+  uploadCustom: (data: {
+    domain: string;
+    certificate: string;
+    private_key: string;
+    chain_cert?: string;
+    server_id?: string;
+  }) => api.post('/api/v1/ssl/custom', data),
+  renewAll: () => api.post('/api/v1/ssl/renew'),
   delete: (id: string) => api.delete(`/api/v1/ssl/${id}`),
 };
 

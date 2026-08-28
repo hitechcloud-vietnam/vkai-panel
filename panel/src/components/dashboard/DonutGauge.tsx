@@ -29,6 +29,12 @@ export interface DonutGaugeProps {
   detail?: string;
   /** Duong kinh vong, mac dinh 120px. */
   size?: number;
+  /**
+   * Why there is no reading. Used only when `value` is null: it becomes the
+   * dial's accessible name, its tooltip and the line under the label, so an
+   * empty dial never reads as an idle machine.
+   */
+  unavailableReason?: string;
 }
 
 /** Ep gia tri ve khoang 0-100, tra null khi khong phai so hop le. */
@@ -48,7 +54,13 @@ export function gaugeColor(value: number | null | undefined): string {
   return GOOD_COLOR;
 }
 
-export default function DonutGauge({ value, label, detail, size = 120 }: DonutGaugeProps) {
+export default function DonutGauge({
+  value,
+  label,
+  detail,
+  size = 120,
+  unavailableReason,
+}: DonutGaugeProps) {
   const percent = clampPercent(value);
   const stroke = Math.max(8, Math.round(size / 12));
   const radius = Math.max(1, (size - stroke) / 2);
@@ -59,8 +71,10 @@ export default function DonutGauge({ value, label, detail, size = 120 }: DonutGa
   const centerText = percent === null ? '—' : `${Math.round(percent)}%`;
   const ariaLabel =
     percent === null
-      ? `${label}: chưa có dữ liệu`
+      ? `${label}: ${unavailableReason || 'chưa có dữ liệu'}`
       : `${label}: ${Math.round(percent)} phần trăm${detail ? `, ${detail}` : ''}`;
+  const detailText =
+    percent === null ? detail || (unavailableReason ? 'Chưa có dữ liệu' : '') : detail;
 
   return (
     <div className="flex min-w-0 flex-col items-center text-center">
@@ -72,6 +86,7 @@ export default function DonutGauge({ value, label, detail, size = 120 }: DonutGa
         aria-label={ariaLabel}
         className="shrink-0"
       >
+        {percent === null && unavailableReason && <title>{unavailableReason}</title>}
         <circle
           cx={center}
           cy={center}
@@ -108,7 +123,16 @@ export default function DonutGauge({ value, label, detail, size = 120 }: DonutGa
         </text>
       </svg>
       <p className="mt-3 truncate text-sm font-medium text-gray-900">{label}</p>
-      <p className="mt-0.5 text-xs text-gray-500">{detail || '—'}</p>
+      <p
+        className={
+          percent === null && unavailableReason
+            ? 'mt-0.5 cursor-help text-xs text-gray-500 underline decoration-dotted underline-offset-2'
+            : 'mt-0.5 text-xs text-gray-500'
+        }
+        title={percent === null ? unavailableReason : undefined}
+      >
+        {detailText || '—'}
+      </p>
     </div>
   );
 }

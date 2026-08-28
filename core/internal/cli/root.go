@@ -9,7 +9,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "vkai",
-	Short: "VKAI Panel - cong cu quan tri may chu (HiTechCloud)",
+	Short: "VKAI Panel - server administration tool (HiTechCloud)",
 	Long: `VKAI Panel CLI is the command-line interface for a VKAI Panel server by HiTechCloud.
 It provides commands for user management, server configuration, database operations,
 service management, and more.
@@ -18,6 +18,8 @@ Examples:
   vkai user list                    List all users
   vkai user create --username admin Create a new user
   vkai server status                Show server status
+  vkai node register                Register this machine as a managed node
+  vkai node list                    List the machines this panel manages
   vkai service restart nginx        Restart nginx service
   vkai db backup                    Backup all databases
   vkai ssl request example.com      Request SSL certificate
@@ -40,6 +42,7 @@ func init() {
 	// Add all subcommands
 	rootCmd.AddCommand(userCmd)
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(nodeCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(dbCmd)
 	rootCmd.AddCommand(serviceCmd)

@@ -30,6 +30,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/audit"
+	"github.com/hitechcloud-vietnam/vkai-panel/agent/internal/metrics"
 )
 
 // Response is the envelope every operation returns. It is deliberately explicit
@@ -82,13 +85,31 @@ type Deps struct {
 	ApplyDenyList func([]string)
 	AllowRawExec  bool
 	Logger        *log.Logger
+
+	// Collector reads the host. Sharing one collector between the periodic
+	// report and the panel's on-demand system.metrics call is what lets a CPU
+	// percentage be measured against the previous sample instead of against a
+	// sub-second sleep taken inside the request.
+	Collector *metrics.Collector
+
+	// Audit is the node's own record of what was asked and what was done. It is
+	// written here, on the machine the work happened on, so an operator can
+	// audit this agent without trusting the panel that drove it.
+	Audit *audit.Log
+
+	// LogRoots and DiskRoots bound what log.read and disk.usage may touch.
+	// Empty means the defaults.
+	LogRoots  []string
+	DiskRoots []string
 }
 
 // Registry is the closed set of operations this agent will perform.
 type Registry struct {
-	ops    map[string]Operation
-	deps   Deps
-	logger *log.Logger
+	ops      map[string]Operation
+	deps     Deps
+	logger   *log.Logger
+	logDirs  []string
+	dataDirs []string
 }
 
 // New builds the registry. exec.raw is registered only when it was explicitly
@@ -100,13 +121,25 @@ func New(deps Deps) *Registry {
 	if deps.Logger == nil {
 		deps.Logger = log.Default()
 	}
-	r := &Registry{ops: make(map[string]Operation), deps: deps, logger: deps.Logger}
+	if deps.Collector == nil {
+		deps.Collector = metrics.NewCollector()
+	}
+	r := &Registry{
+		ops:      make(map[string]Operation),
+		deps:     deps,
+		logger:   deps.Logger,
+		logDirs:  sanitiseRoots(deps.LogRoots, DefaultLogRoots),
+		dataDirs: sanitiseRoots(deps.DiskRoots, DefaultDiskRoots),
+	}
 
 	r.register("system.info", "static facts about the host", r.systemInfo)
-	r.register("system.metrics", "current resource usage", r.systemMetrics)
+	r.register("system.metrics", "current resource usage, per mount and per core", r.systemMetrics)
 	r.register("service.list", "status of the services the panel manages", r.serviceList)
 	r.register("service.status", "status of one named service", r.serviceStatus)
 	r.register("service.control", "start, stop, restart or reload one named service", r.serviceControl)
+	r.register("log.list", "the log files this agent will read", r.logList)
+	r.register("log.read", "the last lines of one log file", r.logRead)
+	r.register("disk.usage", "filesystem capacity, and optionally the size of one path", r.diskUsage)
 	r.register("agent.info", "the agent's own identity and certificate", r.agentInfo)
 	r.register("pki.sync", "accept the panel's revoked certificate list", r.pkiSync)
 
@@ -146,12 +179,18 @@ func (r *Registry) Dispatch(ctx context.Context, name string, args json.RawMessa
 // SYSTEM
 // ============================================================
 
-func (r *Registry) systemInfo(ctx context.Context, _ json.RawMessage) (interface{}, error) {
-	return CollectSystemInfo(ctx, r.deps.Run), nil
+func (r *Registry) systemInfo(ctx context.Context, raw json.RawMessage) (interface{}, error) {
+	if err := noArguments(raw); err != nil {
+		return nil, err
+	}
+	return CollectSystemInfo(ctx, r.collector()), nil
 }
 
-func (r *Registry) systemMetrics(ctx context.Context, _ json.RawMessage) (interface{}, error) {
-	return CollectMetrics(ctx, r.deps.Run), nil
+func (r *Registry) systemMetrics(ctx context.Context, raw json.RawMessage) (interface{}, error) {
+	if err := noArguments(raw); err != nil {
+		return nil, err
+	}
+	return CollectMetrics(ctx, r.collector()), nil
 }
 
 // ============================================================
@@ -248,6 +287,10 @@ func (r *Registry) serviceControl(ctx context.Context, raw json.RawMessage) (int
 	if !controlActions[action] {
 		return nil, fmt.Errorf("%w: %q is not one of start, stop, restart, reload", ErrInvalidArgument, args.Action)
 	}
+	// Recorded before the command runs, not after: an operation that hangs, or
+	// that takes the machine down with it, must still leave evidence of who
+	// asked for it.
+	r.record(ctx, "service.control", audit.OutcomeExecuted, audit.Argv("systemctl", action, args.Name))
 	r.logger.Printf("service.control: %s %s", action, args.Name)
 	if _, err := r.deps.Run(ctx, "systemctl", action, args.Name); err != nil {
 		return nil, fmt.Errorf("ops: systemctl %s %s failed: %w", action, args.Name, err)
@@ -255,7 +298,10 @@ func (r *Registry) serviceControl(ctx context.Context, raw json.RawMessage) (int
 	return ServiceState{Name: args.Name, Status: serviceStatus(ctx, r.deps.Run, args.Name)}, nil
 }
 
-func (r *Registry) serviceList(ctx context.Context, _ json.RawMessage) (interface{}, error) {
+func (r *Registry) serviceList(ctx context.Context, raw json.RawMessage) (interface{}, error) {
+	if err := noArguments(raw); err != nil {
+		return nil, err
+	}
 	names := make([]string, 0, len(managedServices))
 	for name := range managedServices {
 		names = append(names, name)
@@ -284,7 +330,10 @@ func serviceStatus(ctx context.Context, run CommandRunner, name string) string {
 // AGENT AND PKI
 // ============================================================
 
-func (r *Registry) agentInfo(_ context.Context, _ json.RawMessage) (interface{}, error) {
+func (r *Registry) agentInfo(_ context.Context, raw json.RawMessage) (interface{}, error) {
+	if err := noArguments(raw); err != nil {
+		return nil, err
+	}
 	if r.deps.Info == nil {
 		return nil, errors.New("ops: this agent cannot report its identity")
 	}
@@ -341,6 +390,7 @@ func (r *Registry) execRaw(ctx context.Context, raw json.RawMessage) (interface{
 	// Loud on purpose. If this line is in the journal, someone should be able
 	// to say why.
 	r.logger.Printf("SECURITY: exec.raw invoked: command=%q args=%q", args.Command, args.Args)
+	r.record(ctx, "exec.raw", audit.OutcomeExecuted, audit.Argv(args.Command, args.Args...))
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -376,6 +426,44 @@ func decode(raw json.RawMessage, out interface{}) error {
 	return nil
 }
 
+// noArguments is the decoder for an operation that takes none. It is not the
+// same as ignoring the body: an operation that quietly discarded an argument
+// would let a panel believe it had asked for something it had not, and the
+// difference only ever shows up as a mystery in production.
+func noArguments(raw json.RawMessage) error {
+	return decode(raw, &struct{}{})
+}
+
 func defaultRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+// collector returns the shared host collector.
+func (r *Registry) collector() *metrics.Collector {
+	if r.deps.Collector == nil {
+		r.deps.Collector = metrics.NewCollector()
+	}
+	return r.deps.Collector
+}
+
+// logRoots and diskRoots are the directories the path-taking operations are
+// confined to. log.read may only read within the first; disk.usage may only
+// measure within the second.
+func (r *Registry) logRoots() []string  { return r.logDirs }
+func (r *Registry) diskRoots() []string { return r.dataDirs }
+
+// record writes one line into the node's own operation record, naming the
+// caller the control channel verified. An operation records what it actually
+// did - the argument vector it ran, the path it resolved to and read - which is
+// the part the request alone does not say.
+func (r *Registry) record(ctx context.Context, operation, outcome, detail string) {
+	if r.deps.Audit == nil {
+		return
+	}
+	r.deps.Audit.Record(audit.Entry{
+		Actor:     audit.ActorFrom(ctx),
+		Operation: operation,
+		Outcome:   outcome,
+		Detail:    detail,
+	})
 }
