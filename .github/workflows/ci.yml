@@ -28,6 +28,28 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A workflow job that checks the repository out and then runs a build tool
+  # reads ENCRYPTED source unless it decrypts first, and the errors that
+  # produces name anything but the cause: "missing separator", an empty
+  # version, "unexpected NUL in input". Three jobs shipped with that defect in
+  # one day and each was found only after it broke on main; a fourth was found
+  # by this check. It costs a few seconds and needs no secrets, because the
+  # workflow files themselves are never encrypted.
+  workflow-guards:
+    name: Workflow guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Every job that builds must decrypt first
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check-workflow-decrypt.py
+
   core:
     name: Core API
     runs-on: ubuntu-latest

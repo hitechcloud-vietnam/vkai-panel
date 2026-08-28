@@ -59,6 +59,16 @@ jobs:
           # Every tag, so "does this version already exist" can be answered.
           fetch-depth: 0
 
+      # This job runs `make check-version-sync`, which reads
+      # core/internal/version/version_default.go. Encrypted, that file scans as
+      # an empty version and the check reports a missing bump - on the release
+      # path, where the failure is most expensive. The action is a no-op when
+      # encryption is not enabled.
+      - name: Decrypt source
+        uses: ./.github/actions/decrypt-source
+        env:
+          VKAI_CRYPT_KEY: ${{ secrets.VKAI_CRYPT_KEY }}
+
       - name: Read VERSION
         id: read
         run: |
