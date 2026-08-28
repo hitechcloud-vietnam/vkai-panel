@@ -1,10 +1,65 @@
 # VKAI Panel - Lộ trình Doanh nghiệp (Enterprise Roadmap)
 
 Tài liệu định hướng sản phẩm cho VKAI Panel - HiTechCloud.
-Phiên bản tài liệu: 1.0 - Cập nhật: 2026-08-28.
+Phiên bản tài liệu: 1.1 - Cập nhật: 2026-08-28.
+Trạng thái hoàn thành (`[x]` / `[~]` / `[ ]`) được kiểm chứng lại ngày 2026-08-28 tại commit `0116f53` - xem mục 0.
 Đối tượng đọc: ban lãnh đạo, quản lý sản phẩm, kiến trúc sư hệ thống, đội phát triển.
 
 ---
+
+## 0. Verified implementation status (English)
+
+*Added 28 August 2026. Verified against the working tree at commit `0116f53`.*
+
+This document was written as a proposal and carried no completion marks, so its
+progress was invisible. Every feature heading in sections 3, 4 and 5.3 now
+carries one of three marks, and section 6's priority table carries a **Status**
+column. The release decision this feeds is in
+[RELEASE_READINESS.md](RELEASE_READINESS.md); the product-level view is in
+[ROADMAP.md](ROADMAP.md).
+
+| Mark | Meaning |
+|---|---|
+| `- [x]` | **Done.** The code exists, is reachable in the shipped binary (a route mounted in `core/internal/handler/router.go` or by a `Register*Routes` function that `router.go` or `cmd/api/main.go` calls, a registered CLI command, or a UI component a real page imports), and acts outside the database. |
+| `- [~]` | **Partial.** The substance exists; the note says exactly what is missing. |
+| `- [ ]` | **Not started**, or CRUD over a table for a feature whose point is to change a server. |
+
+Code that nothing imports or mounts is **not** done. That rule is not
+theoretical here: `core/internal/upgrade/` is a complete, tested upgrade engine
+with zero importers, and `panel/src/components/websites/SiteManagePanel.tsx`
+(57 KB) is imported by no page.
+
+**Summary of the 43 marked items in sections 3, 4 and 5.3: 9 done, 21 partial, 13 not started.** The shape of that distribution is the finding: this is not a product short of features, it is a product short of the last inch on features it has already built.
+
+Four corrections to the assessment in sections 2.2 and 2.3, which has been
+overtaken by work done since it was written:
+
+1. **i18n now exists** (`panel/src/i18n/`, 278 keys in step across `en`/`vi`),
+   but only 2 of 49 dashboard pages use it and the default locale is `en`.
+2. **2FA/TOTP now exists** (`core/internal/twofactor/`) — but
+   `AuthService.SetTwoFactor` is never called in `cmd/api/main.go`, so anyone
+   who enrols is locked out at sign-in.
+3. **Rate limiting is real.** `middleware.RateLimit()` no longer returns
+   `c.Next()`; it is a 600/min per-IP limiter at `router.go:232`, and
+   `ProtectCredentialEndpoints` adds a layered, Redis-backed, fail-closed
+   credential guard at `router.go:245`.
+4. **The two empty `/api/v1/agent` handlers are gone**, replaced by
+   `RegisterAgentPKIRoutes` and a genuine mTLS channel.
+
+Two findings that section 2.3 did not anticipate, and that matter more than
+anything it did list:
+
+- **`core/internal/job/queue.go`** has nine task handlers that `time.Sleep` and
+  `return nil`. The worker is started at `cmd/api/main.go:281` and the routes are
+  live, so `POST /api/v1/jobs/backup|restore|deploy|ssl|cleanup` report
+  **success** having done nothing.
+- **`deploy/scripts/deploy.sh` and `make migrate` never apply
+  `core/migrations/pending/`** (14 files: 2FA, agent PKI, App Store, audit chain,
+  offsite backup, collector, notifications, packages/quota, PHP/WordPress
+  runtime, session binding, …). Only `deploy/install.sh` does, and in tolerant
+  mode. An **upgraded** installation therefore runs new code against a database
+  that has none of those tables.
+
 
 ## 1. Bối cảnh và định vị sản phẩm
 
@@ -195,6 +250,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 
 #### P0-1. Đóng khoảng cách thực thi (Execution Gap Closure)
 
+- [~] **Partial.** Local execution is real: `internal/webserver/nginx.go` writes vhosts and reloads nginx, and `internal/phpfpm`, `internal/wpcli`, `internal/docker` and `internal/appstore` all shell out for real. The two unauthenticated agent stubs were deleted and rate limiting is now genuine. Still open: the nine task handlers in `internal/job/queue.go` sleep and return `nil` while the worker runs (`cmd/api/main.go:281`); `service/security.go:357` writes a hardcoded scan score; `service/reverseproxy.go` and `service/cluster.go` write rows only; and **no host-changing operation is ever sent to an agent** — the agent's whole capability set is `system.info`, `system.metrics`, `service.*`, `log.*`, `disk.usage`, `agent.info`, `pki.sync`.
+
 - **Nội dung:** Rà soát toàn bộ 24 điểm TODO trong `core/internal`, hoàn thiện 9 task handler
   trong `job/queue.go`, viết hai handler agent thật trong `handler/router.go`, cài đặt rate limit
   thật bằng `golang.org/x/time/rate` (đã có sẵn trong dependency tree). Với mỗi module, xác định
@@ -206,6 +263,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 - **Phụ thuộc:** Không. Phải làm trước mọi thứ khác.
 
 #### P0-2. Gói dịch vụ và hạn mức (Package & Quota)
+
+- [~] **Partial.** Layer (a) is real and cannot be forgotten: `quota.Enforcer.Check` is constructor-injected and called before creation in `service/website.go:55,247`, `database.go:125`, `cron.go:96` and `mail_server.go:53`; over-quota tenants can have their vhosts disabled (`SuspendTenantSites`); a usage sampler runs from `cmd/api/main.go:182`. Routes: `RegisterPackageRoutes` at `cmd/api/main.go:509`. Missing: layer (b) filesystem quota (`setquota`/`repquota` appear nowhere) and layer (c) cgroup v2 / `MemoryMax` / `LimitNPROC` (likewise nowhere), and **no UI calls `/packages` or `/quota`**.
 
 - **Nội dung:** Bảng `hosting_packages` (disk MB, băng thông GB/tháng, số website, số CSDL,
   số tài khoản email, số subdomain, số cron, số tiến trình đồng thời, giới hạn CPU %, RAM MB,
@@ -221,6 +280,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 
 #### P0-3. Trình cài đặt một lệnh trên VPS khách hàng
 
+- [x] **Done.** `deploy/install.sh`, 3,245 lines: distro and architecture detection, preflight on RAM/disk/ports/other panels/SELinux, idempotent re-runs, randomly generated database password, JWT secret, agent token and a 20-character admin password, a full install log, panel TLS, and `--uninstall [--purge]`. Two deviations from the text above: uninstall is a flag, not a separate `deploy/uninstall.sh`; and at line 2001 the script still tolerates the seeded `admin/admin123` when no bcrypt hasher is available, warning instead of failing.
+
 - **Nội dung:** Nâng cấp `deploy/install.sh` thành một trình cài đặt sản xuất: phát hiện distro
   (Ubuntu 22.04/24.04, Debian 12, AlmaLinux/Rocky 8/9), kiểm tra điều kiện tiên quyết
   (RAM, disk, cổng đang bận, SELinux), cài đặt idempotent (chạy lại không hỏng),
@@ -234,6 +295,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 - **Phụ thuộc:** Không.
 
 #### P0-4. Sao lưu ra S3/Google Drive + khôi phục một chạm + kiểm thử khôi phục
+
+- [~] **Partial.** Strong engine: `internal/backup/` does tar.gz + manifest + SHA-256, client-side AES-256-GCM with a wrapped key, hand-rolled SigV4 for S3-compatible storage, extraction with traversal defence, and `verify.go`, which performs a real restore into a scratch directory, re-hashes every file and imports the SQL dump — part (c) genuinely exists. Mounted at `router.go:1153`. Missing: **no Google Drive and no FTP/SFTP** (S3 and local only), no incremental backup, no automatic snapshot before an overwriting restore, **no UI at all** (`backupApi` in `panel/src/services/api.ts` is imported by nothing), and **nothing is scheduled** — `StartRestorabilityChecks`, `SetLogger` and `AttachJobQueue` are called from nowhere.
 
 - **Nội dung:** Ba phần tách biệt.
   (a) *Đích lưu trữ từ xa*: S3 tương thích (AWS S3, VNG Cloud, Bizfly, Wasabi, MinIO), Google Drive,
@@ -252,6 +315,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 
 #### P0-5. Giám sát và cảnh báo thật (Telegram/Zalo/Email)
 
+- [~] **Written, and not wired — the largest gap in this document.** `internal/notify/` implements email (real SMTP + STARTTLS), Telegram, Zalo and generic webhook senders, with retry, dead-lettering, deduplication, quiet windows and secret redaction, all tested. But `NotificationService.AttachDelivery` and `RunDispatcher` are never called outside tests, so `Notify` returns `ErrDeliveryNotConfigured` on every call and nothing drains the outbox; and `MonitoringService.checkAlerts` (`service/monitoring.go:320`) writes a `monitoring_alert_logs` row and a `zap.Warn` and **never calls `Notify`**. The panel today can send zero alerts to anyone.
+
 - **Nội dung:** Hoàn thiện bộ gửi cho `notification_channels` đã có sẵn trong DB:
   SMTP (email), Telegram Bot API, Zalo Official Account API, webhook chung, và tuỳ chọn SMS.
   Bộ quy tắc cảnh báo: CPU, RAM, disk, load, dịch vụ chết, website trả mã lỗi, chứng chỉ SSL
@@ -264,6 +329,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 - **Phụ thuộc:** P0-1 (job queue để gửi bất đồng bộ).
 
 #### P0-6. Trình cài WordPress thật + WP-CLI + Staging
+
+- [x] **Done (on the panel host).** `internal/wpcli/` runs `wp` as the site's own user, refuses to run as root (`ErrWouldRunAsRoot`) and rejects shell metacharacters; `service/wordpress_runtime.go:232 InstallSite` downloads, writes `wp-config.php` with fresh salts, runs `wp core install`, fixes ownership; `staging.go` clones, `search-replace`s and pushes back with an explicit database decision. Mounted via `RegisterPHPWordPressRuntimeRoutes` (`router.go:1150`); UI at `app/(dashboard)/wp-toolkit/`. Not done from the list above: core write-lock, automatic security updates, vulnerable-plugin scanning — and plugin/theme **installation** is still the old row-writer at `router.go:683`.
 
 - **Nội dung:**
   (a) *Cài đặt thật*: tải WordPress, tạo CSDL và người dùng, sinh `wp-config.php` với salt ngẫu nhiên,
@@ -283,6 +350,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 
 #### P0-7. Quản lý PHP đa phiên bản thật
 
+- [x] **Done.** `internal/phpfpm/` installs and removes PHP from Ondrej/Remi, writes real pool files, validates with `php-fpm -t`, reloads, and **rolls back a failed reload**; `service/php_runtime.go` adds `SystemReport`, per-site version switching and pool settings. Routes: `GET /php/system`, `POST /php/install|uninstall`, `GET|PUT /php/pools/:id/settings`, `GET|PUT /php/sites/:website_id/version`. UI: `app/(dashboard)/app-store/php/`. Caveat: the old CRUD routes `/php/versions`, `/php/pools`, `/php/extensions` are still mounted alongside and still report host state they do not have.
+
 - **Nội dung:** Biến `service/php.go` từ CRUD thành điều khiển thật: cài/gỡ PHP 7.4-8.4 từ kho
   (Ondrej cho Debian/Ubuntu, Remi cho RHEL), sinh file pool FPM thật vào
   `/etc/php/<ver>/fpm/pool.d/`, đổi phiên bản theo từng website (cập nhật vhost + reload),
@@ -295,6 +364,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 
 #### P0-8. 2FA/TOTP + mã dự phòng
 
+- [~] **Built, and it locks people out.** `internal/twofactor/` is complete and tested: TOTP, AES-GCM-sealed secret keyed by `VKAI_SECRET_KEY`, bcrypt-hashed recovery codes, rate limiting, routes (`RegisterTwoFactorRoutes`, `router.go:320`), the login second step (`router.go:302`) and a settings page. But `AuthService.SetTwoFactor` is never called in `cmd/api/main.go`, so the login gate's verifier is `nil`; enrolment sets `users.mfa_enabled = true`, and sign-in then fails closed. **Anyone who enrols is locked out.** One line fixes it. There is also no policy to require 2FA.
+
 - **Nội dung:** Xem mục 4.1. Ghi ở đây vì đây là tính năng P0 không thể lùi.
 - **Giá trị kinh doanh:** Rất cao. Panel không có 2FA sẽ bị loại ngay trong bất kỳ vòng đánh giá
   bảo mật nào của khách hàng doanh nghiệp.
@@ -303,12 +374,16 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 
 #### P0-9. Bảo mật kênh panel - agent (mTLS + xoay khoá)
 
+- [x] **Done.** `internal/agentpki/` and `agent/internal/pki/`: one-time enrolment invites, CSR signing, mutual TLS where **both** ends check chain, role OID and a pushed revocation deny list; renewal proves possession of the current key and keeps an overlap window so an interrupted rotation cannot brick an agent; a renewal can never replace `ca.crt`. Mounted unconditionally at `router.go:1120` with three separated auth tiers, and answering 503 rather than 404 when no authority is configured. Two caveats: no UI for enrolment or revocation, and the agent's bootstrap client still honours `VKAI_PANEL_INSECURE`.
+
 - **Nội dung:** Xem mục 4.8. Đây là lỗ hổng kiến trúc nghiêm trọng nhất hiện tại.
 - **Giá trị kinh doanh:** Rất cao ở dạng rủi ro tránh được. Một sự cố ở đây là sự cố toàn hệ thống.
 - **Độ khó:** Trung bình đến Cao.
 - **Phụ thuộc:** Không.
 
 #### P0-10. i18n tiếng Việt/tiếng Anh
+
+- [~] **Infrastructure done, content barely started.** `panel/src/i18n/` provides `useT`/`useTn`/`useLocale`/`useFormatters`, `vi-VN` formatters, missing-key fallback and a language switcher; `en.json` and `vi.json` are exactly in step at **278 keys each**. But only **2 of 49 dashboard pages** import the layer (7 of 51 pages overall); the other 44 hardcode English. Two requirements from the text above are missed outright: the default locale is `en`, not `vi`, and the choice is persisted to `localStorage` rather than the user profile. There is no backend error-code lookup table.
 
 - **Nội dung:** Đưa toàn bộ chuỗi UI ra file tài nguyên (`next-intl` hoặc giải pháp tự viết nhẹ
   dựa trên React Context - tránh thêm dependency nếu có thể). Hai ngôn ngữ: `vi` mặc định, `en`.
@@ -322,6 +397,8 @@ Nguyên tắc P0: **không bán một tính năng chưa chạy thật**. Đợt 
 - **Phụ thuộc:** Không. **Nên làm càng sớm càng tốt vì chi phí trì hoãn cao.**
 
 #### P0-11. Nhật ký kiểm toán bất biến
+
+- [x] **Done, and the best-built feature in the repository.** `migrations/pending/audit_chain.sql` maintains a SHA-256 chain by `AFTER INSERT` trigger, adds append-only `BEFORE UPDATE/DELETE/TRUNCATE` triggers, revokes `UPDATE`/`DELETE`/`TRUNCATE`, and seals checkpoints; `internal/audit/` re-derives the canonical bytes independently, and a standalone Python verifier is served at `GET /audit/chain/verifier` so a third party can check an export without trusting the panel. Tampering answers **409**, not 200. Mounted at `router.go:1152`. Limitation: only **eight call sites** write audit rows, so most of the write surface is unaudited.
 
 - **Nội dung:** Xem mục 4.11.
 - **Giá trị kinh doanh:** Cao. Yêu cầu bắt buộc cho khách hàng có nghĩa vụ tuân thủ, và là công cụ
@@ -337,6 +414,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 
 #### P1-1. Đại lý và phân cấp tài khoản (Reseller)
 
+- [ ] **Not started.** No `parent_tenant_id` anywhere; `migrations/pending/packages.sql:61` says outright that the reseller hierarchy is not built there.
+
 - **Nội dung:** Chuyển `tenants` thành cây có `parent_tenant_id` và độ sâu tối đa (khuyến nghị 3 cấp:
   nhà cung cấp - đại lý - khách hàng cuối). Đại lý được cấp một khối hạn mức tổng và tự chia nhỏ
   cho khách của mình, không bao giờ vượt được hạn mức cha (kiểm tra ở tầng service, không chỉ UI).
@@ -350,6 +429,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 - **Phụ thuộc:** P0-2 (package/quota) là điều kiện tiên quyết tuyệt đối.
 
 #### P1-2. Di trú từ cPanel/DirectAdmin
+
+- [ ] **Not started.** Only a placeholder screen (`components/wp-toolkit/OtherPanelMigrate.tsx`) naming the routes that would be needed. No Go code.
 
 - **Nội dung:** Bộ nhập liệu đọc được:
   (a) file cPanel backup (`cpmove-*.tar.gz`) - phân tích `homedir`, `mysql.sql`, `dnszones`,
@@ -367,6 +448,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 
 #### P1-3. API công khai + Webhook
 
+- [~] **Partial.** Real scoped key surface: `registerIntegrationRoutes` (`handler/access_routes.go:193`) behind `APIKeyAuth` + `RequireScope`, key rotation and revocation, `GET /access/scopes`, mounted at `cmd/api/main.go:530`, with a test asserting every integration route declares a scope. `docs/API.md` is hand-written and maintained. Missing: **no OpenAPI specification anywhere**, and **no outbound event webhooks** (the only webhook senders are the alert channel and git-deploy hooks).
+
 - **Nội dung:**
   (a) *API*: đặc tả OpenAPI 3.1 đầy đủ cho toàn bộ `/api/v1`, đánh phiên bản rõ ràng, phân trang
   nhất quán, mã lỗi có cấu trúc, giới hạn tần suất theo khoá, idempotency key cho thao tác ghi.
@@ -381,6 +464,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 - **Phụ thuộc:** P0-1. Nên làm trước P1-5.
 
 #### P1-4. Email doanh nghiệp hoàn chỉnh
+
+- [~] **Partial, and misleadingly so.** `service/mail_dns.go` is real and useful: live SPF, DKIM, DMARC, rDNS and blocklist checks. `service/mail_server.go` contains **zero** `exec.Command` — no Postfix or Dovecot configuration is ever written, so this is a records screen, not a mail server. Two defects here are release blockers: mailbox passwords are stored and returned in **plaintext** (`service/mail_server.go:57`), and `DeleteAlias` / `DeleteQueueItem` (`handler/mail_server.go:188,214`) delete by id with **no tenant check**.
 
 - **Nội dung:** Hiện đã có mô hình dữ liệu tốt (`models/mail_server.go` với `SPFRecord`,
   `DKIMEnabled`, `DMARCRecord`, `MailDKIMKey`, `MailQueueItem`, `MailSpamFilter`).
@@ -402,6 +487,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 
 #### P1-5. Hoá đơn và thanh toán (WHMCS + API riêng)
 
+- [ ] **Not started.** No WHMCS module, no invoicing, no payment gateway code.
+
 - **Nội dung:** Hai đường song song.
   (a) *Module WHMCS*: viết provisioning module PHP chuẩn (`CreateAccount`, `SuspendAccount`,
   `UnsuspendAccount`, `TerminateAccount`, `ChangePackage`, `ChangePassword`, `ClientArea` SSO).
@@ -416,6 +503,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 - **Phụ thuộc:** P0-2 (package), P1-1 (reseller), P1-3 (API).
 
 #### P1-6. Node.js và Python App Manager
+
+- [~] **Partial.** Node.js is real: `service/nodeapp.go` + `internal/nodeapp/systemd.go` install, start, stop, restart and tail a systemd unit with `Restart=always`; routes `/node-apps/*`; UI via `NodeProjects.tsx`. But there is **no PM2** anywhere, **no Node version management** (`/usr/bin/node` is hardcoded), **no build step**, and dependencies are rows that nothing installs. Python has no manager at all.
 
 - **Nội dung:** Mở rộng `service/nodeapp.go` và `internal/nodeapp/systemd.go` đã có.
   (a) *Node.js*: quản lý nhiều phiên bản qua `nvm`/`fnm` theo từng ứng dụng, cài phụ thuộc
@@ -434,6 +523,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 
 #### P1-7. Trạng thái dịch vụ và SLA
 
+- [ ] **Not started.** No status page and nothing computes uptime or SLA. `service/daily_report.go` is an internal report, not a public status page.
+
 - **Nội dung:**
   (a) *Status page công khai* tại tên miền riêng: trạng thái từng dịch vụ (web, mail, DNS, CSDL,
   chính panel), sự cố đang diễn ra, lịch bảo trì, lịch sử 90 ngày, đăng ký nhận thông báo qua email/Zalo.
@@ -449,6 +540,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 - **Phụ thuộc:** P0-5 (giám sát).
 
 #### P1-8. Truy cập khẩn cấp khi mất kết nối
+
+- [~] **Partial.** A genuine out-of-band path exists: the standalone `cmd/panelctl` binary, `vkai panel info|port|entrance|allow-ip|domain|cert` and `vkai user reset-password`, all talking straight to PostgreSQL. Missing: a one-time break-glass token and any channel that does not require SSH to the box.
 
 - **Nội dung:** Nhiều lớp phòng thủ khi panel không truy cập được:
   (a) *CLI cục bộ*: mở rộng `core/internal/cli/` thành công cụ vận hành đầy đủ chạy được
@@ -470,6 +563,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 
 #### P1-9. CDN, cache và tăng tốc
 
+- [ ] **Not started.** No `fastcgi_cache`, `proxy_cache`, Varnish, LSCache or CDN integration in `core/` or `panel/`.
+
 - **Nội dung:**
   (a) *Redis object cache* cho WordPress: cài, cấu hình, gắn plugin, cách ly theo site
   (mỗi site một database hoặc một prefix, tránh rò rỉ dữ liệu giữa khách hàng);
@@ -487,6 +582,8 @@ Sau P0, sản phẩm bán được. P1 làm cho nó đủ tốt để **thắng 
 
 #### P1-10. Quét mã độc website
 
+- [ ] **Not started, and currently worse than absent.** `service/security.go:357 runScan` sleeps five seconds and writes `Score = 85, TotalChecks = 50, PassedChecks = 42` — a clean bill of health for a server it never examined — behind the live route `POST /api/v1/security/scans`. No antivirus integration of any kind exists (`clamav`, `maldet`, `rkhunter`, `yara`: zero hits). Remove the route or make it real before release.
+
 - **Nội dung:** Xem mục 4.12.
 - **Giá trị kinh doanh:** Cao. Website WordPress bị nhiễm mã độc là loại ticket phổ biến nhất,
   tốn thời gian nhất và dễ khiến IP máy chủ bị đưa vào danh sách đen nhất.
@@ -501,6 +598,8 @@ P2 là những thứ đối thủ không có hoặc làm kém, tạo lý do đ�
 chỉ chấp nhận VKAI vì rẻ hơn.
 
 #### P2-1. Chế độ nhiều máy chủ trưởng thành (Multi-node)
+
+- [~] **Partial.** Real: agent enrolment over mTLS, per-node metric samples from `internal/collector/`, `internal/localnode` registering the panel host as the first managed node, a `vkai node` CLI. Not mature: **no operation that changes a host is ever sent to an agent**. `WebsiteService.Create` ignores `server.ID` and always acts on the panel host; restore explicitly refuses a remote target. The panel is single-node in practice, and every item that assumes remote execution is blocked behind extending `agent/internal/ops`.
 
 - **Nội dung:** Nâng `models/cluster.go` (hiện là CRUD) thành năng lực vận hành thật:
   (a) *Panel điều khiển tập trung, nhiều máy chủ được quản lý* - một giao diện, N máy chủ,
@@ -519,6 +618,8 @@ chỉ chấp nhận VKAI vì rẻ hơn.
 
 #### P2-2. Cân bằng tải và sẵn sàng cao
 
+- [ ] **Not started (CRUD only).** `service/cluster.go` is 226 lines of pass-through. No HAProxy, keepalived or VRRP configuration is generated anywhere. `TriggerFailover` swaps `primary_server_id` and `secondary_server_id` and sets `status='failed-over'`: no VIP moves, nothing is signalled, and the panel then shows the wrong machine as primary while returning 200.
+
 - **Nội dung:** Hoàn thiện `LoadBalancer` và `HAPair` trong `models/cluster.go`:
   cấu hình HAProxy/Nginx làm bộ cân bằng tải, kiểm tra sức khoẻ backend, thuật toán phân phối
   (round-robin, least-conn, IP hash cho phiên dính), rút máy chủ ra khỏi cụm mà không rớt kết nối,
@@ -530,6 +631,8 @@ chỉ chấp nhận VKAI vì rẻ hơn.
 - **Phụ thuộc:** P2-1.
 
 #### P2-3. Marketplace ứng dụng và hệ thống plugin
+
+- [~] **Partial.** The App Store is real: `internal/appstore/` with a catalogue, a plan/preview step, a job runner and genuine `apt-get`/`dnf` execution, mounted at `router.go:1155` with a UI — plus a Docker one-click catalogue. It installs OS packages, which is a different thing from a marketplace. There is **no third-party plugin system**: no SDK, no loader, no manifest format.
 
 - **Nội dung:** Kiến trúc module cho phép bên thứ ba mở rộng panel: manifest plugin, API ổn định,
   sandbox thực thi, ký số plugin, và bộ cài ứng dụng một chạm cho nhóm ứng dụng phổ biến ở
@@ -543,6 +646,8 @@ chỉ chấp nhận VKAI vì rẻ hơn.
 
 #### P2-4. Trợ lý vận hành thông minh
 
+- [ ] **Not started.** No anomaly detection and no assistant of any kind.
+
 - **Nội dung:** Dựa trên dữ liệu đã thu thập được (`monitoring_metrics`, `website_stats`,
   `audit_logs`, `waf_events`, `tamper_alerts`):
   phát hiện bất thường (tăng đột biến CPU, lưu lượng lạ, mẫu tấn công), dự báo cạn disk
@@ -555,6 +660,8 @@ chỉ chấp nhận VKAI vì rẻ hơn.
 
 #### P2-5. Ứng dụng di động và cảnh báo đẩy
 
+- [ ] **Not started.** No mobile client, no FCM/APNs.
+
 - **Nội dung:** Ứng dụng iOS/Android tối giản: xem trạng thái máy chủ, nhận cảnh báo đẩy,
   thao tác khẩn cấp (khởi động lại dịch vụ, khôi phục sao lưu, chặn IP), xác thực sinh trắc học,
   và duyệt yêu cầu 2FA. Không nhân bản toàn bộ panel - chỉ những việc cần làm ngay khi
@@ -565,6 +672,8 @@ chỉ chấp nhận VKAI vì rẻ hơn.
 - **Phụ thuộc:** P1-3 (API), P0-5 (cảnh báo).
 
 #### P2-6. Báo cáo tuân thủ và chứng nhận
+
+- [ ] **Not started.** The audit chain (P0-11) is the only compliance-adjacent artefact.
 
 - **Nội dung:** Bộ báo cáo phục vụ kiểm toán: truy vết truy cập dữ liệu cá nhân theo
   Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân, báo cáo lưu trữ dữ liệu trong nước
@@ -586,6 +695,8 @@ từ giả định này.
 
 ### 4.1. 2FA/TOTP và mã dự phòng (P0)
 
+- [~] **Partial.** Everything in this section is built and tested except the one line that connects it: `AuthService.SetTwoFactor` is never called in `cmd/api/main.go`, so an enrolled user cannot sign in. No policy to require 2FA. See P0-8.
+
 - **Hiện trạng:** `models.User` có `MFAEnabled bool` và `MFASecret *string` nhưng không có
   mã cài đặt TOTP nào trong repo.
 - **Cần làm:** TOTP theo RFC 6238 (SHA-1, 6 chữ số, chu kỳ 30 giây, cửa sổ trượt ±1 để bù lệch đồng hồ).
@@ -600,6 +711,8 @@ từ giả định này.
 
 ### 4.2. Khoá phiên theo IP và thiết bị (P0-P1)
 
+- [x] **Done.** `middleware.BindSessions` (`internal/middleware/session_guard.go:100`) wraps the whole engine at `cmd/api/main.go:616`; policy in `internal/auth/sessionbinding.go` — device fingerprint enforced hard, network binding by `/24`-`/48` with read-allowed / write-requires-reauth, and `VKAI_SESSION_IP_BINDING=strict` for exact-IP pinning. Re-authentication and logout are exempted so a user cannot be trapped. Tested. The panel IP allow list (`middleware/panel_access.go`) is separate and also live.
+
 - **Hiện trạng:** `models/multi_user.go` đã có `UserSession` với `IPAddress`, `UserAgent`,
   `ExpiresAt`, `LastActiveAt` - hạ tầng đã sẵn, chưa được cưỡng chế.
 - **Cần làm:** Gắn phiên với dấu vân tay thiết bị (User-Agent + đặc điểm ổn định của trình duyệt).
@@ -613,6 +726,8 @@ từ giả định này.
 
 ### 4.3. SSO/OIDC/LDAP cho doanh nghiệp (P1)
 
+- [ ] **Not started.** No OIDC, LDAP or SAML code.
+
 - **Cần làm:** OIDC (Google Workspace, Microsoft Entra ID, Keycloak, Authentik) và SAML 2.0
   cho khách hàng lớn; LDAP/Active Directory cho doanh nghiệp truyền thống Việt Nam.
   Ánh xạ nhóm từ IdP sang vai trò trong `rbac.go`. Tự động cấp và **tự động thu hồi** tài khoản
@@ -623,6 +738,8 @@ từ giả định này.
 - **Độ khó:** Cao. **Phụ thuộc:** 4.1, RBAC ổn định (4.4).
 
 ### 4.4. RBAC chi tiết theo tài nguyên (P1)
+
+- [~] **Partial.** Route-level RBAC is complete and deny-by-default (`internal/middleware/rbac.go`, applied to every group in `router.go`), and API-key scopes are additionally checked against the owner's RBAC. Per-resource ownership is **by convention**: 320 parameterised routes are mounted, against 170 `requestTenant(c)` call sites, 13 `requireTenantScopedRow` and 5 `owned*` call sites. Two live cross-tenant deletions remain (mail aliases, mail queue). `internal/rbac` has no tests.
 
 - **Hiện trạng:** `rbac.go` có 8 vai trò và khoảng 19 quyền dạng `resource.action`, kiểm tra ở
   cấp loại tài nguyên. Nghĩa là ai có `website.write` thì sửa được **mọi** website trong tenant.
@@ -637,6 +754,8 @@ từ giả định này.
 - **Độ khó:** Cao. **Phụ thuộc:** Không, nhưng nên làm trước P1-1 (reseller).
 
 ### 4.5. Khoá API scoped và xoay khoá (P0-P1)
+
+- [x] **Done.** `service/apikey.go` + `handler/access_routes.go:169`: `POST /api-keys/:id/rotate|revoke`, `GET /access/scopes`, mounted from `cmd/api/main.go:530`. Keys are peppered HMAC-SHA256 with a self-describing format, legacy bare-SHA256 rows are auto-upgraded and plaintext rows are refused; create, rotate, revoke and delete are audited. Tested.
 
 - **Hiện trạng:** `service/apikey.go` đã làm đúng nhiều điểm: sinh khoá ngẫu nhiên, băm SHA-256,
   chỉ lưu băm, lưu `KeyPrefix` 12 ký tự để tra cứu, có `Scopes`.
@@ -655,6 +774,8 @@ từ giả định này.
 
 ### 4.6. Mã hoá dữ liệu nhạy cảm trong CSDL (P0)
 
+- [~] **Partial.** Encrypted or hashed: panel passwords (bcrypt), recovery codes (bcrypt), TOTP secrets (AES-GCM), API keys (peppered HMAC), database user passwords (AES, failing closed with no key), S3 credentials (AES) and backup archives (AES). **Not protected: mailbox passwords**, stored as given at `service/mail_server.go:57` and selected back out by `ListAccounts`/`GetAccount`. The repository parameter is even named `hashedPwd`.
+
 - **Hiện trạng:** Đây là vấn đề nghiêm trọng. Nhiều bí mật đang nằm dạng thô trong PostgreSQL:
   `WordPressSite.DBPassword` và `AdminPassword` (`models/wordpress.go`),
   `MailDKIMKey.PrivateKey` (`models/mail_server.go`), `GitDeployment.DeployKey` và `WebhookSecret`,
@@ -671,6 +792,8 @@ từ giả định này.
 
 ### 4.7. Ký và xác minh gói agent (P1)
 
+- [~] **Partial, and unreachable.** Release-package signature verification is implemented in `internal/upgrade/` (`manifest.go`, `upgrader.go`, `signature_test.go`) — but **nothing imports that package**, so no signature is ever checked in the shipped product. There is no signing of the **agent** package specifically.
+
 - **Cần làm:** Ký số mọi binary `vkaid` và gói cập nhật bằng khoá riêng cất trong HSM hoặc
   quy trình ký cách ly. Agent xác minh chữ ký trước khi tự cập nhật và **từ chối khởi động**
   nếu binary không khớp chữ ký. Kênh cập nhật có phiên bản, hỗ trợ lùi phiên bản,
@@ -682,6 +805,8 @@ từ giả định này.
 - **Độ khó:** Trung bình đến Cao. **Phụ thuộc:** Hạ tầng CI đã có.
 
 ### 4.8. mTLS giữa panel và agent (P0 - ưu tiên cao nhất)
+
+- [x] **Done.** See P0-8's neighbour, P0-9: mutual TLS with role OIDs, deny-list revocation and half-life rotation with an overlap window, on both ends, mounted and tested. The static `X-Agent-Token` channel this section describes no longer exists.
 
 - **Hiện trạng - rủi ro nghiêm trọng:** `agent/cmd/main.go` dùng một chuỗi tĩnh
   `VKAI_AGENT_TOKEN` gửi trong header `X-Agent-Token` (dòng 156), agent mở HTTP server
@@ -705,6 +830,8 @@ từ giả định này.
 
 ### 4.9. Chống dò mật khẩu và tích hợp fail2ban (P0)
 
+- [~] **Mostly done.** `middleware.RateLimit()` is a real 600/min per-IP limiter (`router.go:232`), and `ProtectCredentialEndpoints` (`router.go:245`) installs a layered, Redis-backed guard on every route that accepts a secret — per address+account (lock at 8 with escalating steps), per address, per account — **failing closed**, with prefix matching so a route added next month is guarded the day it is written. Very well tested, including tests that read the shipped fail2ban filter and match it against real log lines. Missing: **nothing enables fail2ban** — `deploy/fail2ban/enable.sh` is referenced by no installer, `Makefile` or workflow.
+
 - **Hiện trạng:** `middleware.RateLimit()` không giới hạn gì (`c.Next()` trực tiếp).
   Không có `fail2ban` trong repo.
 - **Cần làm:**
@@ -722,6 +849,8 @@ từ giả định này.
 - **Độ khó:** Trung bình. **Phụ thuộc:** Redis (đã có), `service/firewall.go` (đã có).
 
 ### 4.10. Nâng cấp Tamper Proof - phát hiện xâm nhập file (P1)
+
+- [ ] **The upgrade described here is not started.** The base feature is real: `service/tamper_proof.go` walks trees, computes SHA-256 baselines, honours ignore patterns, raises alerts and writes its own audit rows, mounted at `router.go:995`. But it runs **only on demand** — nothing schedules `ScanAll` — it has **no test file at all**, and none of this section's asks (fanotify, signed baselines, false-positive reduction) exists. Note also `service/file_protection.go`, a complete UI and route set over rules/events/quarantine tables that **nothing ever writes to**: no watcher, no scanner, no quarantine mover.
 
 - **Hiện trạng - điểm mạnh cần khai thác:** `models/tamper_proof.go` và
   `migrations/023_create_tamper_proof_tables.sql` đã có kiến trúc tốt: `ProtectedPath`
@@ -752,6 +881,8 @@ từ giả định này.
 
 ### 4.11. Nhật ký kiểm toán chống sửa (P0)
 
+- [x] **Done.** See P0-11.
+
 - **Hiện trạng:** `models.AuditLog` là bảng PostgreSQL thường. Ai có quyền ghi CSDL - kể cả
   kẻ tấn công đã chiếm panel - đều có thể `DELETE` xoá sạch dấu vết.
 - **Cần làm:**
@@ -773,6 +904,8 @@ từ giả định này.
 
 ### 4.12. Quét mã độc website (P1)
 
+- [ ] **Not started.** See P1-10 — and the stub currently reports a security score of 85/100 for a scan that examined nothing.
+
 - **Cần làm:**
   (a) *Nhiều lớp*: ClamAV với bộ mẫu bổ sung, Linux Malware Detect (maldet) cho mẫu webshell,
   YARA rules cho phát hiện theo mẫu, cộng với heuristic riêng (phát hiện `eval(base64_decode(`,
@@ -791,6 +924,8 @@ từ giả định này.
 - **Độ khó:** Trung bình đến Cao. **Phụ thuộc:** Tamper Proof (đã có), P0-5.
 
 ### 4.13. Tách quyền tiến trình và sandbox lệnh (P1-P2)
+
+- [~] **Partial.** Genuine separation exists where it matters most: `internal/wpcli/` runs every WP-CLI command as the site's own Unix user, refuses to run as root, and rejects shell metacharacters (`args.go`), and `internal/phpfpm` uses argv exec with no shell. Against that: the panel process itself is root, `service/gitdeployment.go` runs operator-supplied hooks through `bash -c` as that process, the web terminal opens a root shell, and Node.js units run as a hardcoded `www-data`. No cgroup or namespace sandboxing anywhere.
 
 - **Hiện trạng:** Agent chạy với quyền root và có endpoint `/execute` nhận lệnh tuỳ ý.
   Đây là mô hình quyền lực tối đa - một lỗ hổng bất kỳ trong xác thực agent dẫn thẳng tới
@@ -816,6 +951,8 @@ từ giả định này.
 
 ### 4.14. Cô lập tenant (P1)
 
+- [~] **Partial.** Every table carries `tenant_id` and the repository layer carries the predicate; six `*_tenant_scope_live_test.go` files cover SSL, file protection, WAF, monitoring, config, scheduling, multi-user, sites and infrastructure, and one of them caught a real leak on `cluster_nodes`. Two cross-tenant deletions remain open (mail aliases, mail queue — the tables those tests do not cover), and an audit of the remaining parameterised routes is in progress. There is no PostgreSQL row-level security, no per-tenant Unix user and no cgroup isolation.
+
 - **Hiện trạng:** Cô lập hiện ở tầng ứng dụng - mọi truy vấn lọc theo `tenant_id`.
   Điều này đúng nhưng chưa đủ: một lỗi lập trình quên mệnh đề `WHERE tenant_id` sẽ làm rò rỉ
   dữ liệu giữa các khách hàng, và không có lớp phòng thủ thứ hai.
@@ -838,6 +975,8 @@ từ giả định này.
 - **Độ khó:** Cao. **Phụ thuộc:** P0-2 (quota), 4.4 (RBAC).
 
 ### 4.15. Nền tảng bảo mật chung (xuyên suốt)
+
+- [~] **Partial.** Present: security headers with CSP on the API (`middleware.SecurityHeaders`, `router.go:230`), allowlist CORS with no wildcard, parameterised SQL throughout (`sqlx`, `$N`), traversal defence in the file manager and archive extraction, and a `securitytest` regression package. Missing: **no CSP and no HSTS on the UI surface**, which is the page that holds the session token in `localStorage`; no test covers `SecurityHeaders`, so its removal would be silent; `golangci-lint` is non-blocking with 113 findings; and `panel/` has no tests at all.
 
 Những việc không thuộc một tính năng cụ thể nhưng phải làm:
 
@@ -928,6 +1067,8 @@ Bảng màu và token đang dùng:
 
 ### 5.3. Việc cần làm với design system
 
+- [~] **Mostly done.** The migration to the light palette has happened: **0 files** still use `bg-dark-*` against 115 using `bg-white`, and `globals.css` no longer declares the dark `--bg-primary`. Remaining: the `dark-*` scale is still in `tailwind.config.js` (deliberately remapped to light tones as a compatibility shim) and can now be removed, and **`docs/DESIGN_SYSTEM.md` does not exist**.
+
 `globals.css` hiện vẫn khai báo các biến `--bg-primary: #0f172a` (tối) ở `:root` trong khi
 giao diện đã chuyển sang sáng, và trong repo vẫn còn khoảng 13 file dùng lớp `bg-dark-*`
 song song với 17 file đã dùng `bg-white`. Cần một đợt thống nhất: cập nhật biến CSS gốc sang
@@ -941,45 +1082,45 @@ khi không còn tham chiếu nào. Sau đó viết `docs/DESIGN_SYSTEM.md` làm 
 Thang đo: **Tác động** = giá trị kinh doanh cộng rủi ro tránh được (1-5, 5 là cao nhất).
 **Công sức** = tuần-người ước tính. **Thứ tự** = trình tự đề xuất thực hiện.
 
-| # | Tính năng | Đợt | Tác động | Công sức (tuần-người) | Thứ tự |
-|---|---|---|---|---|---|
-| 1 | Bảo mật kênh panel-agent: mTLS, bỏ token tĩnh, bỏ `/execute` tuỳ ý (4.8) | P0 | 5 | 6-8 | 1 |
-| 2 | Đóng khoảng cách thực thi: 24 TODO, 9 task handler, agent handler thật (P0-1) | P0 | 5 | 10-14 | 2 |
-| 3 | Chống dò mật khẩu, rate limit thật, fail2ban (4.9) | P0 | 5 | 3-4 | 3 |
-| 4 | 2FA/TOTP + mã dự phòng (P0-8, 4.1) | P0 | 5 | 2-3 | 4 |
-| 5 | Mã hoá dữ liệu nhạy cảm trong DB (4.6) | P0 | 5 | 5-7 | 5 |
-| 6 | Gói dịch vụ và hạn mức (P0-2) | P0 | 5 | 8-10 | 6 |
-| 7 | Sao lưu S3/Drive + khôi phục 1 chạm + kiểm thử khôi phục (P0-4) | P0 | 5 | 8-10 | 7 |
-| 8 | i18n tiếng Việt/tiếng Anh (P0-10) | P0 | 4 | 4-6 | 8 |
-| 9 | Trình cài đặt một lệnh trên VPS khách (P0-3) | P0 | 5 | 3-4 | 9 |
-| 10 | Quản lý PHP đa phiên bản thật (P0-7) | P0 | 5 | 5-7 | 10 |
-| 11 | Giám sát và cảnh báo thật: Telegram/Zalo/Email (P0-5) | P0 | 5 | 4-5 | 11 |
-| 12 | Trình cài WordPress + WP-CLI + Staging (P0-6) | P0 | 5 | 8-10 | 12 |
-| 13 | Nhật ký kiểm toán bất biến (P0-11, 4.11) | P0 | 4 | 3-4 | 13 |
-| 14 | Khoá phiên theo IP/thiết bị (4.2) | P0 | 4 | 2-3 | 14 |
-| 15 | Khoá API scoped + xoay khoá (4.5) | P0 | 4 | 2-3 | 15 |
-| 16 | Cô lập tenant nhiều lớp: RLS, UID riêng, cgroup (4.14) | P1 | 5 | 6-8 | 16 |
-| 17 | RBAC chi tiết theo tài nguyên (4.4) | P1 | 4 | 5-7 | 17 |
-| 18 | Đại lý và phân cấp tài khoản (P1-1) | P1 | 5 | 8-10 | 18 |
-| 19 | API công khai + webhook + OpenAPI (P1-3) | P1 | 4 | 5-7 | 19 |
-| 20 | Truy cập khẩn cấp khi mất kết nối (P1-8) | P1 | 4 | 3-4 | 20 |
-| 21 | Quét mã độc website (P1-10, 4.12) | P1 | 4 | 4-6 | 21 |
-| 22 | Nâng cấp Tamper Proof: fanotify, baseline ký số, giảm cảnh báo giả (4.10) | P1 | 4 | 5-7 | 22 |
-| 23 | Trạng thái dịch vụ và SLA (P1-7) | P1 | 4 | 4-5 | 23 |
-| 24 | CDN, cache, Redis, LSCache, tăng tốc (P1-9) | P1 | 4 | 5-7 | 24 |
-| 25 | Di trú từ cPanel/DirectAdmin (P1-2) | P1 | 5 | 12-16 | 25 |
-| 26 | Email doanh nghiệp: Postfix/Dovecot/DKIM/Rspamd (P1-4) | P1 | 4 | 12-16 | 26 |
-| 27 | Hoá đơn/thanh toán: module WHMCS + API + cổng VN (P1-5) | P1 | 5 | 8-10 | 27 |
-| 28 | Node.js và Python App Manager (P1-6) | P1 | 3 | 8-10 | 28 |
-| 29 | Ký và xác minh gói agent (4.7) | P1 | 4 | 3-4 | 29 |
-| 30 | SSO/OIDC/LDAP/SAML (4.3) | P1 | 3 | 6-8 | 30 |
-| 31 | Tách quyền tiến trình và sandbox lệnh (4.13) | P1-P2 | 5 | 10-14 | 31 |
-| 32 | Chế độ nhiều máy chủ trưởng thành (P2-1) | P2 | 5 | 16-20 | 32 |
-| 33 | Cân bằng tải và HA (P2-2) | P2 | 4 | 10-14 | 33 |
-| 34 | Báo cáo tuân thủ Nghị định 13, ISO 27001 (P2-6) | P2 | 3 | 5-7 | 34 |
-| 35 | Trợ lý vận hành thông minh (P2-4) | P2 | 3 | 8-12 | 35 |
-| 36 | Marketplace và hệ thống plugin (P2-3) | P2 | 3 | 14-18 | 36 |
-| 37 | Ứng dụng di động và cảnh báo đẩy (P2-5) | P2 | 2 | 8-12 | 37 |
+| # | Tính năng | Đợt | Tác động | Công sức (tuần-người) | Thứ tự | Status |
+|---|---|---|---|---|---|---|
+| 1 | Bảo mật kênh panel-agent: mTLS, bỏ token tĩnh, bỏ `/execute` tuỳ ý (4.8) | P0 | 5 | 6-8 | 1 | [x] |
+| 2 | Đóng khoảng cách thực thi: 24 TODO, 9 task handler, agent handler thật (P0-1) | P0 | 5 | 10-14 | 2 | [~] |
+| 3 | Chống dò mật khẩu, rate limit thật, fail2ban (4.9) | P0 | 5 | 3-4 | 3 | [~] |
+| 4 | 2FA/TOTP + mã dự phòng (P0-8, 4.1) | P0 | 5 | 2-3 | 4 | [~] |
+| 5 | Mã hoá dữ liệu nhạy cảm trong DB (4.6) | P0 | 5 | 5-7 | 5 | [~] |
+| 6 | Gói dịch vụ và hạn mức (P0-2) | P0 | 5 | 8-10 | 6 | [~] |
+| 7 | Sao lưu S3/Drive + khôi phục 1 chạm + kiểm thử khôi phục (P0-4) | P0 | 5 | 8-10 | 7 | [~] |
+| 8 | i18n tiếng Việt/tiếng Anh (P0-10) | P0 | 4 | 4-6 | 8 | [~] |
+| 9 | Trình cài đặt một lệnh trên VPS khách (P0-3) | P0 | 5 | 3-4 | 9 | [x] |
+| 10 | Quản lý PHP đa phiên bản thật (P0-7) | P0 | 5 | 5-7 | 10 | [x] |
+| 11 | Giám sát và cảnh báo thật: Telegram/Zalo/Email (P0-5) | P0 | 5 | 4-5 | 11 | [~] |
+| 12 | Trình cài WordPress + WP-CLI + Staging (P0-6) | P0 | 5 | 8-10 | 12 | [x] |
+| 13 | Nhật ký kiểm toán bất biến (P0-11, 4.11) | P0 | 4 | 3-4 | 13 | [x] |
+| 14 | Khoá phiên theo IP/thiết bị (4.2) | P0 | 4 | 2-3 | 14 | [x] |
+| 15 | Khoá API scoped + xoay khoá (4.5) | P0 | 4 | 2-3 | 15 | [x] |
+| 16 | Cô lập tenant nhiều lớp: RLS, UID riêng, cgroup (4.14) | P1 | 5 | 6-8 | 16 | [~] |
+| 17 | RBAC chi tiết theo tài nguyên (4.4) | P1 | 4 | 5-7 | 17 | [~] |
+| 18 | Đại lý và phân cấp tài khoản (P1-1) | P1 | 5 | 8-10 | 18 | [ ] |
+| 19 | API công khai + webhook + OpenAPI (P1-3) | P1 | 4 | 5-7 | 19 | [~] |
+| 20 | Truy cập khẩn cấp khi mất kết nối (P1-8) | P1 | 4 | 3-4 | 20 | [~] |
+| 21 | Quét mã độc website (P1-10, 4.12) | P1 | 4 | 4-6 | 21 | [ ] |
+| 22 | Nâng cấp Tamper Proof: fanotify, baseline ký số, giảm cảnh báo giả (4.10) | P1 | 4 | 5-7 | 22 | [~] |
+| 23 | Trạng thái dịch vụ và SLA (P1-7) | P1 | 4 | 4-5 | 23 | [ ] |
+| 24 | CDN, cache, Redis, LSCache, tăng tốc (P1-9) | P1 | 4 | 5-7 | 24 | [ ] |
+| 25 | Di trú từ cPanel/DirectAdmin (P1-2) | P1 | 5 | 12-16 | 25 | [ ] |
+| 26 | Email doanh nghiệp: Postfix/Dovecot/DKIM/Rspamd (P1-4) | P1 | 4 | 12-16 | 26 | [~] |
+| 27 | Hoá đơn/thanh toán: module WHMCS + API + cổng VN (P1-5) | P1 | 5 | 8-10 | 27 | [ ] |
+| 28 | Node.js và Python App Manager (P1-6) | P1 | 3 | 8-10 | 28 | [~] |
+| 29 | Ký và xác minh gói agent (4.7) | P1 | 4 | 3-4 | 29 | [~] |
+| 30 | SSO/OIDC/LDAP/SAML (4.3) | P1 | 3 | 6-8 | 30 | [ ] |
+| 31 | Tách quyền tiến trình và sandbox lệnh (4.13) | P1-P2 | 5 | 10-14 | 31 | [~] |
+| 32 | Chế độ nhiều máy chủ trưởng thành (P2-1) | P2 | 5 | 16-20 | 32 | [~] |
+| 33 | Cân bằng tải và HA (P2-2) | P2 | 4 | 10-14 | 33 | [ ] |
+| 34 | Báo cáo tuân thủ Nghị định 13, ISO 27001 (P2-6) | P2 | 3 | 5-7 | 34 | [ ] |
+| 35 | Trợ lý vận hành thông minh (P2-4) | P2 | 3 | 8-12 | 35 | [ ] |
+| 36 | Marketplace và hệ thống plugin (P2-3) | P2 | 3 | 14-18 | 36 | [~] |
+| 37 | Ứng dụng di động và cảnh báo đẩy (P2-5) | P2 | 2 | 8-12 | 37 | [ ] |
 
 ### 6.1. Diễn giải thứ tự
 
@@ -1023,6 +1164,44 @@ những phần này, và cộng thêm dự phòng cho di trú cPanel và email -
 3. **Cập nhật `PROGRESS.md`.** Tài liệu này hiện mô tả nhiều mục là "COMPLETE" trong khi mã nguồn
    cho thấy chúng chỉ ở mức CRUD metadata. Sai lệch giữa tài liệu và thực tế dẫn tới quyết định sai
    ở mọi cấp - từ lập kế hoạch sprint tới cam kết với khách hàng.
+
+### 7.1. Revised, 28 August 2026 (English)
+
+The three decisions above were written before the P0 work landed. Against the
+verified state of the tree, they become four:
+
+1. **Point 1 stands, with a different list.** Priority items 1, 9, 10, 12, 13,
+   14 and 15 are now done — the agent channel, the installer, PHP, WordPress,
+   the audit chain, session binding and API-key scoping. What replaces them as
+   the release-blocking set is smaller and mostly *not new work*: connect
+   `SetTwoFactor`, `AttachDelivery` and `RunDispatcher` in `cmd/api/main.go`;
+   delete or implement the nine sleeping job handlers, the fake security scan,
+   the fake failover and the fake WordPress plugin install; close the two
+   cross-tenant mail deletions; fold `migrations/pending/` into the numbered
+   sequence so upgrades create the schema; and wire or delete
+   `core/internal/upgrade/`. See [RELEASE_READINESS.md](RELEASE_READINESS.md).
+
+2. **Point 2 stands, and the evidence for it got stronger.** The panel now has
+   **49 dashboard screens and 613 mounted routes**, up from 34 and 43 handlers
+   when this was written. The features added since are not the problem; the
+   pattern is. Four finished backends — offsite backup, packages and quota,
+   notification channels, agent enrolment — have no UI, and three finished
+   background workers are missing one line each in `cmd/api/main.go`. The work
+   that pays is the last inch, not the next module.
+
+3. **Point 3 is done differently.** `PROGRESS.md` was one symptom;
+   `docs/ROADMAP.md` was worse — it claimed a 1.0.0 released in Q1 2024 that
+   never existed. Both roadmaps now carry three-state marks with named evidence,
+   and there is a separate release-readiness document that says plainly what
+   must be true before 1.0 ships.
+
+4. **New: decide what the repository is.** It is public today, source encryption
+   is armed and has never been applied (0 of 759 files encrypted), and a
+   `super_admin` seeded with the password `admin123` sits in a public migration.
+   Whether the answer is "private and encrypted" or "open source by choice", it
+   has to be an explicit decision made before release rather than a state
+   discovered after it.
+
 
 ---
 

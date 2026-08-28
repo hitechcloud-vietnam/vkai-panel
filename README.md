@@ -1,139 +1,142 @@
 # VKAI Panel
 
-**Bảng điều khiển máy chủ & hosting đa máy chủ** — sản phẩm của **HiTechCloud** ([hitechcloud.vn](https://hitechcloud.vn)).
+**English** · [Tiếng Việt](README.vi.md)
 
-VKAI Panel quản lý máy chủ, website, cơ sở dữ liệu, DNS, chứng chỉ SSL, container,
-tường lửa, sao lưu và giám sát từ một giao diện web duy nhất. Panel chạy trên
-**cổng riêng (mặc định 8888)** phía sau một **lối vào an toàn**; cổng **80/443 dành
-riêng cho website của khách hàng**.
+**A multi-server hosting and server control panel** — built by **HiTechCloud** ([hitechcloud.vn](https://hitechcloud.vn)).
 
----
-
-## Mục lục
-
-- [Điểm khác biệt](#điểm-khác-biệt)
-- [Docker trong VKAI Panel: hai vai trò khác nhau](#docker-trong-vkai-panel-hai-vai-trò-khác-nhau)
-- [Tính năng](#tính-năng)
-- [Ma trận hệ điều hành hỗ trợ](#ma-trận-hệ-điều-hành-hỗ-trợ)
-- [Cài đặt một dòng lệnh](#cài-đặt-một-dòng-lệnh)
-- [Truy cập panel lần đầu](#truy-cập-panel-lần-đầu)
-- [Giao diện](#giao-diện)
-- [Kiến trúc](#kiến-trúc)
-- [Cấu trúc mã nguồn](#cấu-trúc-mã-nguồn)
-- [Đường dẫn chuẩn trên máy chủ](#đường-dẫn-chuẩn-trên-máy-chủ)
-- [Dịch vụ systemd](#dịch-vụ-systemd)
-- [Triển khai bản phát hành](#triển-khai-bản-phát-hành)
-- [Vận hành hằng ngày](#vận-hành-hằng-ngày)
-- [Lệnh quản trị `vkai`](#lệnh-quản-trị-vkai)
-- [Cấu hình](#cấu-hình)
-- [Môi trường phát triển](#môi-trường-phát-triển)
-- [Quy trình đóng góp](#quy-trình-đóng-góp)
-- [Tài liệu](#tài-liệu)
-- [Giấy phép & hỗ trợ](#giấy-phép--hỗ-trợ)
+VKAI Panel manages servers, websites, databases, DNS, TLS certificates, containers,
+firewalls, backups and monitoring from a single web interface. The panel listens on
+**its own port (8888 by default)** behind a **security entrance**; ports **80 and 443
+stay reserved for customer websites**.
 
 ---
 
-## Điểm khác biệt
+## Contents
+
+- [What makes it different](#what-makes-it-different)
+- [Docker in VKAI Panel: two different roles](#docker-in-vkai-panel-two-different-roles)
+- [Features](#features)
+- [Supported operating systems](#supported-operating-systems)
+- [One-line install](#one-line-install)
+- [First access to the panel](#first-access-to-the-panel)
+- [The interface](#the-interface)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [Standard paths on the server](#standard-paths-on-the-server)
+- [systemd services](#systemd-services)
+- [Releases and deployment](#releases-and-deployment)
+- [Day-to-day operation](#day-to-day-operation)
+- [The `vkai` administration command](#the-vkai-administration-command)
+- [Configuration](#configuration)
+- [Development environment](#development-environment)
+- [Contributing](#contributing)
+- [Documentation](#documentation)
+- [Licence and support](#licence-and-support)
+
+---
+
+## What makes it different
 
 | | VKAI Panel |
 |---|---|
-| Cổng quản trị | Cổng riêng, mặc định `8888` — **không bao giờ** chiếm 80/443 |
-| Lối vào | Đường dẫn bí mật dạng `/vkai_a1b2c3d4`, sai đường dẫn trả về 404 trung tính |
-| Chặn theo IP / tên miền | Có, kiểm tra trước cả lối vào |
-| Website khách | Toàn quyền dùng 80/443, tách hoàn toàn khỏi panel |
-| Triển khai | systemd thuần (`vkai-api`, `vkai-ui`, `vkai-agent`) — binary Go + Next.js standalone, **không dùng Docker** |
-| Đa máy chủ | Một panel điều khiển nhiều node qua `vkai-agent` |
+| Administration port | Its own port, `8888` by default — **never** takes 80/443 |
+| Entrance | A secret path such as `/vkai_a1b2c3d4`; a wrong path gets a neutral 404 |
+| IP and domain restriction | Yes, checked before the entrance itself |
+| Customer websites | Have 80/443 entirely to themselves, fully separate from the panel |
+| Deployment | Plain systemd (`vkai-api`, `vkai-ui`, `vkai-agent`) — a Go binary and a Next.js standalone build, **no Docker** |
+| Multi-server | One panel drives many nodes through `vkai-agent` |
 
-## Docker trong VKAI Panel: hai vai trò khác nhau
+## Docker in VKAI Panel: two different roles
 
-Đây là chỗ dễ hiểu nhầm nhất, nên nói rõ ngay từ đầu. Chữ "Docker" trong dự án này
-mang **hai nghĩa hoàn toàn tách biệt**.
+This is the easiest thing to misread, so it is stated up front. The word "Docker"
+means **two completely separate things** in this project.
 
-**1. Docker như hạ tầng để dựng chính panel — đã bỏ hẳn.**
-Core API, giao diện và agent đều build và chạy **trần** trên Linux: binary Go,
-bản build Next.js standalone, quản lý bằng systemd. Kho mã không còn `Dockerfile`,
-`docker-compose.yml`, `.dockerignore` hay bất kỳ hướng dẫn `docker compose up` nào
-để dựng panel. PostgreSQL và Redis được cài **trực tiếp lên máy** bởi
-`deploy/install.sh`. Máy chủ chạy panel **không cần** cài Docker Engine.
+**1. Docker as the infrastructure that runs the panel — removed.**
+The core API, the interface and the agent all build and run **directly** on Linux:
+a Go binary, a Next.js standalone build, supervised by systemd. The repository
+contains no `Dockerfile`, no `docker-compose.yml`, no `.dockerignore` and no
+`docker compose up` instructions for standing the panel up. PostgreSQL and Redis
+are installed **on the host** by `deploy/install.sh`. A server running the panel
+**does not need** Docker Engine.
 
-**2. Docker như tính năng dành cho khách hàng — giữ nguyên, đầy đủ.**
-Khách dùng panel để quản lý container, image, volume, network và compose stack
-**của chính họ**. Màn hình Docker trong giao diện, nhóm API `/api/v1/docker/*` và
-các quyền `docker:*` trong RBAC đều **không thay đổi**. Tính năng này hoàn toàn
-không bị cắt bỏ.
+**2. Docker as a feature for customers — kept, in full.**
+Customers use the panel to manage **their own** containers, images, volumes,
+networks and compose stacks. The Docker screens in the interface, the
+`/api/v1/docker/*` API group and the `docker:*` RBAC permissions are **unchanged**.
+Nothing about this feature was cut.
 
-| | Docker để dựng panel | Docker như tính năng cho khách |
+| | Docker to run the panel | Docker as a customer feature |
 |---|---|---|
-| Trạng thái | **Đã bỏ** | **Giữ nguyên, hỗ trợ đầy đủ** |
-| Thể hiện trong mã | `Dockerfile`, `docker-compose.yml` (đã xoá) | Màn hình Docker, `/api/v1/docker/*`, quyền `docker:*` |
-| Thay thế bằng | `deploy/install.sh` + systemd | Không thay thế — vẫn là tính năng chính thức |
-| Cần Docker Engine trên máy chủ? | Không | Có, chỉ khi khách muốn dùng tính năng này |
+| Status | **Removed** | **Kept and fully supported** |
+| Where it shows in the code | `Dockerfile`, `docker-compose.yml` (deleted) | Docker screens, `/api/v1/docker/*`, `docker:*` permissions |
+| Replaced by | `deploy/install.sh` + systemd | Not replaced — still a first-class feature |
+| Docker Engine needed on the server? | No | Yes, but only if the customer wants to use it |
 
-Nói ngắn gọn: **panel không chạy trong Docker, nhưng panel quản lý Docker.**
+In one line: **the panel does not run in Docker, but the panel manages Docker.**
 
-## Tính năng
+## Features
 
-### Nhóm chính
+### Main areas
 
-- **Quản lý đa máy chủ** — điều khiển nhiều node từ một panel.
-- **Website** — PHP, Node.js, Python, reverse proxy, site tĩnh, WordPress.
-- **Cơ sở dữ liệu** — MySQL, MariaDB, PostgreSQL, Redis, MongoDB.
-- **SSL/TLS** — Let's Encrypt, chứng chỉ tự cấp, tự động gia hạn.
-- **DNS** — tích hợp BIND, PowerDNS.
-- **Docker** — container, image, volume, compose.
-- **Trình quản lý tệp** — trình soạn thảo web có tô màu cú pháp, giới hạn trong thư mục gốc cấu hình được.
-- **Cron** — quản lý tác vụ định kỳ bằng giao diện.
-- **Tường lửa** — UFW, firewalld, CSF.
-- **Sao lưu** — sao lưu tự động ra S3, FTP, SFTP, Dropbox.
-- **Triển khai** — deploy từ Git kèm webhook.
-- **Giám sát** — số liệu máy chủ thời gian thực và cảnh báo.
-- **Bảo mật** — quản lý khoá SSH, 2FA, danh sách IP cho phép, WAF, chống sửa đổi tệp.
-- **Đa người thuê (multi-tenant)** — cô lập tenant kèm RBAC 8 vai trò.
+- **Multi-server management** — drive many nodes from one panel.
+- **Websites** — PHP, Node.js, Python, reverse proxy, static sites, WordPress.
+- **Databases** — MySQL, MariaDB, PostgreSQL, Redis, MongoDB.
+- **SSL/TLS** — Let's Encrypt, self-signed certificates, automatic renewal.
+- **DNS** — BIND and PowerDNS integration.
+- **Docker** — containers, images, volumes, compose.
+- **File manager** — a web editor with syntax highlighting, confined to a configurable root.
+- **Cron** — scheduled tasks managed from the interface.
+- **Firewall** — UFW, firewalld, CSF.
+- **Backups** — automatic backups to S3, FTP, SFTP and Dropbox.
+- **Deployment** — deploy from Git, with webhooks.
+- **Monitoring** — live server metrics and alerting.
+- **Security** — SSH key management, 2FA, IP allow lists, WAF, file tamper protection.
+- **Multi-tenancy** — tenant isolation with eight RBAC roles.
 
-### Web server hỗ trợ
+### Supported web servers
 
 Nginx, Apache, OpenLiteSpeed, LiteSpeed Enterprise, Caddy, Traefik.
 
-> Adapter Nginx đã đầy đủ; các adapter còn lại đã có khung và đang hoàn thiện —
-> xem [docs/ENTERPRISE_ROADMAP.md](docs/ENTERPRISE_ROADMAP.md).
+> The Nginx adapter is complete; the others are scaffolded and being finished —
+> see [docs/ENTERPRISE_ROADMAP.md](docs/ENTERPRISE_ROADMAP.md).
 
-## Ma trận hệ điều hành hỗ trợ
+## Supported operating systems
 
-Trình cài đặt nhận diện hệ điều hành qua `/etc/os-release` và chỉ chạy trên các
-họ dưới đây.
+The installer identifies the operating system from `/etc/os-release` and runs only
+on the families below.
 
-| Hệ điều hành | Phiên bản khuyến nghị | Trạng thái | Ghi chú |
+| Operating system | Recommended versions | Status | Notes |
 |---|---|---|---|
-| Ubuntu Server | 22.04 LTS, 24.04 LTS | Hỗ trợ đầy đủ | Nền tảng kiểm thử chính |
-| Ubuntu Server | 20.04 LTS | Hỗ trợ | Cần kho Node.js 20 từ NodeSource |
-| Debian | 12 (Bookworm), 11 (Bullseye) | Hỗ trợ đầy đủ | |
-| Rocky Linux | 9, 8 | Hỗ trợ | Dùng nhánh `dnf/yum` của trình cài |
-| AlmaLinux | 9, 8 | Hỗ trợ | Dùng nhánh `dnf/yum` của trình cài |
-| RHEL | 9, 8 | Hỗ trợ | Cần đăng ký kho phần mềm hợp lệ |
-| CentOS Stream | 9 | Hỗ trợ | CentOS 7 đã hết vòng đời, không hỗ trợ |
-| Các bản Linux khác | — | Không hỗ trợ | Trình cài dừng với thông báo rõ ràng |
+| Ubuntu Server | 22.04 LTS, 24.04 LTS | Fully supported | Primary test platform |
+| Ubuntu Server | 20.04 LTS | Supported | Needs the NodeSource Node.js 20 repository |
+| Debian | 12 (Bookworm), 11 (Bullseye) | Fully supported | |
+| Rocky Linux | 9, 8 | Supported | Uses the installer's `dnf`/`yum` path |
+| AlmaLinux | 9, 8 | Supported | Uses the installer's `dnf`/`yum` path |
+| RHEL | 9, 8 | Supported | Needs a valid repository subscription |
+| CentOS Stream | 9 | Supported | CentOS 7 is end-of-life and unsupported |
+| Any other Linux | — | Unsupported | The installer stops with a clear message |
 
-| Kiến trúc CPU | Trạng thái |
+| CPU architecture | Status |
 |---|---|
-| `x86_64` / `amd64` | Hỗ trợ đầy đủ |
-| `aarch64` / `arm64` | Hỗ trợ |
-| Kiến trúc khác | Không hỗ trợ |
+| `x86_64` / `amd64` | Fully supported |
+| `aarch64` / `arm64` | Supported |
+| Anything else | Unsupported |
 
-Yêu cầu tối thiểu: 2 vCPU, 4 GB RAM, 50 GB đĩa SSD, quyền `root`, và một máy chủ
-mới chưa cài panel khác (aaPanel, cPanel, Plesk...). Khuyến nghị cho môi trường
-sản xuất: 4 vCPU, 8 GB RAM, 100 GB SSD.
+Minimum requirements: 2 vCPU, 4 GB RAM, 50 GB SSD, `root` access, and a fresh
+server with no other panel installed (aaPanel, cPanel, Plesk and so on).
+Recommended for production: 4 vCPU, 8 GB RAM, 100 GB SSD.
 
-## Cài đặt một dòng lệnh
+## One-line install
 
 ```bash
 curl -sSL https://install.vkai.vn | sudo bash
 ```
 
-Trình cài sẽ: nhận diện hệ điều hành và kiến trúc, cài PostgreSQL / Redis / Nginx,
-sinh mật khẩu và bí mật ngẫu nhiên, cài binary panel, tạo dịch vụ systemd, rồi in
-ra thông tin truy cập.
+The installer identifies the operating system and architecture, installs
+PostgreSQL, Redis and Nginx, generates random passwords and secrets, installs the
+panel binaries, creates the systemd services, and prints the access details.
 
-Cài từ mã nguồn (khi cần build tại chỗ):
+Installing from source, when you need to build in place:
 
 ```bash
 git clone https://github.com/hitechcloud-vietnam/vkai-panel.git
@@ -141,71 +144,94 @@ cd vkai-panel
 sudo bash deploy/install.sh
 ```
 
-> Đọc kỹ [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) trước khi cài lên máy chủ đang chạy dịch vụ thật.
+> Read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) carefully before installing on a
+> server that is already carrying live traffic.
 
-## Truy cập panel lần đầu
+## First access to the panel
 
-Kết thúc cài đặt, panel in một lần duy nhất thông tin truy cập:
+When the installation finishes, the panel prints the access details exactly once:
 
 ```
-==============================================================================
-  VKAI PANEL - THONG TIN TRUY CAP (khong dung cong 80/443)
-==============================================================================
-  URL truy cap       : http://203.0.113.10:8888/vkai_91ac5b65/
-  Cong panel         : 8888
-  Loi vao an toan    : /vkai_91ac5b65
-  File cau hinh      : /vkai-panel/etc/panel_access.json
-==============================================================================
+=============================================================================
+ VKAI Panel v1.0.0 - INSTALLATION COMPLETE (fresh)
+ HiTechCloud
+ System  : Ubuntu 24.04.1 LTS (x86_64)
+=============================================================================
+
+PANEL ACCESS
+  Full URL   : https://203.0.113.10:8888/vkai_91ac5b65/
+  Port       : 8888   (80/443 stay reserved for the customer websites)
+  Entrance   : /vkai_91ac5b65
+  Domain     : (none - reached by IP 203.0.113.10)
+  Allowed IPs: any source address
+  Any other path returns a neutral 404. That is deliberate.
+
+ADMINISTRATOR
+  Username : admin
+  Password : <generated>
+  (!) This is the DEFAULT password - change it immediately after logging in.
+
+CERTIFICATE
+  Mode        : letsencrypt
+  Source      : Let's Encrypt
+  Expires     : 2026-11-26
+  SHA-256     : <fingerprint>
 ```
 
-Ba việc phải làm ngay:
+(Abridged. The real summary also lists every path on disk, the systemd services,
+the database and Redis, the firewall state, the update channel, and the fact that
+this machine is already registered as the first managed node.)
 
-1. **Mở tường lửa cho cổng panel trước khi đóng console**
+Three things to do immediately:
+
+1. **Open the firewall for the panel port before you close the console.**
 
    ```bash
-   sudo ufw allow 8888/tcp                                                    # Ubuntu / Debian
-   sudo firewall-cmd --permanent --add-port=8888/tcp && sudo firewall-cmd --reload   # RHEL / Rocky / Alma
+   sudo ufw allow 8888/tcp                                                          # Ubuntu / Debian
+   sudo firewall-cmd --permanent --add-port=8888/tcp && sudo firewall-cmd --reload  # RHEL / Rocky / Alma
    ```
 
-2. **Lưu lại URL kèm lối vào an toàn.** Truy cập sai đường dẫn chỉ nhận 404 trung tính.
-3. **Đổi mật khẩu quản trị mặc định** ngay trong lần đăng nhập đầu tiên.
+2. **Save the URL together with its security entrance.** Any other path returns a
+   neutral 404.
+3. **Change the default administrator password** on your first sign-in.
 
-Xem lại thông tin bất cứ lúc nào:
+You can print the details again at any time:
 
 ```bash
 vkai panel info
 ```
 
-Chi tiết đầy đủ (đổi cổng, đổi lối vào, giới hạn IP, TLS, reverse proxy):
-[docs/PANEL_ACCESS.md](docs/PANEL_ACCESS.md).
+For the full detail — changing the port or the entrance, restricting by IP, TLS,
+running behind a reverse proxy — see [docs/PANEL_ACCESS.md](docs/PANEL_ACCESS.md).
 
-## Giao diện
+## The interface
 
-Giao diện là ứng dụng Next.js 14 (App Router) chạy trên nền sáng, hai màu thương
-hiệu **navy `#0B398C`** và **cyan `#1791C8`**, font Inter cho văn bản và JetBrains
-Mono cho mã/log. Bố cục gồm sidebar điều hướng bên trái, thanh trên hiển thị máy
-chủ đang chọn và thông báo, phần thân là nội dung từng màn hình.
+The interface is a Next.js 14 application (App Router) on a light theme, in two
+brand colours, **navy `#0B398C`** and **cyan `#1791C8`**, with Inter for text and
+JetBrains Mono for code and logs. The layout is a navigation sidebar on the left, a
+top bar showing the selected server and notifications, and the screen's content in
+the body.
 
-Ảnh chụp màn hình đặt trong `docs/images/` và được nhúng vào tài liệu tương ứng.
+Screenshots live in `docs/images/` and are embedded in the relevant documents.
 
-| Màn hình | Nội dung |
+| Screen | What it shows |
 |---|---|
-| Dashboard | CPU, RAM, đĩa, băng thông theo thời gian thực; cảnh báo đang mở; tác vụ gần đây |
-| Máy chủ | Danh sách node, trạng thái agent, thêm/gỡ máy chủ |
-| Website | Danh sách site, loại runtime, tình trạng SSL, thao tác nhanh; quản lý WordPress |
-| Cơ sở dữ liệu | Instance, database, người dùng, sao lưu, console truy vấn |
-| SSL | Chứng chỉ, ngày hết hạn, phát hành và gia hạn Let's Encrypt |
-| DNS | Vùng và bản ghi DNS |
-| Docker | Container, image, volume, network, compose |
-| Trình quản lý tệp | Duyệt, sửa, tải lên/xuống trong thư mục gốc đã giới hạn |
-| Cron / Tác vụ định kỳ | Lịch chạy, lịch sử, nhật ký từng lần chạy |
-| Bảo mật | Tường lửa, WAF, quét bảo mật, bảo vệ tệp, chống sửa đổi |
-| Giám sát & Nhật ký | Biểu đồ số liệu, cảnh báo, nhật ký panel và web server |
-| Sao lưu | Chính sách, điểm khôi phục, đích lưu trữ từ xa |
-| Người dùng & API key | Tài khoản, vai trò RBAC, khoá API, nhật ký kiểm toán |
-| Terminal | Phiên shell trên máy chủ đã chọn, ngay trong trình duyệt |
+| Dashboard | Live CPU, memory, disk and bandwidth; open alerts; recent tasks |
+| Servers | Node list, agent status, adding and removing servers |
+| Websites | Sites, runtime type, TLS status, quick actions; WordPress management |
+| Databases | Instances, databases, users, backups, a query console |
+| SSL | Certificates, expiry dates, Let's Encrypt issuance and renewal |
+| DNS | Zones and records |
+| Docker | Containers, images, volumes, networks, compose |
+| File manager | Browse, edit and transfer files within the configured root |
+| Cron | Schedules, history and per-run logs |
+| Security | Firewall, WAF, security scans, file protection, tamper detection |
+| Monitoring and logs | Metric charts, alerts, panel and web server logs |
+| Backups | Policies, restore points, remote destinations |
+| Users and API keys | Accounts, RBAC roles, API keys, audit log |
+| Terminal | A shell session on the selected server, in the browser |
 
-## Kiến trúc
+## Architecture
 
 ```
                        Internet
@@ -213,16 +239,17 @@ chủ đang chọn và thông báo, phần thân là nội dung từng màn hìn
         +-----------------+------------------+
         |                                    |
         v                                    v
-  Cong 80 / 443                        Cong 8888 (VKAI_PANEL_PORT)
-  Website cua khach                    Panel quan tri
-  (nginx/apache/... vhost)             + loi vao an toan /vkai_xxxxxxxx
+  Ports 80 / 443                       Port 8888 (VKAI_PANEL_PORT)
+  Customer websites                    Administration panel
+  (nginx/apache/... vhosts)            + security entrance /vkai_xxxxxxxx
         |                                    |
         v                                    v
   /vkai-panel/www/domains/<domain>     +-----------------------------+
-                                       |  vkai-api (Go, cong 30110)  |
-                                       |  cong duy nhat qua cong gac |
+                                       |  vkai-api (Go, port 30110)  |
+                                       |  the only way in is the     |
+                                       |  entrance checked here      |
                                        +--------------+--------------+
-                                                      | chi khi qua cong gac
+                                                      | only past the entrance
                                                       v
                                        +-----------------------------+
                                        |  vkai-ui  (Next.js, 3000)   |
@@ -233,215 +260,226 @@ chủ đang chọn và thông báo, phần thân là nội dung từng màn hìn
                             v                         v                         v
                      +-------------+           +-------------+          +----------------+
                      | PostgreSQL  |           |    Redis    |          |   vkai-agent   |
-                     |  cong 5432  |           |  cong 6379  |          |   cong 30111   |
+                     |  port 5432  |           |  port 6379  |          |   port 30111   |
                      +-------------+           +-------------+          +----------------+
 ```
 
-Cổng `30110` (API) và `3000` (UI) chỉ lắng nghe nội bộ; mọi truy cập từ bên ngoài
-đi qua cổng panel `8888`. nginx chỉ có **một** upstream là `vkai-api`: lối vào an
-toàn được kiểm tra ở đó, rồi API mới chuyển tiếp phần giao diện sang Next.js.
+Port `30110` (API) and port `3000` (UI) listen on the loopback only; everything
+from outside arrives on the panel port, `8888`. Nginx has exactly **one** upstream,
+`vkai-api`: the security entrance is checked there, and only then does the API
+forward the interface to Next.js.
 
-### Công nghệ
+### Technology
 
-| Thành phần | Công nghệ |
+| Component | Technology |
 |---|---|
 | API (`core/`) | Go 1.22, Gin, JWT, pgx, go-redis, asynq |
-| Giao diện (`panel/`) | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| Cơ sở dữ liệu | PostgreSQL 16, Redis 7 |
-| Agent (`agent/`) | Binary Go (`vkaid`) |
-| Web server | Nginx (mặc định), Apache, OpenLiteSpeed, LiteSpeed, Caddy, Traefik |
-| Chạy dịch vụ | systemd — binary Go + `next start` bản standalone, không dùng Docker |
+| Interface (`panel/`) | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| Databases | PostgreSQL 16, Redis 7 |
+| Agent (`agent/`) | A Go binary (`vkaid`) |
+| Web servers | Nginx (default), Apache, OpenLiteSpeed, LiteSpeed, Caddy, Traefik |
+| Process supervision | systemd — a Go binary and a Next.js standalone build, no Docker |
 
-## Cấu trúc mã nguồn
+## Repository layout
 
 ```
 vkai-panel/
-├── core/                       # Máy chủ API viết bằng Go (trước đây là backend/)
+├── core/                       # The Go API server (formerly backend/)
 │   ├── cmd/
-│   │   ├── api/                # Điểm vào dịch vụ vkai-api
-│   │   ├── cli/                # Lệnh quản trị
-│   │   └── panelctl/           # vkai-panelctl: cổng, lối vào, IP, tên miền
+│   │   ├── api/                # Entry point for the vkai-api service
+│   │   ├── cli/                # Administration commands
+│   │   └── panelctl/           # vkai-panelctl: port, entrance, IPs, domain, certificate
 │   ├── internal/
-│   │   ├── auth/               # Xác thực JWT
-│   │   ├── config/             # Cấu hình + cổng/lối vào panel
-│   │   ├── database/           # Kết nối cơ sở dữ liệu
-│   │   ├── handler/            # HTTP handler
+│   │   ├── acme/               # ACME (RFC 8555) client
+│   │   ├── auth/               # JWT authentication
+│   │   ├── config/             # Configuration, panel port and entrance
+│   │   ├── database/           # Database connections
+│   │   ├── handler/            # HTTP handlers
 │   │   ├── middleware/         # HTTP middleware
-│   │   ├── models/             # Mô hình dữ liệu
-│   │   ├── rbac/               # Phân quyền theo vai trò
-│   │   ├── repository/         # Lớp truy cập dữ liệu
-│   │   ├── service/            # Nghiệp vụ
-│   │   ├── utils/              # Tiện ích
-│   │   └── webserver/          # Adapter web server
-│   ├── migrations/             # Migration SQL
-│   └── config.yaml             # Cấu hình mẫu
-├── panel/                      # Giao diện Next.js (trước đây là frontend/)
+│   │   ├── models/             # Data models
+│   │   ├── rbac/               # Role-based access control
+│   │   ├── repository/         # Data access
+│   │   ├── service/            # Business logic
+│   │   ├── terminal/           # Login shells on a pseudo-terminal
+│   │   ├── utils/              # Utilities
+│   │   └── webserver/          # Web server adapters
+│   ├── migrations/             # SQL migrations
+│   └── config.yaml             # Sample configuration
+├── panel/                      # The Next.js interface (formerly frontend/)
 │   ├── src/
 │   │   ├── app/                # App Router
-│   │   ├── components/         # Component React
-│   │   ├── services/           # Lớp gọi API
-│   │   ├── store/              # Zustand store
+│   │   ├── components/         # React components
+│   │   ├── services/           # API client
+│   │   ├── store/              # Zustand stores
 │   │   └── styles/             # CSS
 │   └── package.json
-├── agent/                      # VKAI Agent chạy trên từng node
+├── agent/                      # The VKAI Agent, one per managed node
 │   └── cmd/main.go
-├── deploy/                     # install.sh, deploy.sh, unit systemd, cấu hình nginx
-│   ├── install.sh              # Bộ cài đa hệ điều hành (cài trần lên máy)
+├── deploy/                     # install.sh, deploy.sh, systemd units, nginx config
+│   ├── install.sh              # Multi-OS installer (installs onto the host)
 │   ├── systemd/                # vkai-api.service, vkai-ui.service, vkai-agent.service
-│   ├── nginx/                  # vhost cho cổng panel
-│   └── scripts/deploy.sh       # Triển khai gói .tar.gz + rollback
-├── scripts/                    # Script tiện ích
-├── docs/                       # Tài liệu
-├── setup-dev.sh                # Dựng môi trường phát triển
+│   ├── nginx/                  # The vhost for the panel port
+│   └── scripts/deploy.sh       # Release deployment and rollback
+├── scripts/                    # Helper scripts
+├── docs/                       # Documentation
+├── setup-dev.sh                # Development environment setup
 └── Makefile                    # build / test / lint / package
 ```
 
-Không có `Dockerfile` hay `docker-compose.yml` trong kho mã: panel được build và
-chạy trần. Xem [Docker trong VKAI Panel: hai vai trò khác nhau](#docker-trong-vkai-panel-hai-vai-trò-khác-nhau).
+There is no `Dockerfile` and no `docker-compose.yml` in the repository: the panel is
+built and run directly on the host. See
+[Docker in VKAI Panel: two different roles](#docker-in-vkai-panel-two-different-roles).
 
-> Đường dẫn import Go **không đổi**: module vẫn là
-> `github.com/hitechcloud-vietnam/vkai-panel` (và `.../agent`). Chỉ tên thư mục
-> trên đĩa đổi từ `backend/`→`core/` và `frontend/`→`panel/`.
+> The Go import paths are **unchanged**: the module is still
+> `github.com/hitechcloud-vietnam/vkai-panel` (and `.../agent`). Only the directory
+> names on disk changed, from `backend/` to `core/` and `frontend/` to `panel/`.
 
-## Đường dẫn chuẩn trên máy chủ
+## Standard paths on the server
 
-| Đường dẫn | Nội dung |
+| Path | Contents |
 |---|---|
-| `/vkai-panel/` | Thư mục gốc của panel sau khi cài |
-| `/vkai-panel/core/` | Mã nguồn và binary của API (`vkai-api`) |
-| `/vkai-panel/panel/` | Bản build giao diện (`vkai-ui`) |
-| `/vkai-panel/www/domains/<domain>/` | **Mã nguồn website của khách hàng** |
-| `/vkai-panel/www/backup/` | Sao lưu website và cơ sở dữ liệu |
-| `/vkai-panel/www/default/` | Trang mặc định cho vhost chưa khớp tên miền |
-| `/vkai-panel/logs/` | Nhật ký của panel |
-| `/vkai-panel/logs/sites/<domain>/` | Nhật ký web server tách theo từng site |
-| `/vkai-panel/etc/` | Cấu hình panel (`.env`, `config.yaml`) |
-| `/vkai-panel/ssl/` | Chứng chỉ TLS |
-| `/vkai-panel/tmp/` | Tệp tạm |
+| `/vkai-panel/` | The panel's root after installation |
+| `/vkai-panel/core/` | The API source and binary (`vkai-api`) |
+| `/vkai-panel/panel/` | The interface build (`vkai-ui`) |
+| `/vkai-panel/www/domains/<domain>/` | **Customer website code** |
+| `/vkai-panel/www/backup/` | Website and database backups |
+| `/vkai-panel/www/default/` | The default page for a vhost that matches no domain |
+| `/vkai-panel/logs/` | Panel logs |
+| `/vkai-panel/logs/sites/<domain>/` | Web server logs, separated per site |
+| `/vkai-panel/etc/` | Panel configuration (`.env`, `config.yaml`) |
+| `/vkai-panel/ssl/` | TLS certificates |
+| `/vkai-panel/tmp/` | Temporary files |
 
-Cổng và lối vào an toàn đã sinh được lưu trong `/vkai-panel/etc/panel_access.json`
-(quyền `0600`). Đổi `VKAI_PANEL_ROOT` sẽ dời toàn bộ cây thư mục trên; đổi riêng
-`VKAI_WEB_ROOT`, `VKAI_BACKUP_ROOT`, `VKAI_LOG_ROOT`, `VKAI_ETC_ROOT`,
-`VKAI_SSL_ROOT` hoặc `VKAI_TMP_ROOT` chỉ dời nhánh tương ứng — đó là cách gắn
-một ổ đĩa riêng cho sao lưu hoặc cho nhật ký.
+The generated port and security entrance are stored in
+`/vkai-panel/etc/panel_access.json`, mode `0600`. Changing `VKAI_PANEL_ROOT` moves
+the whole tree above; changing `VKAI_WEB_ROOT`, `VKAI_BACKUP_ROOT`, `VKAI_LOG_ROOT`,
+`VKAI_ETC_ROOT`, `VKAI_SSL_ROOT` or `VKAI_TMP_ROOT` moves only that branch — which
+is how you put backups or logs on their own disk.
 
-## Dịch vụ systemd
+## systemd services
 
-| Dịch vụ | Vai trò | Cổng |
+| Service | Role | Ports |
 |---|---|---|
-| `vkai-api` | API Go, đồng thời phục vụ cổng panel và lối vào an toàn | 8888 (công khai), 30110 (nội bộ) |
-| `vkai-ui` | Giao diện Next.js | 3000 (chỉ nội bộ) |
-| `vkai-agent` | Agent chạy trên từng node được quản lý | 30111 |
+| `vkai-api` | The Go API; also serves the panel port and the security entrance | 8888 (public), 30110 (internal) |
+| `vkai-ui` | The Next.js interface | 3000 (internal only) |
+| `vkai-agent` | The agent on each managed node | 30111 |
 
 ```bash
 sudo systemctl status vkai-api vkai-ui vkai-agent
 sudo journalctl -u vkai-api -f
 ```
 
-Panel chạy dưới người dùng hệ thống **`vkai`**, không chạy bằng `root`. Riêng
-`vkai-agent` chạy bằng `root` vì phải thao tác ở mức hệ thống, và là dịch vụ
-**tuỳ chọn**. Cả ba unit đều đã bật gia cố systemd: `NoNewPrivileges`,
-`ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, và `ReadWritePaths` chỉ mở
-đúng các thư mục cần ghi.
+The panel runs as the system user **`vkai`**, not as `root`. `vkai-agent` is the
+exception: it runs as `root` because it has to act on the system, and it is an
+**optional** service. All three units are hardened: `NoNewPrivileges`,
+`ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, and `ReadWritePaths` opened
+only for the directories that genuinely need writing.
 
-## Triển khai bản phát hành
+## Releases and deployment
 
-Bản phát hành được đóng thành gói `.tar.gz` rồi đẩy xuống máy chủ. Mỗi lần triển
-khai giải nén vào **một thư mục riêng theo phiên bản** và trỏ symlink `current`
-sang đó, nên quay lui chỉ là trỏ lại symlink.
+A release is packaged as a `.tar.gz` and shipped to the server. Each deployment
+unpacks into **its own versioned directory** and points the `current` symlink at it,
+so rolling back is just moving the symlink.
 
 ```
-/vkai-panel/releases/20250315_101500/    # bản cũ, vẫn giữ để quay lui
-/vkai-panel/releases/20250316_143000/    # bản vừa triển khai
+/vkai-panel/releases/20250315_101500/    # the previous release, kept for rollback
+/vkai-panel/releases/20250316_143000/    # the release just deployed
 /vkai-panel/current -> /vkai-panel/releases/20250316_143000
 ```
 
-`etc/`, `logs/`, `www/`, `ssl/` nằm **ngoài** release: triển khai không ghi đè,
-quay lui không đưa chúng về cũ.
+`etc/`, `logs/`, `www/` and `ssl/` live **outside** the release: a deployment does
+not overwrite them and a rollback does not revert them.
 
-Gói phải có đúng cấu trúc sau (CI đóng gói tự động; đóng tay thì theo mẫu này):
+The package must have exactly this structure. CI builds it automatically; if you
+build one by hand, follow this shape:
 
 ```
-core/bin/vkai-api                    # binary API
-core/migrations/*.sql                # migration
-panel/.next/standalone/server.js     # bản build UI
-panel/.next/standalone/.next/static  # BẮT BUỘC, thiếu là UI lỗi client-side
-agent/bin/vkai-agent                 # tuỳ chọn
+core/bin/vkai-api                    # the API binary
+core/migrations/*.sql                # migrations
+panel/.next/standalone/server.js     # the UI build
+panel/.next/standalone/.next/static  # REQUIRED — without it the UI fails client-side
+agent/bin/vkai-agent                 # optional
 ```
 
 ```bash
-# Trên máy build
-make build                   # binary Go + bản build Next.js standalone
+# On the build machine
+make build                   # Go binaries and the Next.js standalone build
 tar -czf vkai-panel-1.2.0.tar.gz -C dist .
 
-# Trên máy chủ
+# On the server
 sudo bash deploy/scripts/deploy.sh deploy /tmp/vkai-panel-1.2.0.tar.gz
-sudo bash deploy/scripts/deploy.sh list         # các bản đang giữ
+sudo bash deploy/scripts/deploy.sh list         # the releases being kept
 sudo bash deploy/scripts/deploy.sh status
-sudo bash deploy/scripts/deploy.sh rollback     # quay về bản trước
+sudo bash deploy/scripts/deploy.sh rollback     # return to the previous release
 ```
 
-Lệnh `deploy` kiểm tra gói hợp lệ **trước khi** động vào hệ thống đang chạy, sao
-lưu CSDL, chạy migration từ bản mới **trước khi** đổi symlink, rồi mới trỏ
-`current` sang bản mới và khởi động lại dịch vụ. Health check bao gồm **cả API
-lẫn giao diện**; **hỏng thì tự động quay lui** về bản trước. Hệ thống giữ bản
-đang chạy cộng 5 bản cũ gần nhất.
+`deploy` validates the package **before** it touches the running system, backs up
+the database, runs the new release's migrations **before** moving the symlink, and
+only then points `current` at the new release and restarts the services. The health
+check covers **both the API and the interface**, and **a failure rolls back
+automatically**. The running release plus the five most recent are kept.
 
-> Rollback chỉ quay lui **mã nguồn**, **không** quay lui migration cơ sở dữ liệu.
+> A rollback reverts **code only**. It does **not** revert database migrations.
 
-Chi tiết: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the detail.
 
-## Vận hành hằng ngày
+## Day-to-day operation
 
 ```bash
-# Xem nhật ký
-sudo journalctl -u vkai-api -f                 # API, theo dõi trực tiếp
-sudo journalctl -u vkai-ui -n 200 --no-pager   # 200 dòng cuối của giao diện
+# Logs
+sudo journalctl -u vkai-api -f                 # follow the API
+sudo journalctl -u vkai-ui -n 200 --no-pager   # last 200 lines of the interface
 sudo journalctl -u vkai-agent --since "1 hour ago"
-sudo journalctl -u vkai-api -p err --since today   # chỉ lỗi trong hôm nay
+sudo journalctl -u vkai-api -p err --since today   # today's errors only
 
-# Kiểm tra sức khoẻ
-curl -fsS http://127.0.0.1:30110/health        # API còn sống
-curl -fsS http://127.0.0.1:30110/ready         # sẵn sàng (đã nối CSDL/Redis)
-curl -fsS http://127.0.0.1:3000/ -o /dev/null  # giao diện phản hồi
+# Health
+curl -fsS http://127.0.0.1:30110/health        # the API is alive
+curl -fsS http://127.0.0.1:30110/ready         # ready (database and Redis connected)
+curl -fsS http://127.0.0.1:3000/ -o /dev/null  # the interface responds
 systemctl is-active vkai-api vkai-ui
 
-# Quay lui bản phát hành
+# Roll back a release
 sudo bash deploy/scripts/deploy.sh rollback
-readlink -f /vkai-panel/current                # bản đang chạy
+readlink -f /vkai-panel/current                # which release is running
 ```
 
-## Lệnh quản trị `vkai`
+## The `vkai` administration command
 
 ```bash
-# Dịch vụ
-vkai start                  # Khởi động vkai-api, vkai-ui, nginx
-vkai stop                   # Dừng vkai-ui, vkai-api
-vkai restart                # Khởi động lại toàn bộ
-vkai status                 # Trạng thái dịch vụ và tài nguyên máy
+# Services
+vkai start                  # Start vkai-api, vkai-ui and nginx
+vkai stop                   # Stop vkai-ui and vkai-api
+vkai restart                # Restart everything
+vkai status                 # Service status and host resources
 
-# Nhật ký
-vkai logs api               # Nhật ký vkai-api
-vkai logs ui                # Nhật ký vkai-ui
-vkai logs agent             # Nhật ký vkai-agent
-vkai logs nginx             # Nhật ký web server
-vkai logs install           # Nhật ký lần cài đặt gần nhất
+# Logs
+vkai logs api               # vkai-api logs
+vkai logs ui                # vkai-ui logs
+vkai logs agent             # vkai-agent logs
+vkai logs nginx             # web server logs
+vkai logs install           # the most recent installation log
 
-# Cổng truy cập panel và lối vào an toàn
-vkai info                   # URL panel, cổng, lối vào, đường dẫn dữ liệu
-vkai port                   # Xem cổng hiện tại
-vkai port 8888              # Đổi cổng panel (80/443 bị từ chối)
-vkai port random            # Cổng ngẫu nhiên trong 8000-65535
-vkai entrance random        # Sinh lối vào an toàn mới
+# Panel access: port and security entrance
+vkai info                   # Panel URL, port, entrance and data paths
+vkai port                   # Show the current port
+vkai port 8888              # Change the panel port (80 and 443 are refused)
+vkai port random            # A random port between 8000 and 65535
+vkai entrance random        # Generate a new security entrance
 vkai panel allow-ip 203.0.113.7,10.0.0.0/8
 vkai panel domain panel.example.com
 
-# Vận hành panel
-vkai backup                 # Sao lưu CSDL + cấu hình vào /vkai-panel/www/backup
-vkai update                 # Build lại core/ và panel/, khởi động lại dịch vụ
-vkai uninstall              # Gỡ cài đặt
+# The panel's own TLS certificate
+vkai cert status            # Issuer, subject, expiry and days remaining
+vkai cert issue             # Order a certificate from Let's Encrypt
+vkai cert renew             # Renew if it is near expiry; otherwise do nothing
 
-# Nghiệp vụ (uỷ quyền cho vkai-cli)
+# Panel operations
+vkai backup                 # Back up the database and configuration to /vkai-panel/www/backup
+vkai update                 # Rebuild core/ and panel/, then restart the services
+vkai upgrade --check        # Check whether a newer release exists (never installs)
+vkai uninstall              # Uninstall
+
+# Domain commands, delegated to vkai-cli
 vkai site list
 vkai site create example.com
 vkai db backup
@@ -454,151 +492,166 @@ vkai server status
 vkai user list
 ```
 
-Dạng cũ `vkai panel info` / `vkai panel port` / `vkai panel entrance` vẫn hoạt
-động để tương thích ngược.
+`vkai cert renew` is what the `vkai-cert-renew` systemd timer runs twice a day. It
+orders a new certificate only when the current one is near expiry, missing, or no
+longer covers the configured identifier; otherwise it reports the days remaining
+and exits successfully without contacting the certificate authority. A failed
+renewal never removes the certificate already in place.
 
-## Cấu hình
+The older `vkai panel info` / `vkai panel port` / `vkai panel entrance` /
+`vkai panel cert` forms still work, for backwards compatibility.
 
-Cấu hình đọc theo thứ tự ưu tiên tăng dần: giá trị mặc định → `config.yaml` →
-biến môi trường. Biến môi trường **luôn thắng**.
+## Configuration
 
-Tệp cấu hình đặt tại `/vkai-panel/etc/.env` và `/vkai-panel/etc/config.yaml`
-(quyền `0600`, thuộc người dùng `vkai`).
+Configuration is read in increasing order of precedence: built-in defaults, then
+`config.yaml`, then environment variables. **Environment variables always win.**
 
-### Biến môi trường chính
+The configuration files are `/vkai-panel/etc/.env` and
+`/vkai-panel/etc/config.yaml`, mode `0600`, owned by the `vkai` user.
 
-Mọi biến đều mang tiền tố **`VKAI_`**.
+### Main environment variables
 
-| Biến | Mô tả | Mặc định |
+Every variable is prefixed **`VKAI_`**.
+
+| Variable | Description | Default |
 |---|---|---|
-| `VKAI_PANEL_PORT` | Cổng của panel quản trị. 80/443/22/25/3306/5432/6379 bị từ chối | `8888` |
-| `VKAI_PANEL_BIND` | Địa chỉ panel lắng nghe | `0.0.0.0` |
-| `VKAI_PANEL_ENTRANCE` | Lối vào an toàn, ví dụ `/vkai_a1b2c3d4`. Để trống để tự sinh | (tự sinh) |
-| `VKAI_PANEL_ENTRANCE_ENABLED` | Bật lối vào an toàn | `true` |
-| `VKAI_PANEL_ALLOWED_IPS` | Danh sách IP/CIDR được vào panel. Trống = mọi IP | (trống) |
-| `VKAI_PANEL_TRUSTED_PROXIES` | Chỉ tin `X-Forwarded-For` từ các địa chỉ này | (trống) |
-| `VKAI_PANEL_DOMAIN` | Ràng buộc panel theo một tên miền | (trống) |
-| `VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY` | Chứng chỉ TLS riêng của panel | (trống) |
-| `VKAI_PANEL_SESSION_TTL` | Hiệu lực cookie lối vào | `12h` |
-| `VKAI_PANEL_CONFIG_FILE` | Nơi lưu cổng/lối vào đã sinh | `/vkai-panel/etc/panel_access.json` |
-| `VKAI_SERVER_PORT` | Cổng API nội bộ | `30110` |
+| `VKAI_PANEL_PORT` | The administration panel's port. 80, 443, 22, 25, 3306, 5432 and 6379 are refused | `8888` |
+| `VKAI_PANEL_BIND` | The address the panel listens on | `0.0.0.0` |
+| `VKAI_PANEL_ENTRANCE` | The security entrance, for example `/vkai_a1b2c3d4`. Leave empty to generate one | (generated) |
+| `VKAI_PANEL_ENTRANCE_ENABLED` | Whether the security entrance is enforced | `true` |
+| `VKAI_PANEL_ALLOWED_IPS` | IP addresses and CIDRs allowed into the panel. Empty means any address | (empty) |
+| `VKAI_PANEL_TRUSTED_PROXIES` | Trust `X-Forwarded-For` only from these addresses | (empty) |
+| `VKAI_PANEL_DOMAIN` | Bind the panel to one domain name | (empty) |
+| `VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY` | The panel's own TLS certificate and key | (empty) |
+| `VKAI_PANEL_SESSION_TTL` | How long the entrance cookie is valid | `12h` |
+| `VKAI_PANEL_CONFIG_FILE` | Where the generated port and entrance are stored | `/vkai-panel/etc/panel_access.json` |
+| `VKAI_SERVER_PORT` | The internal API port | `30110` |
 | `VKAI_DB_HOST` / `VKAI_DB_PORT` | PostgreSQL | `localhost` / `5432` |
-| `VKAI_DB_USER` / `VKAI_DB_NAME` | Người dùng và tên cơ sở dữ liệu | `vkai` / `vkai_panel` |
-| `VKAI_DB_PASSWORD` | Mật khẩu PostgreSQL | **bắt buộc, không có mặc định** |
-| `VKAI_DB_SSLMODE` | Chế độ SSL tới PostgreSQL | `require` |
+| `VKAI_DB_USER` / `VKAI_DB_NAME` | Database user and database name | `vkai` / `vkai_panel` |
+| `VKAI_DB_PASSWORD` | The PostgreSQL password | **required, no default** |
+| `VKAI_DB_SSLMODE` | SSL mode for PostgreSQL | `require` |
 | `VKAI_REDIS_HOST` / `VKAI_REDIS_PORT` | Redis | `localhost` / `6379` |
-| `VKAI_JWT_SECRET` | Khoá ký JWT, tối thiểu 32 ký tự ngẫu nhiên | **bắt buộc, không có mặc định** |
-| `VKAI_SECRET_KEY` | Khoá mã hoá bí mật lưu trong CSDL (32 byte hex/base64) | **bắt buộc để tạo/đổi user CSDL** |
-| `VKAI_CORS_ALLOWED_ORIGINS` | Danh sách origin trình duyệt được phép | (trống) |
-| `VKAI_AGENT_PORT` / `VKAI_AGENT_ENROLMENT_TOKEN` | Agent control channel port, and the one-time enrolment token used at the agent's first start only. There is no shared secret: see [docs/AGENT_CHANNEL.md](docs/AGENT_CHANNEL.md) | `30111` / (empty) |
+| `VKAI_JWT_SECRET` | The JWT signing key, at least 32 random characters | **required, no default** |
+| `VKAI_SECRET_KEY` | The key that encrypts secrets held in the database (32 bytes, hex or base64) | **required to create or change database users** |
+| `VKAI_CORS_ALLOWED_ORIGINS` | Browser origins the API accepts | (empty) |
+| `VKAI_AGENT_PORT` / `VKAI_AGENT_ENROLMENT_TOKEN` | The agent control channel port, and the one-time enrolment token used only at the agent's first start. There is no shared secret: see [docs/AGENT_CHANNEL.md](docs/AGENT_CHANNEL.md) | `30111` / (empty) |
 
-Danh sách đầy đủ: [`.env.example`](.env.example) và [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+The complete list is in [`.env.example`](.env.example) and
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-### Tương thích ngược với tên biến cũ
+### Backwards compatibility with older variable names
 
-Panel vẫn chấp nhận các tên cũ, nhưng chúng đã lỗi thời và sẽ bị gỡ trong một
-bản phát hành lớn sau này. Tên có tiền tố `VKAI_` luôn được ưu tiên.
+The panel still accepts the older names, but they are deprecated and will be
+removed in a future major release. The `VKAI_`-prefixed name always wins.
 
-| Tên chuẩn | Tên cũ vẫn được chấp nhận |
+| Current name | Older names still accepted |
 |---|---|
 | `VKAI_PANEL_PORT` | `PANEL_PORT` |
 | `VKAI_PANEL_BIND` | `PANEL_BIND`, `PANEL_HOST`, `VKAI_PANEL_HOST` |
 | `VKAI_PANEL_ENTRANCE` | `PANEL_ENTRANCE` |
 | `VKAI_PANEL_ALLOWED_IPS` | `PANEL_ALLOWED_IPS`, `PANEL_ALLOW_IPS`, `VKAI_PANEL_ALLOW_IPS` |
-| `VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY` | `PANEL_TLS_CERT_FILE`, `PANEL_TLS_KEY_FILE` (kèm biến thể không tiền tố) |
+| `VKAI_PANEL_TLS_CERT` / `VKAI_PANEL_TLS_KEY` | `PANEL_TLS_CERT_FILE`, `PANEL_TLS_KEY_FILE`, and their unprefixed variants |
 | `VKAI_DB_HOST`, `VKAI_DB_PORT`, `VKAI_DB_USER`, `VKAI_DB_PASSWORD`, `VKAI_DB_NAME`, `VKAI_DB_SSLMODE` | `VKAI_DATABASE_HOST`, `VKAI_DATABASE_PORT`, `VKAI_DATABASE_USER`, `VKAI_DATABASE_PASSWORD`, `VKAI_DATABASE_DBNAME`, `VKAI_DATABASE_SSLMODE` |
 
-## Môi trường phát triển
+## Development environment
 
 ```bash
 git clone https://github.com/hitechcloud-vietnam/vkai-panel.git
 cd vkai-panel
 
-# Cài PostgreSQL + Redis trực tiếp lên máy, cài phụ thuộc, sinh .env dev
+# Install PostgreSQL and Redis on the host, install dependencies, generate a dev .env
 bash setup-dev.sh
 
-# Cửa sổ 1 - API
+# Terminal 1 — the API
 cd core
-cp ../.env.example ../.env      # điền VKAI_DB_PASSWORD, VKAI_JWT_SECRET, VKAI_SECRET_KEY
+cp ../.env.example ../.env      # fill in VKAI_DB_PASSWORD, VKAI_JWT_SECRET, VKAI_SECRET_KEY
 go run ./cmd/api
 
-# Cửa sổ 2 - giao diện
+# Terminal 2 — the interface
 cd panel
 npm install
 npm run dev
 ```
 
-Giao diện dev chạy ở `http://localhost:3000` và gọi API qua
-`NEXT_PUBLIC_API_URL`. Trên máy chủ thật, giao diện chỉ được truy cập qua cổng
-panel kèm lối vào an toàn.
+In development the interface runs on `http://localhost:3000` and calls the API
+through `NEXT_PUBLIC_API_URL`. On a real server the interface is reachable only
+through the panel port, behind the security entrance.
 
-Hướng dẫn chi tiết: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) và
+Full instructions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and
 [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
-## Quy trình đóng góp
+## Contributing
 
-**Cấm push thẳng vào `main`.** Nhánh `main` được bảo vệ; mọi thay đổi đều phải đi
-qua Pull Request và được ít nhất một người review chấp thuận.
+**Pushing straight to `main` is not allowed.** `main` is protected; every change
+goes through a pull request and needs at least one approving review.
 
-1. Tạo nhánh phụ từ `main`:
+1. Branch from `main`:
 
    ```bash
    git checkout main
    git pull origin main
-   git checkout -b feat/ten-tinh-nang
+   git checkout -b feat/your-feature
    ```
 
-   Quy ước tên nhánh: `feat/...`, `fix/...`, `docs/...`, `refactor/...`, `chore/...`.
+   Branch naming: `feat/...`, `fix/...`, `docs/...`, `refactor/...`, `chore/...`.
 
-2. Commit theo Conventional Commits: `feat(website): them ho tro Node.js 22`.
+2. Write commits in the Conventional Commits style:
+   `feat(website): add Node.js 22 support`.
 
-3. Chạy kiểm thử và lint trước khi đẩy:
+3. Run the tests and the linter before pushing:
 
    ```bash
    make lint
    make test
    ```
 
-4. Đẩy nhánh phụ và mở Pull Request vào `main`:
+4. Push the branch and open a pull request against `main`:
 
    ```bash
-   git push origin feat/ten-tinh-nang
+   git push origin feat/your-feature
    ```
 
-5. Điền đầy đủ [mẫu Pull Request](.github/PULL_REQUEST_TEMPLATE.md): CI xanh, đã
-   test, ảnh chụp giao diện nếu đổi UI, đánh giá ảnh hưởng bảo mật và migration.
+5. Fill in the [pull request template](.github/PULL_REQUEST_TEMPLATE.md): CI green,
+   tested, screenshots for interface changes, and an assessment of the security and
+   migration impact.
 
-6. Chờ review, xử lý góp ý, rồi squash merge. Nhánh phụ được xoá sau khi merge.
+6. Wait for review, address the comments, then squash merge. The branch is deleted
+   after merging.
 
-Chi tiết: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) và
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) and
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-## Tài liệu
+## Documentation
 
-| Tài liệu | Nội dung |
+| Document | Contents |
 |---|---|
-| [docs/PANEL_ACCESS.md](docs/PANEL_ACCESS.md) | Cổng panel, lối vào an toàn, giới hạn IP, TLS |
-| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Hướng dẫn sử dụng cho quản trị viên |
-| [docs/API.md](docs/API.md) | Tài liệu REST API |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Toàn bộ tuỳ chọn cấu hình |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Triển khai lên máy chủ thật |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Kiến trúc hệ thống |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Thiết lập môi trường phát triển |
-| [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) | Hướng dẫn cho lập trình viên |
-| [docs/TESTING.md](docs/TESTING.md) | Chiến lược kiểm thử |
-| [docs/SECURITY.md](docs/SECURITY.md) | Hướng dẫn bảo mật vận hành |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Khắc phục sự cố |
-| [docs/FAQ.md](docs/FAQ.md) | Câu hỏi thường gặp |
-| [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/ENTERPRISE_ROADMAP.md](docs/ENTERPRISE_ROADMAP.md) | Lộ trình phát triển |
-| [CHANGELOG.md](CHANGELOG.md) | Lịch sử thay đổi |
+| [docs/PANEL_ACCESS.md](docs/PANEL_ACCESS.md) | Panel port, security entrance, IP restriction, TLS |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Guide for administrators |
+| [docs/API.md](docs/API.md) | REST API reference |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every configuration option |
+| [docs/INSTALL.md](docs/INSTALL.md) | Installation, in full |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deploying to a production server |
+| [docs/UPGRADE.md](docs/UPGRADE.md) | Upgrading an existing installation |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture |
+| [docs/AGENT_CHANNEL.md](docs/AGENT_CHANNEL.md) | The panel-to-agent channel and enrolment |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setting up a development environment |
+| [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) | Guide for developers |
+| [docs/TESTING.md](docs/TESTING.md) | Testing strategy |
+| [docs/SECURITY.md](docs/SECURITY.md) | Operational security guidance |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Troubleshooting |
+| [docs/FAQ.md](docs/FAQ.md) | Frequently asked questions |
+| [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/ENTERPRISE_ROADMAP.md](docs/ENTERPRISE_ROADMAP.md) | Roadmap |
+| [CHANGELOG.md](CHANGELOG.md) | Change history |
 
-## Giấy phép & hỗ trợ
+## Licence and support
 
-Phát hành theo giấy phép MIT. Bản quyền (c) 2024 HiTechCloud Vietnam. Xem [LICENSE](LICENSE).
+Released under the MIT Licence. Copyright (c) 2024 HiTechCloud Vietnam. See
+[LICENSE](LICENSE).
 
 - Website: https://hitechcloud.vn
-- Tài liệu: https://docs.vkai.vn
-- Báo lỗi: https://github.com/hitechcloud-vietnam/vkai-panel/issues
-- Thảo luận: https://github.com/hitechcloud-vietnam/vkai-panel/discussions
-- Báo cáo lỗ hổng bảo mật: [SECURITY.md](SECURITY.md) — **không** mở issue công khai
-- Email hỗ trợ: support@hitechcloud.vn
+- Documentation: https://docs.vkai.vn
+- Bug reports: https://github.com/hitechcloud-vietnam/vkai-panel/issues
+- Discussions: https://github.com/hitechcloud-vietnam/vkai-panel/discussions
+- Security vulnerabilities: [SECURITY.md](SECURITY.md) — please do **not** open a
+  public issue
+- Support email: support@hitechcloud.vn
