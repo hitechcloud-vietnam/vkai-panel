@@ -269,8 +269,13 @@ func TestIssuanceFailureKeepsServingAndNeverBlocksStartup(t *testing.T) {
 	if m.Certificate() == nil {
 		t.Fatal("no certificate is being served, so the panel could not answer HTTPS at all")
 	}
-	if got := m.Source(); got != SourceSelfSigned {
-		t.Fatalf("Source() = %q, want the self-signed fallback", got)
+	// The message already said "fallback" while the comparison asked for the
+	// plain constant. In letsencrypt mode a self-signed certificate is what the
+	// panel fell back to when the order could not complete, so the message was
+	// right and the constant was wrong.
+	if got := m.Source(); got != SourceSelfSignedFallback {
+		t.Fatalf("Source() = %q, want %q so the banner admits the fallback",
+			got, SourceSelfSignedFallback)
 	}
 
 	waitFor(t, "the failure to be recorded", func() bool {

@@ -612,6 +612,20 @@ func (m *Manager) install(cert *tls.Certificate, source string) {
 // first order completes.
 func (m *Manager) classify(leaf *x509.Certificate) string {
 	if isSelfSigned(leaf) {
+		// A self-signed certificate is a CHOICE only when self-signed is what
+		// was configured. In custom or letsencrypt mode it is what the panel
+		// fell back to, and saying "self-signed" there reports the symptom as
+		// the intention: the operator whose pasted certificate failed to load,
+		// or whose first ACME order has not completed, sees a banner that reads
+		// as if everything went to plan and stops looking for the cause.
+		//
+		// This distinction is invisible on a host where EnsureTLSMaterial cannot
+		// write, because there the fallback path in bootstrap is reached instead
+		// and marks it correctly. Where it can write - which is every real
+		// installation - the pair is generated, adopted, and classified here.
+		if m.cfg.TLSMode() != config.TLSModeSelfSigned {
+			return SourceSelfSignedFallback
+		}
 		return SourceSelfSigned
 	}
 	if m.cfg.TLSMode() == config.TLSModeLetsEncrypt {
