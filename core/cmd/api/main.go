@@ -21,6 +21,7 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/handler"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/job"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/ratelimit"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/tlsmanager"
@@ -268,6 +269,35 @@ func main() {
 	tamperProofService := service.NewTamperProofService(tamperProofRepo, logger)
 	tamperProofHandler := handler.NewTamperProofHandler(tamperProofService, logger)
 
+	// Two-factor authentication. One constructor builds the whole stack: the
+	// Postgres store, the secret box keyed by VKAI_SECRET_KEY, and the
+	// in-process attempt limiter. The audit service is passed so every
+	// enrolment, regeneration and removal lands in the panel's trail.
+	//
+	// Without the master key a TOTP secret cannot be stored safely, so the
+	// handler is not built. That is not fatal: the router serves the same
+	// paths with a 503 that names the cause, which an operator can fix, rather
+	// than 404s that read as "this panel has no two-factor".
+	twoFactorHandler, err := handler.NewTwoFactorHandlerFromDB(db.DB, auditService, nil, "VKAI Panel", logger)
+	if err != nil {
+		logger.Error("Two-factor authentication is unavailable: enrolment and verification will refuse every request",
+			zap.Error(err))
+		twoFactorHandler = nil
+	}
+
+	// The agent channel's certificate authority, opened once here: the same
+	// authority signs agent enrolments and holds the panel's own client
+	// certificate. A CA that cannot be opened yields a handler that answers
+	// 503 rather than a process that refuses to start - a panel that cannot
+	// enrol agents is degraded, a panel that will not boot is an outage.
+	agentPKIHandler := handler.NewAgentPKIHandlerFromEnv(jwtManager, logger)
+
+	// The credential limiter counts authentication failures across every
+	// instance of the panel, so it is built on the Redis connection this
+	// process already holds. Installed before the router is built, because the
+	// guards ProtectCredentialEndpoints creates capture it once.
+	middleware.SetCredentialLimiter(ratelimit.New(ratelimit.NewRedisStore(rdb.Client), ratelimit.PolicyFromEnv()))
+
 	// Setup router
 	router := handler.NewRouter(
 		authHandler,
@@ -309,6 +339,8 @@ func main() {
 		dailyReportHandler,
 		scheduledTaskHandler,
 		tamperProofHandler,
+		twoFactorHandler,
+		agentPKIHandler,
 		jwtManager,
 		logger,
 	)
