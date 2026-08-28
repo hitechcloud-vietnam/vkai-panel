@@ -41,14 +41,26 @@ func (r *MailServerRepository) CreateDomain(ctx context.Context, tenantID uuid.U
 
 func (r *MailServerRepository) ListDomains(ctx context.Context, tenantID uuid.UUID) ([]models.MailDomain, error) {
 	var domains []models.MailDomain
-	query := `SELECT * FROM mail_domains WHERE tenant_id = $1 ORDER BY created_at DESC`
+	query := `SELECT id, tenant_id, domain, is_verified,
+		       COALESCE(mx_record, '') AS mx_record,
+		       COALESCE(spf_record, '') AS spf_record,
+		       dkim_enabled,
+		       COALESCE(dmarc_record, '') AS dmarc_record,
+		       is_active, created_at, updated_at
+		  FROM mail_domains WHERE tenant_id = $1 ORDER BY created_at DESC`
 	err := r.db.SelectContext(ctx, &domains, query, tenantID)
 	return domains, err
 }
 
 func (r *MailServerRepository) GetDomain(ctx context.Context, id uuid.UUID) (*models.MailDomain, error) {
 	var d models.MailDomain
-	query := `SELECT * FROM mail_domains WHERE id = $1`
+	query := `SELECT id, tenant_id, domain, is_verified,
+		       COALESCE(mx_record, '') AS mx_record,
+		       COALESCE(spf_record, '') AS spf_record,
+		       dkim_enabled,
+		       COALESCE(dmarc_record, '') AS dmarc_record,
+		       is_active, created_at, updated_at
+		  FROM mail_domains WHERE id = $1`
 	err := r.db.GetContext(ctx, &d, query, id)
 	if err != nil {
 		return nil, err
@@ -61,6 +73,15 @@ func (r *MailServerRepository) DeleteDomain(ctx context.Context, id uuid.UUID) e
 	return err
 }
 
+// The mail queries below spell their columns out and COALESCE the nullable
+// text ones.
+//
+// "SELECT *" into models.MailAccount fails at scan time the moment forward_to
+// or auto_reply_msg is NULL - "converting NULL to string is unsupported" - and
+// those columns are nullable with no default, so every account created through
+// the panel hit it: the row was inserted and the call still returned an error.
+// The struct fields are plain strings and are read as such all the way out to
+// the interface, so the fix belongs here rather than in the model.
 // --- Accounts ---
 
 func (r *MailServerRepository) CreateAccount(ctx context.Context, tenantID uuid.UUID, req models.CreateAccountRequest, hashedPwd string) (*models.MailAccount, error) {
@@ -87,14 +108,22 @@ func (r *MailServerRepository) CreateAccount(ctx context.Context, tenantID uuid.
 
 func (r *MailServerRepository) ListAccounts(ctx context.Context, tenantID uuid.UUID) ([]models.MailAccount, error) {
 	var accounts []models.MailAccount
-	query := `SELECT * FROM mail_accounts WHERE tenant_id = $1 ORDER BY created_at DESC`
+	query := `SELECT id, tenant_id, domain_id, email, password, quota_mb, used_mb, is_active,
+		       COALESCE(forward_to, '') AS forward_to, auto_reply,
+		       COALESCE(auto_reply_msg, '') AS auto_reply_msg,
+		       last_login_at, created_at, updated_at
+		  FROM mail_accounts WHERE tenant_id = $1 ORDER BY created_at DESC`
 	err := r.db.SelectContext(ctx, &accounts, query, tenantID)
 	return accounts, err
 }
 
 func (r *MailServerRepository) GetAccount(ctx context.Context, id uuid.UUID) (*models.MailAccount, error) {
 	var a models.MailAccount
-	query := `SELECT * FROM mail_accounts WHERE id = $1`
+	query := `SELECT id, tenant_id, domain_id, email, password, quota_mb, used_mb, is_active,
+		       COALESCE(forward_to, '') AS forward_to, auto_reply,
+		       COALESCE(auto_reply_msg, '') AS auto_reply_msg,
+		       last_login_at, created_at, updated_at
+		  FROM mail_accounts WHERE id = $1`
 	err := r.db.GetContext(ctx, &a, query, id)
 	if err != nil {
 		return nil, err

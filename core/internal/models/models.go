@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // JSONMap is a map[string]interface{} that implements database/sql Scanner and driver.Valuer
@@ -366,18 +367,55 @@ type BackupRecord struct {
 // API KEY
 // ============================================================
 
+// APIKey is one row of api_keys.
+//
+// Every column of that table is a field here, including the ones added by
+// migrations/pending/apikey_scopes.sql. That is not tidiness: repository
+// /multi_user.go reads this table with `SELECT *`, and a column with no field
+// makes sqlx fail the read with "missing destination name". A column added to
+// api_keys without a field added here breaks API key listing on every install.
 type APIKey struct {
-	ID        uuid.UUID  `json:"id" db:"id"`
-	TenantID  uuid.UUID  `json:"tenant_id" db:"tenant_id"`
-	UserID    uuid.UUID  `json:"user_id" db:"user_id"`
-	Name      string     `json:"name" db:"name"`
-	KeyHash   string     `json:"-" db:"key_hash"`
-	KeyPrefix string     `json:"key_prefix" db:"key_prefix"`
-	Scopes    []string   `json:"scopes" db:"scopes"`
-	LastUsed  *time.Time `json:"last_used" db:"last_used"`
-	ExpiresAt *time.Time `json:"expires_at" db:"expires_at"`
-	Status    string     `json:"status" db:"status"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	TenantID  uuid.UUID `json:"tenant_id" db:"tenant_id"`
+	UserID    uuid.UUID `json:"user_id" db:"user_id"`
+	Name      string    `json:"name" db:"name"`
+	KeyHash   string    `json:"-" db:"key_hash"`
+	KeyPrefix string    `json:"key_prefix" db:"key_prefix"`
+	// Scopes is the grant, in the grammar of internal/auth/scope.go.
+	//
+	// The type is pq.StringArray, not []string, and that is load bearing: the
+	// panel runs on the pgx driver, and scanning a PostgreSQL text[] into a
+	// plain []string fails at runtime with "unsupported Scan, storing
+	// driver.Value type string into type *[]string" - for a NULL column as
+	// well as a populated one. Every read of api_keys failed that way before
+	// this change. pq.StringArray implements sql.Scanner and driver.Valuer and
+	// works under both drivers this repository uses.
+	Scopes    pq.StringArray `json:"scopes" db:"scopes"`
+	LastUsed  *time.Time     `json:"last_used" db:"last_used"`
+	ExpiresAt *time.Time     `json:"expires_at" db:"expires_at"`
+
+	// Status is one of "active", "superseded" (a replacement exists and this
+	// key works until RotationDeadline) or "revoked".
+	Status    string    `json:"status" db:"status"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+
+	// Revocation takes effect on the next request. The row is kept so the
+	// audit trail still resolves the key it names.
+	RevokedAt     *time.Time `json:"revoked_at" db:"revoked_at"`
+	RevokedReason *string    `json:"revoked_reason,omitempty" db:"revoked_reason"`
+
+	// Rotation. RotatedFrom is set on the replacement and points at the key it
+	// replaces; RotationDeadline is set on the key being replaced and is the
+	// instant it stops authenticating. Both are live in between.
+	RotatedFrom      *uuid.UUID `json:"rotated_from,omitempty" db:"rotated_from"`
+	RotationDeadline *time.Time `json:"rotation_deadline,omitempty" db:"rotation_deadline"`
+
+	// LastUsedIP is where the key was last presented from. LastUsed is when.
+	LastUsedIP *string `json:"last_used_ip,omitempty" db:"last_used_ip"`
+
+	// AllowedCIDRs restricts where the key may be presented from. Empty means
+	// no restriction.
+	AllowedCIDRs pq.StringArray `json:"allowed_cidrs,omitempty" db:"allowed_cidrs"`
 }
 
 // ============================================================
@@ -570,15 +608,45 @@ type CreateBackupJobRequest struct {
 	Encrypted   bool      `json:"encrypted"`
 }
 
+// CreateAPIKeyRequest mints a key.
+//
+// Scopes is required and must not be empty: a key with no scopes authorises
+// nothing, so creating one is a mistake worth reporting rather than a key
+// worth storing. The scope grammar is documented in internal/auth/scope.go.
 type CreateAPIKeyRequest struct {
-	Name      string     `json:"name" binding:"required"`
-	Scopes    []string   `json:"scopes"`
+	Name   string   `json:"name" binding:"required,max=255"`
+	Scopes []string `json:"scopes" binding:"required,min=1"`
+
+	// ExpiresAt is optional in the request and never optional on the key: an
+	// omitted value becomes the default lifetime, because a key that never
+	// expires outlives everyone who knew what it was for.
 	ExpiresAt *time.Time `json:"expires_at"`
+
+	// AllowedCIDRs optionally pins the key to the networks it may be used
+	// from.
+	AllowedCIDRs []string `json:"allowed_cidrs"`
 }
 
 type UpdateAPIKeyRequest struct {
-	Name      string     `json:"name"`
-	Scopes    []string   `json:"scopes"`
-	Status    string     `json:"status"`
+	Name         string     `json:"name" binding:"omitempty,max=255"`
+	Scopes       []string   `json:"scopes"`
+	Status       string     `json:"status" binding:"omitempty,oneof=active revoked"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	AllowedCIDRs []string   `json:"allowed_cidrs"`
+}
+
+// RotateAPIKeyRequest replaces a key with a new one, both valid for a window.
+type RotateAPIKeyRequest struct {
+	// OverlapHours is how long the key being replaced keeps working. Zero
+	// means the default; the service caps it.
+	OverlapHours int `json:"overlap_hours" binding:"omitempty,min=0,max=720"`
+	// Name for the replacement. Empty keeps the name of the key it replaces.
+	Name string `json:"name" binding:"omitempty,max=255"`
+	// ExpiresAt for the replacement. Nil means the default lifetime from now.
 	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+// RevokeAPIKeyRequest retires a key immediately.
+type RevokeAPIKeyRequest struct {
+	Reason string `json:"reason" binding:"omitempty,max=120"`
 }

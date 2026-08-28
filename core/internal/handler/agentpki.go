@@ -27,8 +27,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/agentpki"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/audit"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/auth"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
 )
 
@@ -45,7 +48,21 @@ const maxAgentBody = 64 << 10
 type AgentPKIHandler struct {
 	authority  *agentpki.Authority
 	jwtManager *auth.JWTManager
+	audit      *service.AuditService
 	logger     *zap.Logger
+}
+
+// SetAudit installs the audit trail. Minting an enrolment token, revoking an
+// agent and deleting one all change which machines this panel will accept
+// instructions from, so all three belong in a trail an operator cannot edit.
+//
+// A setter rather than a constructor argument: NewAgentPKIHandler and
+// NewAgentPKIHandlerFromEnv are both called positionally, and the certificate
+// authority has to be openable on a panel whose database is not.
+func (h *AgentPKIHandler) SetAudit(a *service.AuditService) {
+	if h != nil {
+		h.audit = a
+	}
 }
 
 // NewAgentPKIHandler wraps an authority that has already been opened.
@@ -325,9 +342,23 @@ func (h *AgentPKIHandler) MintEnrolment(c *gin.Context) {
 	createdBy := middleware.GetUserID(c).String()
 	invite, err := h.authority.MintEnrolment(c.Request.Context(), req.ServerID, req.Hostname, createdBy, ttl)
 	if err != nil {
+		RecordRequestAudit(c, h.audit, audit.ActionAgentEnrolmentMinted, audit.ResourceAgent, nil,
+			models.JSONMap{"hostname": req.Hostname, "server_id": req.ServerID, "error": err.Error()},
+			audit.StatusFailure)
 		utils.InternalError(c, err)
 		return
 	}
+
+	// The token itself is deliberately NOT in the details: an audit log an
+	// operator can read is not a place to put a credential that still works.
+	RecordRequestAudit(c, h.audit, audit.ActionAgentEnrolmentMinted, audit.ResourceAgent, nil,
+		models.JSONMap{
+			"enrolment_id": invite.ID,
+			"hostname":     invite.Hostname,
+			"server_id":    invite.ServerID,
+			"expires_at":   invite.ExpiresAt,
+		}, audit.StatusSuccess)
+
 	utils.Created(c, gin.H{
 		"enrolment_id":   invite.ID,
 		"token":          invite.Token,
@@ -391,6 +422,8 @@ func (h *AgentPKIHandler) RevokeAgent(c *gin.Context) {
 		zap.String("agent_id", agentID),
 		zap.String("reason", req.Reason),
 		zap.String("by_user", middleware.GetUserID(c).String()))
+	RecordRequestAudit(c, h.audit, audit.ActionAgentRevoked, audit.ResourceAgent, nil,
+		models.JSONMap{"agent_id": agentID, "reason": req.Reason}, audit.StatusSuccess)
 	utils.Success(c, gin.H{"agent_id": agentID, "revoked": true})
 }
 
@@ -413,6 +446,8 @@ func (h *AgentPKIHandler) DeleteAgent(c *gin.Context) {
 		utils.InternalError(c, err)
 		return
 	}
+	RecordRequestAudit(c, h.audit, audit.ActionAgentDeleted, audit.ResourceAgent, nil,
+		models.JSONMap{"agent_id": agentID}, audit.StatusSuccess)
 	utils.Success(c, gin.H{"agent_id": agentID, "deleted": true})
 }
 

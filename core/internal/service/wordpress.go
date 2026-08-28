@@ -14,6 +14,11 @@ import (
 type WordPressService struct {
 	repo   *repository.WordPressRepository
 	logger *zap.Logger
+
+	// rt is the host-side half of this service - WP-CLI, staging and the
+	// runtime identity repository - built on first use. See
+	// wordpress_runtime.go.
+	rt wpRuntime
 }
 
 func NewWordPressService(repo *repository.WordPressRepository, logger *zap.Logger) *WordPressService {

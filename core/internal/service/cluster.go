@@ -10,6 +10,14 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 )
 
+// Defaults that mirror the column defaults in migration 014, so a load
+// balancer or HA pair created through the API looks the same as one created by
+// a direct INSERT.
+const (
+	defaultSSLPort      = 443
+	defaultFailoverMode = "automatic"
+)
+
 type ClusterService struct {
 	repo   *repository.ClusterRepository
 	logger *zap.Logger
@@ -92,16 +100,23 @@ func (s *ClusterService) RemoveNode(ctx context.Context, id uuid.UUID) error {
 
 // Load Balancers
 func (s *ClusterService) CreateLoadBalancer(ctx context.Context, tenantID uuid.UUID, req *models.CreateLoadBalancerRequest) (*models.LoadBalancer, error) {
+	clusterID := req.ClusterID
 	lb := &models.LoadBalancer{
-		TenantID:    tenantID,
-		ClusterID:   req.ClusterID,
-		Name:        req.Name,
-		Type:        req.Type,
-		ListenPort:  req.ListenPort,
-		BackendPort: req.BackendPort,
-		Algorithm:   req.Algorithm,
-		Config:      req.Config,
-		IsActive:    true,
+		TenantID:   tenantID,
+		ClusterID:  &clusterID,
+		Name:       req.Name,
+		Type:       req.Type,
+		Algorithm:  req.Algorithm,
+		Status:     "active",
+		ListenPort: req.ListenPort,
+		SSLPort:    defaultSSLPort,
+		Config:     req.Config,
+	}
+	if req.SSLPort != nil {
+		lb.SSLPort = *req.SSLPort
+	}
+	if req.SSLEnabled != nil {
+		lb.SSLEnabled = *req.SSLEnabled
 	}
 	if err := s.repo.CreateLoadBalancer(ctx, lb); err != nil {
 		return nil, err
@@ -128,13 +143,17 @@ func (s *ClusterService) DeleteLoadBalancer(ctx context.Context, tenantID, id uu
 // HA Pairs
 func (s *ClusterService) CreateHAPair(ctx context.Context, tenantID uuid.UUID, req *models.CreateHAPairRequest) (*models.HAPair, error) {
 	ha := &models.HAPair{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		PrimaryID:   req.PrimaryID,
-		SecondaryID: req.SecondaryID,
-		VirtualIP:   req.VirtualIP,
-		Status:      "active",
-		Config:      req.Config,
+		TenantID:          tenantID,
+		Name:              req.Name,
+		PrimaryServerID:   req.PrimaryServerID,
+		SecondaryServerID: req.SecondaryServerID,
+		VirtualIP:         req.VirtualIP,
+		Status:            "active",
+		FailoverMode:      defaultFailoverMode,
+		Config:            req.Config,
+	}
+	if req.FailoverMode != nil {
+		ha.FailoverMode = *req.FailoverMode
 	}
 	if err := s.repo.CreateHAPair(ctx, ha); err != nil {
 		return nil, err

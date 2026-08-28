@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/config"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
@@ -42,6 +43,25 @@ type panelConfirmationPayload struct {
 	Changes              []service.PanelSettingChange      `json:"changes"`
 }
 
+// panelTLSRiskPayload is the body of the 409 returned when a certificate would
+// be served but should not be accepted without the operator saying so.
+type panelTLSRiskPayload struct {
+	AcknowledgementRequired bool                          `json:"acknowledgement_required"`
+	Check                   string                        `json:"check"`
+	Message                 string                        `json:"message"`
+	Field                   string                        `json:"field"`
+	Certificate             *config.CertificateInspection `json:"certificate"`
+}
+
+// panelRollbackPayload is the body of the 409 returned when a change was
+// applied, could not be reached afterwards, and was undone by the panel itself.
+type panelRollbackPayload struct {
+	RolledBack bool                         `json:"rolled_back"`
+	Reason     string                       `json:"reason"`
+	Changes    []service.PanelSettingChange `json:"changes"`
+	AccessURL  string                       `json:"access_url"`
+}
+
 // panelEntranceRegenerateRequest is the body of the regenerate endpoint.
 type panelEntranceRegenerateRequest struct {
 	Confirm bool `json:"confirm"`
@@ -60,6 +80,27 @@ func (h *PanelSettingsHandler) Get(c *gin.Context) {
 }
 
 // Update applies a partial change to the settings.
+//
+// Everything an operator can change here now takes effect in this process
+// before the response is written: the port is rebound, the access gate is
+// rebuilt, the certificate manager is replaced. Anything that could not be
+// applied is named in the response, with the reason, rather than reported as a
+// success that quietly did not happen.
+//
+// Three answers other than 200 are part of the contract:
+//
+//	409 CONFIRMATION_REQUIRED                 the change moves the panel; repeat
+//	                                          with "confirm": true
+//	409 TLS_RISK_ACKNOWLEDGEMENT_REQUIRED     the certificate would be served
+//	                                          but browsers will object; repeat
+//	                                          with "tls_accept_risk": true
+//	409 ROLLED_BACK                           the change was applied, the panel
+//	                                          could not be reached afterwards
+//	                                          and it has been undone
+//	409 NOT_APPLIED                           the change could not be applied at
+//	                                          all - the port is taken, the
+//	                                          certificate does not load - and
+//	                                          nothing about the panel changed
 //
 // PUT /api/v1/panel/settings
 func (h *PanelSettingsHandler) Update(c *gin.Context) {
@@ -173,14 +214,86 @@ func (h *PanelSettingsHandler) respondError(c *gin.Context, err error) {
 		return
 	}
 
+	// A change that was applied, failed its reachability check and was undone
+	// is a 409 and not a 500: nothing is broken, the panel is exactly as it
+	// was, and the operator has to be told that rather than left wondering
+	// whether their change half-happened.
+	var rolledBack *service.PanelSettingsRollbackError
+	if errors.As(err, &rolledBack) {
+		c.JSON(http.StatusConflict, utils.APIResponse{
+			Success: false,
+			Data: panelRollbackPayload{
+				RolledBack: true,
+				Reason:     rolledBack.Reason,
+				Changes:    rolledBack.Changes,
+				AccessURL:  rolledBack.AccessURL,
+			},
+			Error: &utils.APIError{
+				Code:    "ROLLED_BACK",
+				Message: "The change was applied and then undone, because the panel could not be reached afterwards. It is still running exactly as it was.",
+				Details: rolledBack.Reason,
+			},
+			RequestID: utils.GetRequestID(c),
+		})
+		return
+	}
+
+	// A change that could not be applied is not an internal error: the request
+	// was well formed, the panel is intact, and the operator needs the reason -
+	// "something else is already listening on that port" - not a generic 500.
+	var notApplied *service.PanelSettingsApplyError
+	if errors.As(err, &notApplied) {
+		c.JSON(http.StatusConflict, utils.APIResponse{
+			Success: false,
+			Data: panelRollbackPayload{
+				RolledBack: false,
+				Reason:     notApplied.Reason,
+				Changes:    notApplied.Changes,
+				AccessURL:  notApplied.AccessURL,
+			},
+			Error: &utils.APIError{
+				Code:    "NOT_APPLIED",
+				Message: "The change was not applied. The panel is still running, and still reachable, exactly as it was.",
+				Details: notApplied.Reason,
+			},
+			RequestID: utils.GetRequestID(c),
+		})
+		return
+	}
+
+	var risk *service.PanelTLSRiskError
+	if errors.As(err, &risk) {
+		c.JSON(http.StatusConflict, utils.APIResponse{
+			Success: false,
+			Data: panelTLSRiskPayload{
+				AcknowledgementRequired: true,
+				Check:                   risk.Check,
+				Message:                 risk.Message,
+				Field:                   "tls_certificate",
+				Certificate:             risk.Inspection,
+			},
+			Error: &utils.APIError{
+				Code:    "TLS_RISK_ACKNOWLEDGEMENT_REQUIRED",
+				Message: risk.Message,
+				Details: "Repeat the request with \"tls_accept_risk\": true once you have understood what this certificate will and will not do.",
+			},
+			RequestID: utils.GetRequestID(c),
+		})
+		return
+	}
+
 	var validation *service.PanelSettingsValidationError
 	if errors.As(err, &validation) {
+		details := validation.Field
+		if validation.Check != "" {
+			details = validation.Field + " (" + validation.Check + ")"
+		}
 		c.JSON(http.StatusBadRequest, utils.APIResponse{
 			Success: false,
 			Error: &utils.APIError{
 				Code:    "VALIDATION_ERROR",
 				Message: validation.Message,
-				Details: validation.Field,
+				Details: details,
 			},
 			RequestID: utils.GetRequestID(c),
 		})

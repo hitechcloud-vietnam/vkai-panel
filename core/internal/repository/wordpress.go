@@ -203,3 +203,8 @@ func (r *WordPressRepository) DeleteTheme(ctx context.Context, id uuid.UUID) err
 	_, err := r.db.ExecContext(ctx, query, id)
 	return err
 }
+
+// DB exposes the connection this repository was built on, so WordPressService
+// can build the runtime and staging repository without changing the signature
+// every caller of NewWordPressService uses. See PHPRepository.DB.
+func (r *WordPressRepository) DB() *sqlx.DB { return r.db }

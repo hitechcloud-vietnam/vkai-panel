@@ -66,11 +66,9 @@ func (s *JobService) EnqueueBackup(ctx context.Context, tenantID uuid.UUID, payl
 		return nil, fmt.Errorf("failed to enqueue job: %w", err)
 	}
 
-	// Update task ID
+	// Persist the task id the queue handed back.
 	record.TaskID = taskInfo.ID
-	if err := s.repo.UpdateJobStatus(ctx, record.ID, job.StatusPending, nil, ""); err != nil {
-		s.logger.Warn("Failed to update task ID", zap.Error(err))
-	}
+	s.persistTaskID(ctx, record)
 
 	return record, nil
 }
@@ -107,6 +105,8 @@ func (s *JobService) EnqueueRestore(ctx context.Context, tenantID uuid.UUID, pay
 	}
 
 	record.TaskID = taskInfo.ID
+	s.persistTaskID(ctx, record)
+
 	return record, nil
 }
 
@@ -143,6 +143,8 @@ func (s *JobService) EnqueueDeploy(ctx context.Context, tenantID uuid.UUID, payl
 	}
 
 	record.TaskID = taskInfo.ID
+	s.persistTaskID(ctx, record)
+
 	return record, nil
 }
 
@@ -179,6 +181,8 @@ func (s *JobService) EnqueueSSL(ctx context.Context, tenantID uuid.UUID, payload
 	}
 
 	record.TaskID = taskInfo.ID
+	s.persistTaskID(ctx, record)
+
 	return record, nil
 }
 
@@ -215,7 +219,36 @@ func (s *JobService) EnqueueCleanup(ctx context.Context, tenantID uuid.UUID, pay
 	}
 
 	record.TaskID = taskInfo.ID
+	s.persistTaskID(ctx, record)
+
 	return record, nil
+}
+
+// persistTaskID writes the queue's task id onto the job row.
+//
+// The row is created before the task is enqueued, because a job that Redis
+// accepted but that no row records is a job nobody can see. That ordering means
+// task_id starts empty and has to be written back afterwards. This used to be
+// missed entirely: four of the five enqueue paths set the field on the in-memory
+// record and returned, and the fifth called UpdateJobStatus, which does not
+// write task_id. The id therefore never reached the database, and CancelJob and
+// RetryJob - both of which read record.TaskID from a freshly loaded row - always
+// saw an empty string and silently skipped the queue.
+//
+// A failure here is logged rather than returned: the job is already queued and
+// will run, so failing the request would be a lie. The job simply cannot be
+// cancelled from the panel until the id lands.
+func (s *JobService) persistTaskID(ctx context.Context, record *job.JobRecord) {
+	if record.TaskID == "" {
+		return
+	}
+	if err := s.repo.UpdateJobTaskID(ctx, record.ID, record.TaskID); err != nil {
+		s.logger.Warn("Failed to persist queue task id; cancel and retry will not reach the queue",
+			zap.String("job_id", record.ID.String()),
+			zap.String("task_id", record.TaskID),
+			zap.Error(err),
+		)
+	}
 }
 
 // GetJob retrieves a job by ID

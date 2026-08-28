@@ -29,6 +29,9 @@ func (h *CronHandler) Create(c *gin.Context) {
 
 	job, err := h.cronService.Create(c.Request.Context(), &req, tenantID)
 	if err != nil {
+		if WriteQuotaError(c, err) {
+			return
+		}
 		utils.InternalError(c, err.Error())
 		return
 	}

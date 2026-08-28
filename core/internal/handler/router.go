@@ -1078,6 +1078,18 @@ func (r *Router) Setup() *gin.Engine {
 	// next person adding to this file.
 	RegisterAgentPKIRoutes(v1, r.agentPKIHandler)
 
+	// Every handler written in this round is mounted here, on the engine main.go
+	// actually serves. The route-mount tests exist because four features once
+	// shipped fully written, fully tested and connected to nothing: their tests
+	// registered routes on a throwaway engine and proved they COULD be mounted,
+	// never that they WERE. Adding a handler without a line here now fails a test
+	// that names the missing route.
+	RegisterNotifyRoutes(protected, r.notificationHandler)
+	RegisterPHPWordPressRuntimeRoutes(protected, r.phpHandler, r.wordpressHandler)
+	RegisterAuditRoutes(protected, r.auditHandler)
+	RegisterBackupOffsiteRoutes(protected, r.backupHandler)
+	RegisterPackageRoutes(protected)
+
 	return r.engine
 }
 

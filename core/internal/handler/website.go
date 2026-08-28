@@ -31,6 +31,12 @@ func (h *WebsiteHandler) Create(c *gin.Context) {
 
 	website, err := h.websiteService.Create(c.Request.Context(), &req, tenantID)
 	if err != nil {
+		// A quota refusal has to reach the customer with its message intact;
+		// utils.InternalError below replaces every message with "An internal
+		// error occurred".
+		if WriteQuotaError(c, err) {
+			return
+		}
 		utils.InternalError(c, err.Error())
 		return
 	}
@@ -170,6 +176,9 @@ func (h *WebsiteHandler) AddDomain(c *gin.Context) {
 
 	domain, err := h.websiteService.AddDomain(c.Request.Context(), middleware.GetTenantID(c), websiteID, req.Name, req.Type)
 	if err != nil {
+		if WriteQuotaError(c, err) {
+			return
+		}
 		utils.InternalError(c, err.Error())
 		return
 	}

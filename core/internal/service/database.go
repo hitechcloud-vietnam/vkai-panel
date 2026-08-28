@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/quota"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
 )
@@ -67,12 +68,21 @@ func runSQLStdin(ctx context.Context, sql string, name string, args ...string) e
 type DatabaseService struct {
 	dbRepo     *repository.DatabaseRepository
 	serverRepo *repository.ServerRepository
+	quota      *quota.Enforcer
 }
 
-func NewDatabaseService(dbRepo *repository.DatabaseRepository, serverRepo *repository.ServerRepository) *DatabaseService {
+// NewDatabaseService takes the quota enforcer as a REQUIRED argument, so that
+// omitting quota enforcement is a compile error rather than a silent hole. See
+// NewWebsiteService for the reasoning.
+func NewDatabaseService(
+	dbRepo *repository.DatabaseRepository,
+	serverRepo *repository.ServerRepository,
+	quotaEnforcer *quota.Enforcer,
+) *DatabaseService {
 	return &DatabaseService{
 		dbRepo:     dbRepo,
 		serverRepo: serverRepo,
+		quota:      quotaEnforcer,
 	}
 }
 
@@ -107,6 +117,15 @@ func (s *DatabaseService) DeleteServer(ctx context.Context, tenantID, id uuid.UU
 
 // CreateDatabase creates a new database on the specified database server
 func (s *DatabaseService) CreateDatabase(ctx context.Context, req *models.CreateDBEntryRequest, tenantID uuid.UUID) (*models.DatabaseEntry, error) {
+	// ENFORCEMENT POINT: the hosting package's database count.
+	//
+	// Before the MySQL or PostgreSQL server is touched. A refusal after CREATE
+	// DATABASE would leave a real database on the host with no row describing
+	// it, which is worse than the refusal itself.
+	if err := s.quota.Check(ctx, tenantID, quota.ResourceDatabases); err != nil {
+		return nil, err
+	}
+
 	dbServer, err := s.dbRepo.GetServerByID(ctx, tenantID, req.DatabaseServerID)
 	if err != nil {
 		return nil, fmt.Errorf("database server not found: %w", err)

@@ -90,6 +90,9 @@ func (h *DatabaseHandler) CreateDatabase(c *gin.Context) {
 
 	entry, err := h.dbService.CreateDatabase(c.Request.Context(), &req, tenantID)
 	if err != nil {
+		if WriteQuotaError(c, err) {
+			return
+		}
 		utils.InternalError(c, err.Error())
 		return
 	}

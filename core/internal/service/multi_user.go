@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/auth"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
 )
@@ -170,11 +172,38 @@ func (s *MultiUserService) ListActivities(ctx context.Context, tenantID uuid.UUI
 }
 
 // API Keys
+//
+// This used to mint its own key material. It generated "vkai_" plus two UUIDs,
+// took the first EIGHT characters as the lookup prefix - a prefix every key
+// shared, so no key could be found by it - and stored the key under a
+// "hashAPIKey" that returned the key unchanged. Every key minted through this
+// path was therefore a live credential sitting in plain text in a column that
+// goes into every backup and every database dump.
+//
+// It now uses the one minting path this process has (service/apikey.go), which
+// generates 128 bits of entropy, stores an HMAC-SHA-256 digest under a
+// server-side pepper, and uses the 12 character prefix the authentication
+// lookup actually searches by.
+//
+// The scopes are validated here too, because a key minted through this path
+// authenticates through the same middleware as any other and must not be able
+// to carry a grant that path would have refused.
 func (s *MultiUserService) CreateAPIKey(ctx context.Context, tenantID, userID uuid.UUID, req models.CreateAPIKeyRequest) (*models.APIKey, string, error) {
-	// Generate random key
-	rawKey := generateAPIKey()
-	keyHash := hashAPIKey(rawKey)
-	keyPrefix := rawKey[:8]
+	scopes, err := auth.ParseScopeSet(req.Scopes)
+	if err != nil {
+		return nil, "", err
+	}
+
+	rawKey, keyHash, keyPrefix, err := MintAPIKeyMaterial()
+	if err != nil {
+		return nil, "", err
+	}
+
+	expiresAt := req.ExpiresAt
+	if expiresAt == nil {
+		deadline := time.Now().Add(DefaultAPIKeyLifetime)
+		expiresAt = &deadline
+	}
 
 	apiKey := &models.APIKey{
 		ID:        uuid.New(),
@@ -183,8 +212,9 @@ func (s *MultiUserService) CreateAPIKey(ctx context.Context, tenantID, userID uu
 		Name:      req.Name,
 		KeyHash:   keyHash,
 		KeyPrefix: keyPrefix,
-		Scopes:    req.Scopes,
-		ExpiresAt: req.ExpiresAt,
+		Scopes:    scopes.Strings(),
+		ExpiresAt: expiresAt,
+		Status:    "active",
 	}
 	if err := s.repo.CreateAPIKey(ctx, apiKey); err != nil {
 		return nil, "", err
@@ -213,13 +243,4 @@ func splitPermission(p string) []string {
 		}
 	}
 	return nil
-}
-
-func generateAPIKey() string {
-	return "vkai_" + uuid.New().String() + uuid.New().String()
-}
-
-func hashAPIKey(key string) string {
-	// Simple hash for demo - in production use bcrypt or SHA256
-	return key
 }

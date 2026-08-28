@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/audit"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/auth"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/repository"
@@ -53,6 +54,13 @@ type AuthService struct {
 	// rather than handed one, because a login that ignores an enabled second
 	// factor is worse than a login that fails. See twoFactorRequired.
 	twoFactor TwoFactorVerifier
+
+	// audit is the tamper-evident trail. nil means sign-in events are not
+	// recorded, which is a deployment fault rather than a mode: SetAudit says
+	// so at start-up. A failed audit write never fails a sign-in - refusing
+	// authentication because the log is unhappy hands an attacker a denial of
+	// service - so every call here goes through AuditService.Record.
+	audit *AuditService
 
 	failures *loginFailureTracker
 }
@@ -213,6 +221,61 @@ func (s *AuthService) SetTwoFactor(v TwoFactorVerifier) {
 	s.twoFactor = v
 }
 
+// SetAudit installs the audit trail sign-in events are written to. Call it once
+// at start-up, alongside SetTwoFactor:
+//
+//	authService.SetAudit(auditService)
+//
+// It is a setter rather than a constructor argument so that adding it did not
+// change NewAuthService's signature, which several call sites and tests pass
+// positionally.
+func (s *AuthService) SetAudit(a *AuditService) {
+	if a == nil || a.repo == nil {
+		s.audit = nil
+		s.logger.Warn("audit service not wired into the auth service; " +
+			"sign-in successes and failures will NOT be recorded in the audit trail")
+		return
+	}
+	s.audit = a
+}
+
+// recordSignInFailure writes one refused sign-in to the trail.
+//
+// reason is the internal cause - unknown_user, bad_password, inactive_account,
+// locked_out. It goes in the trail because whoever reads the trail is entitled
+// to know which; it never goes back to the caller, who is told only that the
+// attempt failed.
+//
+// user may be nil, which is the case that matters most: a spray against
+// invented usernames has no tenant and no user id, and dropping those entries
+// would leave the single most recognisable attack pattern invisible. They are
+// recorded against the default tenant with the attempted username in the
+// details. See audit.DefaultTenantID.
+func (s *AuthService) recordSignInFailure(ctx context.Context, user *models.User, username, reason, ip string) {
+	if s.audit == nil {
+		return
+	}
+
+	tenantID := audit.DefaultTenantID
+	var userID *uuid.UUID
+	attributed := false
+	if user != nil {
+		tenantID = user.TenantID
+		id := user.ID
+		userID = &id
+		attributed = true
+	}
+
+	s.audit.Record(ctx, tenantID, userID,
+		audit.ActionSignInFailed, audit.ResourceSession, userID,
+		models.JSONMap{
+			"username":   username,
+			"reason":     reason,
+			"attributed": attributed,
+		},
+		ip, "", audit.StatusFailure)
+}
+
 // isNilVerifier catches the classic interface trap: a nil *twofactor.Service
 // stored in an interface is not == nil, and calling through it panics on the
 // first login. A wiring mistake must not take the panel down.
@@ -241,6 +304,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest, ip str
 	if s.failures.locked(req.Username) {
 		s.logger.Warn("login rejected: account temporarily locked",
 			zap.String("username", req.Username), zap.String("ip", ip))
+		s.recordSignInFailure(ctx, nil, req.Username, "locked_out", ip)
 		return nil, ErrTooManyAttempts
 	}
 
@@ -249,6 +313,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest, ip str
 		s.failures.fail(req.Username)
 		s.logger.Warn("failed login: unknown user",
 			zap.String("username", req.Username), zap.String("ip", ip))
+		s.recordSignInFailure(ctx, nil, req.Username, "unknown_user", ip)
 		return nil, errInvalidCredentials
 	}
 
@@ -256,6 +321,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest, ip str
 		s.failures.fail(req.Username)
 		s.logger.Warn("failed login: bad password",
 			zap.String("username", req.Username), zap.String("ip", ip))
+		s.recordSignInFailure(ctx, user, req.Username, "bad_password", ip)
 		return nil, errInvalidCredentials
 	}
 
@@ -265,6 +331,7 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest, ip str
 		s.failures.fail(req.Username)
 		s.logger.Warn("failed login: inactive account",
 			zap.String("username", req.Username), zap.String("ip", ip))
+		s.recordSignInFailure(ctx, user, req.Username, "inactive_account", ip)
 		return nil, errInvalidCredentials
 	}
 
@@ -447,6 +514,22 @@ func (s *AuthService) issueSession(ctx context.Context, user *models.User, ip st
 	// Update last login
 	_ = s.userRepo.UpdateLastLogin(ctx, user.ID, ip)
 
+	// Every session this panel ever issues passes through here, whether the
+	// account owed a second factor or not, so this is the one place a granted
+	// sign-in can be recorded without being recorded twice.
+	if s.audit != nil {
+		userID := user.ID
+		s.audit.Record(ctx, user.TenantID, &userID,
+			audit.ActionSignIn, audit.ResourceSession, &userID,
+			models.JSONMap{
+				"username":    user.Username,
+				"two_factor":  user.MFAEnabled,
+				"roles":       roleIDs,
+				"permissions": len(permissions),
+			},
+			ip, "", audit.StatusSuccess)
+	}
+
 	return &models.LoginResponse{
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
@@ -514,6 +597,20 @@ func (s *AuthService) Logout(accessClaims *auth.TokenClaims, refreshToken string
 	s.jwtManager.Revoke(accessClaims)
 	if refreshToken != "" {
 		_ = s.jwtManager.RevokeToken(refreshToken, auth.TokenTypeRefresh)
+	}
+
+	// Logout has no context of its own - the signature is fixed by its callers -
+	// and the write must not outlive the request by much, so it gets its own
+	// short one rather than context.Background().
+	if s.audit != nil && accessClaims != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		userID := accessClaims.UserID
+		s.audit.Record(ctx, accessClaims.TenantID, &userID,
+			audit.ActionSignOut, audit.ResourceSession, &userID,
+			models.JSONMap{"username": accessClaims.Username},
+			"", "", audit.StatusSuccess)
 	}
 }
 

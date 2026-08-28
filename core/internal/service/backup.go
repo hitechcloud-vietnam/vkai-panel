@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,6 +45,13 @@ func validateDestination(dest string) (string, error) {
 
 type BackupService struct {
 	backupRepo *repository.BackupRepository
+
+	// The offsite half of this service - destinations, encryption, restore and
+	// the restorability check - keeps its state here. It is behind a sync.Once
+	// so that NewBackupService keeps its single-argument signature and
+	// cmd/api/main.go needs no change to gain any of it; see backup_offsite.go.
+	offsiteOnce  sync.Once
+	offsiteState *offsiteState
 }
 
 func NewBackupService(backupRepo *repository.BackupRepository) *BackupService {

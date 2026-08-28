@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/audit"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/models"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
@@ -15,12 +16,23 @@ import (
 
 type MultiUserHandler struct {
 	service *service.MultiUserService
+	audit   *service.AuditService
 	logger  *zap.Logger
 }
 
 func NewMultiUserHandler(service *service.MultiUserService, logger *zap.Logger) *MultiUserHandler {
 	return &MultiUserHandler{service: service, logger: logger}
 }
+
+// SetAudit installs the audit trail. Every change to who may do what goes into
+// it: a permission change is the action that makes every other action possible,
+// so a trail that records what an account did but not how it came to be allowed
+// to answers only half the question.
+//
+// It is a setter rather than a constructor argument so that adding it did not
+// change NewMultiUserHandler's signature, which the API entry point passes
+// positionally.
+func (h *MultiUserHandler) SetAudit(a *service.AuditService) { h.audit = a }
 
 // ============================================================
 // ROLES
@@ -36,9 +48,14 @@ func (h *MultiUserHandler) CreateRole(c *gin.Context) {
 
 	role, err := h.service.CreateRole(c.Request.Context(), tenantID, req)
 	if err != nil {
+		RecordRequestAudit(c, h.audit, audit.ActionRoleCreated, audit.ResourceRole, nil,
+			models.JSONMap{"name": req.Name, "error": err.Error()}, audit.StatusFailure)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	RecordRequestAudit(c, h.audit, audit.ActionRoleCreated, audit.ResourceRole, &role.ID,
+		models.JSONMap{"name": role.Name, "description": role.Description}, audit.StatusSuccess)
 	c.JSON(http.StatusCreated, gin.H{"role": role})
 }
 
@@ -82,9 +99,14 @@ func (h *MultiUserHandler) UpdateRole(c *gin.Context) {
 
 	role, err := h.service.UpdateRole(c.Request.Context(), id, req)
 	if err != nil {
+		RecordRequestAudit(c, h.audit, audit.ActionRoleUpdated, audit.ResourceRole, &id,
+			models.JSONMap{"error": err.Error()}, audit.StatusFailure)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	RecordRequestAudit(c, h.audit, audit.ActionRoleUpdated, audit.ResourceRole, &id,
+		models.JSONMap{"name": role.Name, "description": role.Description}, audit.StatusSuccess)
 	c.JSON(http.StatusOK, gin.H{"role": role})
 }
 
@@ -96,9 +118,14 @@ func (h *MultiUserHandler) DeleteRole(c *gin.Context) {
 	}
 
 	if err := h.service.DeleteRole(c.Request.Context(), id); err != nil {
+		RecordRequestAudit(c, h.audit, audit.ActionRoleDeleted, audit.ResourceRole, &id,
+			models.JSONMap{"error": err.Error()}, audit.StatusFailure)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	RecordRequestAudit(c, h.audit, audit.ActionRoleDeleted, audit.ResourceRole, &id, nil,
+		audit.StatusSuccess)
 	c.JSON(http.StatusOK, gin.H{"message": "Role deleted"})
 }
 
@@ -133,9 +160,23 @@ func (h *MultiUserHandler) AssignUserRole(c *gin.Context) {
 	}
 
 	if err := h.service.AssignUserRole(c.Request.Context(), userID, req.RoleID); err != nil {
+		// A refused grant is recorded with the same detail as a successful
+		// one. An attempt to widen somebody's privileges that did not work is
+		// still an attempt, and a trail that holds only successes is a trail
+		// that hides the reconnaissance.
+		RecordRequestAudit(c, h.audit, audit.ActionRoleAssigned, audit.ResourceUser, &userID,
+			models.JSONMap{
+				"role_id":        req.RoleID.String(),
+				"target_user_id": userID.String(),
+				"error":          err.Error(),
+			}, audit.StatusFailure)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	RecordRequestAudit(c, h.audit, audit.ActionRoleAssigned, audit.ResourceUser, &userID,
+		models.JSONMap{"role_id": req.RoleID.String(), "target_user_id": userID.String()},
+		audit.StatusSuccess)
 	c.JSON(http.StatusOK, gin.H{"message": "Role assigned"})
 }
 
@@ -153,9 +194,19 @@ func (h *MultiUserHandler) RemoveUserRole(c *gin.Context) {
 	}
 
 	if err := h.service.RemoveUserRole(c.Request.Context(), userID, roleID); err != nil {
+		RecordRequestAudit(c, h.audit, audit.ActionRoleRemoved, audit.ResourceUser, &userID,
+			models.JSONMap{
+				"role_id":        roleID.String(),
+				"target_user_id": userID.String(),
+				"error":          err.Error(),
+			}, audit.StatusFailure)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	RecordRequestAudit(c, h.audit, audit.ActionRoleRemoved, audit.ResourceUser, &userID,
+		models.JSONMap{"role_id": roleID.String(), "target_user_id": userID.String()},
+		audit.StatusSuccess)
 	c.JSON(http.StatusOK, gin.H{"message": "Role removed"})
 }
 

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/job"
+	"github.com/jmoiron/sqlx"
 )
 
 // JobRepository handles job database operations
@@ -37,7 +37,7 @@ func (r *JobRepository) CreateJob(ctx context.Context, record *job.JobRecord) er
 		record.TaskType,
 		record.Status,
 		record.Queue,
-		record.Payload,
+		jsonOrNull(record.Payload),
 		record.MaxRetries,
 		record.ScheduledAt,
 		record.TenantID,
@@ -172,6 +172,41 @@ func (r *JobRepository) ListJobs(ctx context.Context, tenantID uuid.UUID, filter
 	return records, total, nil
 }
 
+// UpdateJobTaskID records the queue task id against a job row.
+//
+// The row is written before the task reaches Redis, so task_id starts empty and
+// is filled in once the queue hands one back. Nothing else writes this column:
+// UpdateJobStatus deliberately does not, because the five other callers of that
+// method have no task id to offer. Without this, JobRecord.TaskID lived only in
+// the memory of the request that enqueued the job, so cancel and retry could
+// never find the task again.
+func (r *JobRepository) UpdateJobTaskID(ctx context.Context, id uuid.UUID, taskID string) error {
+	query := `
+		UPDATE jobs
+		SET task_id = $1, updated_at = $2
+		WHERE id = $3
+	`
+
+	_, err := r.db.ExecContext(ctx, query, taskID, time.Now(), id)
+	return err
+}
+
+// jsonOrNull turns an empty payload into a real SQL NULL.
+//
+// A nil []byte survives database/sql's parameter conversion as a nil []byte
+// rather than becoming NULL, and lib/pq then sends it to a jsonb column as an
+// empty string, which PostgreSQL rejects with "invalid input syntax for type
+// json". Every caller of UpdateJobStatus passes nil for the result, so that
+// statement failed every single time it ran: cancelling a job returned a 500,
+// retrying one did the same, and the five enqueue paths silently failed to mark
+// a job failed when the queue rejected it.
+func jsonOrNull(payload []byte) interface{} {
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
+}
+
 // UpdateJobStatus updates a job's status
 func (r *JobRepository) UpdateJobStatus(ctx context.Context, id uuid.UUID, status string, result []byte, errMsg string) error {
 	query := `
@@ -180,7 +215,7 @@ func (r *JobRepository) UpdateJobStatus(ctx context.Context, id uuid.UUID, statu
 		WHERE id = $5
 	`
 
-	_, err := r.db.ExecContext(ctx, query, status, result, errMsg, time.Now(), id)
+	_, err := r.db.ExecContext(ctx, query, status, jsonOrNull(result), errMsg, time.Now(), id)
 	return err
 }
 
@@ -204,7 +239,7 @@ func (r *JobRepository) UpdateJobCompleted(ctx context.Context, id uuid.UUID, re
 		WHERE id = $3
 	`
 
-	_, err := r.db.ExecContext(ctx, query, result, time.Now(), id)
+	_, err := r.db.ExecContext(ctx, query, jsonOrNull(result), time.Now(), id)
 	return err
 }
 
