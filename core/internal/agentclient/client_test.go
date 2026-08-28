@@ -170,3 +170,27 @@ func TestAnOperationNameCannotCarryAPath(t *testing.T) {
 		t.Fatal("an operation name containing a path was accepted")
 	}
 }
+
+// TestRevocationAloneClosesThePooledConnection is the same scenario as
+// TestARevokedAgentCannotBeCalled without the explicit Forget. It is the one
+// that matters in production: nothing at a call site remembers to drop a
+// transport, so revoking has to do it. Without the hook registered in New, the
+// pooled connection answers the next call happily, because a deny list is only
+// consulted at a handshake and a pooled connection does not make one.
+func TestRevocationAloneClosesThePooledConnection(t *testing.T) {
+	authority := newAuthority(t)
+	agentID, pair := enrolAgent(t, authority)
+	srv := startStubAgent(t, authority, pair, &stubAgent{})
+
+	client := New(authority, nil)
+	target := Target{AgentID: agentID, Address: srv.URL}
+	if _, err := client.AgentInfo(context.Background(), target); err != nil {
+		t.Fatalf("the agent was unreachable before revocation: %v", err)
+	}
+	if err := authority.Revoke(context.Background(), agentID, "key suspected stolen"); err != nil {
+		t.Fatalf("revocation failed: %v", err)
+	}
+	if _, err := client.AgentInfo(context.Background(), target); err == nil {
+		t.Fatal("a revoked agent was still reachable on a connection opened before the revocation")
+	}
+}

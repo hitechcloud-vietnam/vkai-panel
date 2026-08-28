@@ -29,13 +29,16 @@
 //
 // # The sequence
 //
-//	StepLock            take /vkai-panel/etc/upgrade.lock, recovering a stale one
-//	StepCheck           fetch the feed, order versions, honour min_upgrade_from
-//	StepDownload        fetch the tarball into /vkai-panel/tmp
+//	StepLock            take /vkai-panel/etc/upgrade.lock with flock(2)
+//	StepCheck           fetch the feed, verify signatures, order versions,
+//	                    honour min_upgrade_from across everything skipped
+//	StepDownload        check disk and health first, then fetch the tarball
+//	                    into /vkai-panel/tmp
 //	StepVerify          sha256 against the manifest - nothing unverified is opened
-//	StepStage           extract into releases/.staging-<version>-<pid>
+//	StepStage           re-verify against the open file, then extract into
+//	                    releases/.staging-<version>-<pid>
 //	StepPreflight       disk space, target absent, services healthy, dir writable
-//	StepBackupDatabase  dump the database and record where it went
+//	StepBackupDatabase  dump the database, read the dump back, record where it went
 //	StepSwitch          promote the staging directory, repoint current
 //	StepRestart         restart vkai-api, vkai-ui, vkai-agent
 //	StepHealthCheck     poll until healthy, bounded by Config.HealthTimeout
@@ -53,6 +56,63 @@
 // error is a *RollbackFailedError, which says in as many words that a human has
 // to intervene: at that point the panel is down and this package has run out of
 // safe moves.
+//
+// # This runs as root, so what it refuses matters more than what it does
+//
+// The upgrade unpacks an archive chosen by a remote server into a directory
+// owned by root and then restarts the machine's services onto it. Every check
+// below exists because its absence is a remote root write:
+//
+//   - The release tarball may contain regular files and directories, and
+//     nothing else. Symlinks and hard links are refused outright rather than
+//     validated, because a link target cannot be judged from the archive: the
+//     kernel resolves symlinks before it applies "..", so a chain of links each
+//     pointing at "." or ".." climbs one real directory per hop while passing
+//     any check made by cleaning strings. See archive.go.
+//   - Files are created O_CREATE|O_EXCL|O_NOFOLLOW and directories one
+//     component at a time, so nothing is written through a link that was
+//     already on disk.
+//   - Modes come from this package. A member carrying setuid, setgid or the
+//     sticky bit is refused, not stripped.
+//   - The archive's sha256 is checked against the open file descriptor that is
+//     about to be decompressed, in constant time, on every path into the
+//     extractor.
+//   - A version string is validated in full, build metadata included, because
+//     it becomes a directory name under /vkai-panel/releases.
+//   - min_upgrade_from is read from every release the upgrade would step over,
+//     not only from the target, so a release cannot become installable from
+//     anywhere by leaving the field out.
+//   - The lock is a flock(2), so it cannot be broken by two upgrades that both
+//     decide it is abandoned.
+//
+// # What this package does not defend against
+//
+// Stated plainly, because the alternative is an operator believing otherwise:
+//
+//   - An unsigned feed is trusted on TLS alone. With Config.ReleasePublicKeys
+//     unset - the default - whoever can answer for the feed URL chooses what
+//     this machine installs as root: its certificate, its CA, its DNS, its CDN
+//     and everyone with write access to the bucket behind it are all in the
+//     trust boundary. Setting ReleasePublicKeys removes all of that, and
+//     publishing signed manifests is the single highest-value change left in
+//     this package. It is off by default only because turning it on before the
+//     release tooling signs anything would stop every installation upgrading.
+//   - A signature proves who published a release, not that the release is good.
+//     A compromised build pipeline signs a backdoor exactly as well as it signs
+//     a release.
+//   - The version numbers are the feed's to choose. Refusing a downgrade is not
+//     the same as refusing a hostile upgrade: a feed can always publish a
+//     larger number.
+//   - The database dump is proved to be a complete, parseable dump. Nothing
+//     here proves it restores into a working panel, and nothing here tests the
+//     restore path.
+//   - The disk check before the download uses the manifest's declared size and
+//     an estimate of how far it expands. A release that expands much further
+//     than that can still fill the disk during extraction; that aborts the
+//     upgrade with the installation untouched, but it does fill the disk.
+//   - Staging directories left by a process that died are removed only by the
+//     process that created them, so debris from a crashed upgrade with a
+//     different pid survives until the next run of that pid or an operator.
 //
 // # Injection
 //

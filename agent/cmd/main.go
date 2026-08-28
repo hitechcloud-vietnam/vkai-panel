@@ -19,6 +19,18 @@
 // The agent's identity is now a private key generated on this host that never
 // leaves it, and a 24 hour certificate issued by the panel's internal CA, which
 // the agent renews at half life and which the panel can revoke immediately.
+//
+// # Subcommands
+//
+//	vkaid                 run the agent (the systemd unit does this)
+//	vkaid trust-anchor    print the CA this agent trusts, and exit
+//	vkaid re-enrol        replace this agent's identity, and its trust anchor,
+//	                      with one from a freshly pasted enrolment token
+//
+// re-enrol is a separate command on purpose. Renewal is unattended and happens
+// twice a day; it may never change what this agent trusts, or one intercepted
+// renewal would make the interceptor this agent's certificate authority for
+// good. Changing the anchor is therefore something an operator types.
 package main
 
 import (
@@ -90,42 +102,117 @@ func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.LUTC)
 	logger.Printf("%s (%s) v%s - %s", AgentProduct, AgentName, AgentVersion, AgentVendor)
 
-	if err := run(logger); err != nil {
+	command := ""
+	if len(os.Args) > 1 {
+		command = strings.ToLower(strings.TrimSpace(os.Args[1]))
+	}
+
+	var err error
+	switch command {
+	case "":
+		err = run(logger)
+	case "trust-anchor":
+		err = showTrustAnchor(logger)
+	case "re-enrol", "re-enroll":
+		err = reEnrol(logger)
+	default:
+		err = fmt.Errorf("unknown command %q. Usage: %s [trust-anchor|re-enrol]", command, AgentName)
+	}
+	if err != nil {
 		logger.Printf("fatal: %v", err)
 		os.Exit(1)
 	}
 }
 
-func run(logger *log.Logger) error {
+// showTrustAnchor prints the fingerprint of the CA this agent accepts. An
+// operator compares it with the one the panel shows before believing that a
+// change is legitimate.
+func showTrustAnchor(logger *log.Logger) error {
+	cfg, manager, err := newManager(logger)
+	if err != nil {
+		return err
+	}
+	if loadErr := manager.Load(); loadErr != nil {
+		return loadErr
+	}
+	logger.Printf("state directory: %s", cfg.StateDir)
+	logger.Printf("agent id:        %s", manager.AgentID())
+	logger.Printf("certificate:     serial %s, expires %s", manager.Serial(), manager.NotAfter().Format(time.RFC3339))
+	logger.Printf("trust anchor:    %s", manager.TrustAnchorFingerprint())
+	return nil
+}
+
+// reEnrol is the explicit, operator-initiated action that may replace this
+// agent's trust anchor. Nothing else may: see pki.ErrTrustAnchorChanged.
+func reEnrol(logger *log.Logger) error {
+	cfg, manager, err := newManager(logger)
+	if err != nil {
+		return err
+	}
+	if cfg.EnrolmentToken == "" {
+		return errors.New("re-enrolment needs a fresh enrolment token. " +
+			"Mint one in the panel (Servers -> Add agent) and run this command with " +
+			"VKAI_AGENT_ENROLMENT_TOKEN set to it")
+	}
+	previous := ""
+	if loadErr := manager.Load(); loadErr == nil {
+		previous = manager.TrustAnchorFingerprint()
+		logger.Printf("this agent currently trusts the CA with fingerprint %s", previous)
+	} else if !errors.Is(loadErr, pki.ErrNotEnrolled) {
+		logger.Printf("the identity on disk could not be loaded (%v); re-enrolling over it", loadErr)
+	}
+	if err := manager.ReEnrol(cfg.EnrolmentToken, cfg.Hostname, AgentVersion); err != nil {
+		return fmt.Errorf("re-enrolment failed, the identity on disk is unchanged: %w", err)
+	}
+	logger.Printf("re-enrolled: agent_id=%s serial=%s trust anchor %s -> %s",
+		manager.AgentID(), manager.Serial(), previous, manager.TrustAnchorFingerprint())
+	logger.Printf("restart %s for the new identity to be served", AgentName)
+	return nil
+}
+
+// newManager reads the configuration and builds the PKI manager, which is the
+// first thing all three commands do.
+func newManager(logger *log.Logger) (Config, *pki.Manager, error) {
 	cfg, err := loadConfig()
+	if err != nil {
+		return cfg, nil, err
+	}
+	panelClient, err := panelHTTPClient(cfg)
+	if err != nil {
+		return cfg, nil, err
+	}
+	return cfg, pki.New(pki.Options{
+		Dir:      cfg.StateDir,
+		PanelURL: cfg.PanelURL,
+		Client:   panelClient,
+		Logger:   logger,
+	}), nil
+}
+
+func run(logger *log.Logger) error {
+	cfg, manager, err := newManager(logger)
 	if err != nil {
 		return err
 	}
 
 	// The old shared secret is called out rather than ignored: an operator who
 	// upgraded and left it in place should be told it does nothing now, so it
-	// gets removed from the environment file instead of lingering there.
+	// gets removed from the environment file instead of lingering there. The
+	// panel says the same thing from its side, counting the servers that still
+	// hold one at every start.
 	if env("VKAI_AGENT_TOKEN", "AGENT_TOKEN") != "" {
-		logger.Printf("WARNING: VKAI_AGENT_TOKEN is set but is no longer used. " +
-			"The panel-to-agent channel is mutual TLS now. Remove it from the environment file.")
+		logger.Printf("WARNING: VKAI_AGENT_TOKEN is set but this agent no longer sends it. " +
+			"The panel-to-agent channel is mutual TLS. The panel still accepts that token from " +
+			"an OLD agent that has not been enrolled, and refuses it for good once this server " +
+			"has enrolled. Remove it from the environment file.")
 	}
-
-	panelClient, err := panelHTTPClient(cfg)
-	if err != nil {
-		return err
-	}
-	manager := pki.New(pki.Options{
-		Dir:      cfg.StateDir,
-		PanelURL: cfg.PanelURL,
-		Client:   panelClient,
-		Logger:   logger,
-	})
 
 	if err := ensureIdentity(cfg, manager, logger); err != nil {
 		return err
 	}
-	logger.Printf("identity: agent_id=%s serial=%s certificate expires %s",
-		manager.AgentID(), manager.Serial(), manager.NotAfter().Format(time.RFC3339))
+	logger.Printf("identity: agent_id=%s serial=%s certificate expires %s trust anchor %s",
+		manager.AgentID(), manager.Serial(), manager.NotAfter().Format(time.RFC3339),
+		manager.TrustAnchorFingerprint())
 
 	registry := ops.New(ops.Deps{
 		AllowRawExec: cfg.AllowRawExec,
@@ -251,6 +338,18 @@ func renewalLoop(ctx context.Context, cfg Config, manager *pki.Manager, logger *
 				continue
 			}
 			if err := manager.Renew(cfg.Hostname); err != nil {
+				if errors.Is(err, pki.ErrTrustAnchorChanged) {
+					// Not a transient fault and not something a retry fixes:
+					// something answered a renewal with a certificate authority
+					// that is not the one this agent was enrolled against.
+					// Nothing was written; the identity in hand still works.
+					logger.Printf("SECURITY: a renewal tried to change this agent's certificate authority and was "+
+						"refused. Nothing was written and the current certificate (expires %s) is still in use. "+
+						"If an operator rebuilt the panel CA, run `%s re-enrol` with a fresh enrolment token; "+
+						"otherwise treat this as an attempt to take the agent over: %v",
+						manager.NotAfter().Format(time.RFC3339), AgentName, err)
+					continue
+				}
 				logger.Printf("certificate renewal failed, will retry in %s (current certificate expires %s): %v",
 					renewalCheckInterval, manager.NotAfter().Format(time.RFC3339), err)
 			}

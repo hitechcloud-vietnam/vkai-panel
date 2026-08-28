@@ -62,16 +62,27 @@ type Client struct {
 }
 
 // New builds a client on top of the panel's certificate authority.
+//
+// It subscribes to revocations. A deny list is checked when a handshake
+// happens, and a connection already in the pool does not make one, so a
+// revocation would otherwise take effect only once the idle connection timed
+// out. Dropping the transport here makes the next call handshake again and be
+// refused, which is what "rejected at the next handshake, not at the next
+// expiry" has to mean in a process that keeps connections.
 func New(authority *agentpki.Authority, logger *zap.Logger) *Client {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Client{
+	c := &Client{
 		authority:  authority,
 		logger:     logger,
 		timeout:    DefaultTimeout,
 		transports: make(map[string]*http.Transport),
 	}
+	if authority != nil {
+		authority.OnRevoke(c.Forget)
+	}
+	return c
 }
 
 // SetTimeout overrides the per-operation timeout.
@@ -270,6 +281,13 @@ func (c *Client) AgentInfo(ctx context.Context, target Target) (AgentInfo, error
 	err := c.Call(ctx, target, "agent.info", nil, &out)
 	return out, err
 }
+
+// AgentChannel reports which channel this client can talk to a server over.
+// The panel client speaks mutual TLS and nothing else: a server that has not
+// enrolled cannot be called at all, which is deliberate - the old channel is a
+// path for an agent to reach the panel while it is being migrated, never a path
+// for the panel to run something as root on a machine that has no certificate.
+func (c *Client) AgentChannel() string { return agentpki.ChannelMutualTLS }
 
 // SyncPKI pushes the current deny list to an agent, so a revoked panel
 // certificate stops being accepted there without waiting for it to expire.

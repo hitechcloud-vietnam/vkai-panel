@@ -100,8 +100,14 @@ api.interceptors.response.use(
     const originalRequest = error?.config;
     const status = error?.response?.status;
     const url: string = originalRequest?.url || '';
+    // Sign-in endpoints answer 401 as part of their normal work: a wrong
+    // password, a wrong code, a challenge that has run out. None of those is a
+    // stale access token, so none of them may trigger a refresh - and none may
+    // redirect a user who is standing on the login page trying to sign in.
     const isAuthEndpoint =
-      url.includes('/api/v1/auth/login') || url.includes('/api/v1/auth/refresh');
+      url.includes('/api/v1/auth/login') ||
+      url.includes('/api/v1/auth/refresh') ||
+      url.includes('/api/v1/auth/two-factor');
 
     if (status === 401 && originalRequest && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
@@ -152,6 +158,14 @@ export const authApi = {
     api.post('/api/v1/auth/login', data),
   register: (data: { email: string; password: string; name: string }) =>
     api.post('/api/v1/auth/register', data),
+  /**
+   * Second step of sign-in: the challenge from the password step plus one
+   * code, from an authenticator app or one recovery code. The challenge is
+   * single use - every attempt spends it - and a failure that still has window
+   * left comes back with a replacement in the error body.
+   */
+  twoFactor: (data: { challenge_token: string; code: string }) =>
+    api.post('/api/v1/auth/two-factor', data),
   logout: () => api.post('/api/v1/auth/logout'),
   me: () => api.get('/api/v1/auth/me'),
   refresh: (data: { refresh_token: string }) =>

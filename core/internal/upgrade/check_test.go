@@ -275,3 +275,194 @@ func containsAll(s string, subs ...string) bool {
 	}
 	return true
 }
+
+// TestMinUpgradeFromCannotBeBypassedByOmittingIt is the audit's question about
+// this file: the field is optional, so what stops a release simply leaving it
+// out? Nothing did. min_upgrade_from is a property of the migration inside a
+// release, and the jump skips that release whatever the release on the far side
+// says about itself, so the constraint is now read from everything the upgrade
+// would step over.
+func TestMinUpgradeFromCannotBeBypassedByOmittingIt(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the newest release omits it, an intermediate one does not", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "1.0.0", nil)
+		env.publishManifests(
+			manifestFor("3.0.0", ""),      // says nothing about where you may come from
+			manifestFor("2.0.0", "1.9.0"), // but 3.0.0 cannot be reached without it
+		)
+
+		res, err := env.u.Check(context.Background())
+		var jump *IncompatibleJumpError
+		if !errors.As(err, &jump) {
+			t.Fatalf("Check error = %v, want *IncompatibleJumpError", err)
+		}
+		if jump.To != "3.0.0" || jump.BlockedBy != "2.0.0" || jump.MinUpgradeFrom != "1.9.0" {
+			t.Errorf("jump = %+v, want 3.0.0 blocked by 2.0.0 which requires 1.9.0", jump)
+		}
+		// Nothing published is installable from here, so the honest answer
+		// is the version 2.0.0 demands.
+		if jump.InstallFirst != "1.9.0" {
+			t.Errorf("InstallFirst = %q, want 1.9.0", jump.InstallFirst)
+		}
+		if !containsAll(jump.Error(), "1.0.0", "3.0.0", "2.0.0", "1.9.0") {
+			t.Errorf("error message does not name the release in the way: %q", jump.Error())
+		}
+		if res.UpdateAvailable || !res.Blocked {
+			t.Errorf("CheckResult = %+v, want a blocked jump", res)
+		}
+	})
+
+	t.Run("the intermediate release is reachable", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "1.9.0", nil)
+		env.publishManifests(
+			manifestFor("3.0.0", ""),
+			manifestFor("2.0.0", "1.9.0"),
+		)
+
+		res, err := env.u.Check(context.Background())
+		if err != nil {
+			t.Fatalf("Check: %v", err)
+		}
+		if res.Target.Version != "3.0.0" {
+			t.Errorf("target = %s, want 3.0.0 once the intermediate constraint is satisfied", res.Target.Version)
+		}
+	})
+
+	t.Run("a release below the running version does not block anything", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "1.0.0", nil)
+		env.publishManifests(
+			manifestFor("1.1.0", ""),
+			manifestFor("0.9.0", "0.8.0"), // ancient, already passed
+		)
+
+		res, err := env.u.Check(context.Background())
+		if err != nil {
+			t.Fatalf("Check: %v", err)
+		}
+		if res.Target.Version != "1.1.0" {
+			t.Errorf("target = %s, want 1.1.0", res.Target.Version)
+		}
+	})
+}
+
+// A feed that publishes release candidates must not thereby install one on
+// every customer machine. An installation already running a pre-release has
+// opted in, and an operator can opt in explicitly.
+func TestPreReleasesAreNotInstalledUnlessAskedFor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ignored by default", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "1.0.0", nil)
+		env.publishManifests(manifestFor("2.0.0-rc.1", ""), manifestFor("1.1.0", ""))
+
+		res, err := env.u.Check(context.Background())
+		if err != nil {
+			t.Fatalf("Check: %v", err)
+		}
+		if res.Target.Version != "1.1.0" {
+			t.Errorf("target = %s, want the newest stable release 1.1.0", res.Target.Version)
+		}
+	})
+
+	t.Run("nothing but pre-releases means nothing to do", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "1.0.0", nil)
+		env.publishManifests(manifestFor("2.0.0-rc.1", ""))
+
+		if _, err := env.u.Check(context.Background()); !errors.Is(err, ErrUpToDate) {
+			t.Fatalf("Check error = %v, want ErrUpToDate", err)
+		}
+	})
+
+	t.Run("offered when the operator asks", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "1.0.0", func(c *Config) { c.AllowPreRelease = true })
+		env.publishManifests(manifestFor("2.0.0-rc.1", ""), manifestFor("1.1.0", ""))
+
+		res, err := env.u.Check(context.Background())
+		if err != nil {
+			t.Fatalf("Check: %v", err)
+		}
+		if res.Target.Version != "2.0.0-rc.1" {
+			t.Errorf("target = %s, want 2.0.0-rc.1", res.Target.Version)
+		}
+	})
+
+	t.Run("offered when a pre-release is already running", func(t *testing.T) {
+		t.Parallel()
+		env := newTestEnv(t, "2.0.0-rc.1", nil)
+		env.publishManifests(manifestFor("2.0.0-rc.2", ""))
+
+		res, err := env.u.Check(context.Background())
+		if err != nil {
+			t.Fatalf("Check: %v", err)
+		}
+		if res.Target.Version != "2.0.0-rc.2" {
+			t.Errorf("target = %s, want 2.0.0-rc.2", res.Target.Version)
+		}
+	})
+}
+
+// One version, two manifests, two different tarballs: there is no honest way to
+// pick, so the feed is refused rather than resolved by sort stability.
+func TestFeedRefusesDuplicateVersions(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+
+	a := manifestFor("1.1.0", "")
+	b := manifestFor("1.1.0", "")
+	b.TarballURL = testTarBase + "somewhere-else.tar.gz"
+	b.SHA256 = sha256Hex([]byte("a different release"))
+	env.publishManifests(a, b)
+
+	_, err := env.u.Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Fatalf("Check error = %v, want the duplicate to be named", err)
+	}
+}
+
+// Build metadata does not change a version, so two entries that differ only
+// there are still the same release published twice.
+func TestFeedRefusesVersionsThatDifferOnlyInBuildMetadata(t *testing.T) {
+	t.Parallel()
+	env := newTestEnv(t, "1.0.0", nil)
+	a := manifestFor("1.1.0+one", "")
+	b := manifestFor("1.1.0+two", "")
+	env.publishManifests(a, b)
+
+	if _, err := env.u.Check(context.Background()); err == nil {
+		t.Fatal("Check accepted one release published twice under different build metadata")
+	}
+}
+
+// Without a signature TLS is the only thing authenticating a release, so a
+// plaintext URL is an unauthenticated root install.
+func TestInsecureURLsAreRefused(t *testing.T) {
+	t.Parallel()
+
+	if _, err := New(Config{Root: "/vkai-panel", FeedURL: "http://releases.example.test/feed.json"}, Deps{}); err == nil {
+		t.Error("New accepted a plaintext http feed URL")
+	}
+	if _, err := New(Config{Root: "/vkai-panel", FeedURL: "file:///etc/passwd"}, Deps{}); err == nil {
+		t.Error("New accepted a file:// feed URL")
+	}
+	if _, err := New(Config{
+		Root: "/vkai-panel", FeedURL: "http://mirror.internal/feed.json", AllowInsecureURLs: true,
+	}, Deps{}); err != nil {
+		t.Errorf("New refused an http feed the operator explicitly allowed: %v", err)
+	}
+
+	env := newTestEnv(t, "1.0.0", nil)
+	m := manifestFor("1.1.0", "")
+	m.TarballURL = "http://releases.example.test/vkai-panel-1.1.0.tar.gz"
+	env.publishManifests(m)
+	if _, err := env.u.Check(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "plaintext") {
+		t.Fatalf("Check error = %v, want the plaintext tarball URL to be refused", err)
+	}
+}

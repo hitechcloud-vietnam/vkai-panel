@@ -8,6 +8,7 @@ import (
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/config"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/middleware"
 	"github.com/hitechcloud-vietnam/vkai-panel/internal/service"
+	"github.com/hitechcloud-vietnam/vkai-panel/internal/utils"
 )
 
 type Router struct {
@@ -51,6 +52,8 @@ type Router struct {
 	dailyReportHandler    *DailyReportHandler
 	scheduledTaskHandler  *ScheduledTaskHandler
 	tamperProofHandler    *TamperProofHandler
+	twoFactorHandler      *TwoFactorHandler
+	agentPKIHandler       *AgentPKIHandler
 	panelSettingsHandler  *PanelSettingsHandler
 	upgradeHandler        *UpgradeHandler
 	jwtManager            *auth.JWTManager
@@ -97,6 +100,8 @@ func NewRouter(
 	dailyReportHandler *DailyReportHandler,
 	scheduledTaskHandler *ScheduledTaskHandler,
 	tamperProofHandler *TamperProofHandler,
+	twoFactorHandler *TwoFactorHandler,
+	agentPKIHandler *AgentPKIHandler,
 	jwtManager *auth.JWTManager,
 	logger *zap.Logger,
 ) *Router {
@@ -143,6 +148,8 @@ func NewRouter(
 		dailyReportHandler:    dailyReportHandler,
 		scheduledTaskHandler:  scheduledTaskHandler,
 		tamperProofHandler:    tamperProofHandler,
+		twoFactorHandler:      twoFactorHandler,
+		agentPKIHandler:       agentPKIHandler,
 		jwtManager:            jwtManager,
 		logger:                logger,
 	}
@@ -153,6 +160,16 @@ func NewRouter(
 	// resolve on its own.
 	r.panelSettingsHandler = newPanelSettingsHandler(auditHandler, logger)
 	r.upgradeHandler = newUpgradeHandler(auditHandler, logger)
+
+	// A caller that passes no agent PKI handler still gets the agent routes:
+	// a handler with no authority answers 503 on every one of them. The route
+	// table is the same either way, because a missing route is
+	// indistinguishable from a feature that was never written - which is
+	// exactly how the agent channel came to be served by two unauthenticated
+	// stubs while the real implementation sat unmounted.
+	if r.agentPKIHandler == nil {
+		r.agentPKIHandler = NewAgentPKIHandler(nil, jwtManager, logger)
+	}
 
 	return r
 }
@@ -214,6 +231,37 @@ func (r *Router) Setup() *gin.Engine {
 	r.engine.Use(middleware.CORS())
 	r.engine.Use(middleware.RateLimit())
 
+	// Brute force defence for every route that accepts a secret, installed
+	// once for the whole engine rather than route by route: the route somebody
+	// adds next month is guarded the day it is written, and nothing has to
+	// remember to attach anything. Requests to any other route pass through on
+	// a map lookup.
+	//
+	// This replaces the per-route AuthRateLimit that used to sit on /auth. Two
+	// limiters on one path do not add up to a policy - the effective limit
+	// becomes whichever happens to be tighter, and the cruder one (a hard
+	// cutoff on request count, per process, per address) is a denial of
+	// service against any address an attacker can send from.
+	r.engine.Use(middleware.ProtectCredentialEndpoints(r.logger,
+		// This panel serves the second factor at /api/v1/two-factor, not under
+		// /api/v1/auth, so the default table's entry never matches what is
+		// actually mounted. The prefix covers the whole group, including
+		// routes that do not exist yet.
+		middleware.CredentialRoute{
+			Path:   "/api/v1/two-factor",
+			Prefix: true,
+			Scope:  middleware.ScopeTwoFactor,
+		},
+		// Agent enrolment spends a one-time token, and the agent it enrols
+		// runs as root on a customer machine. Matched exactly, so the
+		// operator-only /agent-pki/enrolments route - which is behind a JWT
+		// and an administrator check - is not swept in with it.
+		middleware.CredentialRoute{
+			Path:  "/api/v1/agent-pki/enrol",
+			Scope: middleware.ScopeAgentEnrol,
+		},
+	))
+
 	// Health endpoints (no auth). These report up/down only.
 	registerHealthRoutes(r.engine, r.healthHandler)
 
@@ -231,9 +279,10 @@ func (r *Router) Setup() *gin.Engine {
 	// behind /api/v1/system, which is admin-only.
 	v1.GET("/version", r.upgradeHandler.Version)
 
-	// Auth endpoints (no auth required, tight rate limit)
+	// Auth endpoints (no auth required). The attempt budget for these lives in
+	// ProtectCredentialEndpoints above - layered, failure-counting and shared
+	// across instances - and nowhere else.
 	authGroup := v1.Group("/auth")
-	authGroup.Use(middleware.AuthRateLimit())
 	{
 		authGroup.POST("/login", r.authHandler.Login)
 		authGroup.POST("/refresh", r.authHandler.Refresh)
@@ -246,6 +295,18 @@ func (r *Router) Setup() *gin.Engine {
 		// Auth
 		protected.GET("/auth/me", r.authHandler.Me)
 		protected.POST("/auth/logout", r.authHandler.Logout)
+
+		// Two-factor authentication for the caller's own account. It is
+		// mounted on the authenticated group and behind no permission check:
+		// protecting your own account is not an administrative action, and
+		// gating it would leave the lowest-privilege operators unable to do
+		// it. Every route reads the user id from the validated token, never
+		// from the body.
+		if r.twoFactorHandler != nil {
+			RegisterTwoFactorRoutes(protected, r.twoFactorHandler)
+		} else {
+			registerTwoFactorUnavailable(protected)
+		}
 
 		// Runtime introspection. Previously served unauthenticated at the root,
 		// where it fingerprinted the build and leaked load characteristics.
@@ -1001,20 +1062,42 @@ func (r *Router) Setup() *gin.Engine {
 		}
 	}
 
-	// Agent endpoints (agent auth required)
-	agent := v1.Group("/agent")
-	{
-		agent.POST("/heartbeat", func(c *gin.Context) {
-			// TODO: Agent heartbeat handler
-		})
-		agent.POST("/register", func(c *gin.Context) {
-			// TODO: Agent registration handler
-		})
-	}
+	// The agent channel: enrolment, renewal and status, all of them proved by
+	// a certificate this panel issued rather than by a shared string.
+	//
+	// It is mounted on /api/v1 rather than inside the protected group because
+	// RegisterAgentPKIRoutes brings its own authentication, and the two halves
+	// need different answers: an agent has no session to present, while the
+	// operator half needs a JWT and an administrator role.
+	//
+	// What used to be here - POST /api/v1/agent/heartbeat and POST
+	// /api/v1/agent/register, both unauthenticated, both an empty function
+	// body with a TODO - is deleted rather than moved. A route that accepts
+	// anything from anybody and answers 200 having done nothing is worse than
+	// no route at all: it reads as implemented, both to a caller and to the
+	// next person adding to this file.
+	RegisterAgentPKIRoutes(v1, r.agentPKIHandler)
 
 	return r.engine
 }
 
 func (r *Router) Engine() *gin.Engine {
 	return r.engine
+}
+
+// registerTwoFactorUnavailable keeps the two-factor paths answering when the
+// service could not be built - a missing or unreadable VKAI_SECRET_KEY is the
+// only way that happens, and without that key a TOTP secret cannot be stored
+// safely at all.
+//
+// The paths answer 503 with the reason instead of 404. A 404 tells the settings
+// page that this panel has no such feature, which is how an operator concludes
+// their account does not need a second factor; a 503 with a reason is a
+// configuration error somebody can fix. The wildcard covers every route in the
+// group, so this cannot drift out of step with RegisterTwoFactorRoutes.
+func registerTwoFactorUnavailable(rg *gin.RouterGroup) {
+	rg.Any("/two-factor/*path", func(c *gin.Context) {
+		utils.ServiceUnavailable(c, "Two-factor authentication is not available on this panel: "+
+			"the panel master key (VKAI_SECRET_KEY) is missing or unreadable")
+	})
 }

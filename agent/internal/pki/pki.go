@@ -13,6 +13,18 @@
 // The static VKAI_AGENT_TOKEN this replaced was a single string that granted
 // root on every managed server to anyone who read it once.
 //
+// # The trust anchor is pinned
+//
+// The CA certificate is written once, at enrolment, and checked against the
+// fingerprint inside the operator's token. Nothing else may replace it. In
+// particular a renewal may not: renewals are unattended and frequent, so a CA
+// that could arrive in one would mean that a single intercepted renewal makes
+// the interceptor this agent's permanent certificate authority - it would issue
+// every certificate afterwards, and every one of them would verify. Changing
+// the anchor takes an explicit operator-initiated re-enrolment (Manager.ReEnrol,
+// `vkaid re-enrol`), where the new fingerprint again arrives on paper rather
+// than off the wire.
+//
 // This file deliberately mirrors core/internal/agentpki. The agent is a
 // separate Go module with no dependencies, so the wire contract is duplicated
 // rather than imported; any change to the signing message, the header names or
@@ -78,6 +90,15 @@ const (
 	certFile  = "agent.crt"
 	caFile    = "ca.crt"
 	stateFile = "state.json"
+
+	// The identity that was in use before the last rotation. It is kept
+	// because the panel goes on accepting it for an overlap window, so an
+	// agent whose new key and certificate did not both survive a crash, a
+	// snapshot revert or a full disk has something that still works. Without
+	// it, a rotation is a moment where the agent can lock itself out of its own
+	// panel.
+	prevKeyFile  = "agent.key.prev"
+	prevCertFile = "agent.crt.prev"
 )
 
 const (
@@ -87,6 +108,20 @@ const (
 
 // ErrNotEnrolled means there is no usable identity on disk yet.
 var ErrNotEnrolled = errors.New("agent pki: this agent has not been enrolled")
+
+// ErrTrustAnchorChanged is returned when something asks this agent to trust a
+// certificate authority other than the one it was enrolled against, outside an
+// explicit operator-initiated re-enrolment.
+//
+// This is the difference between a channel that can be taken over and one that
+// cannot. A renewal is unattended, it happens twice a day, and it is answered
+// by whatever is at the panel URL. If a renewal could replace ca.crt, then one
+// intercepted renewal would make the interceptor this agent's permanent trust
+// anchor: it would issue every certificate from then on, and the agent would
+// never notice, because everything would verify. So the anchor is pinned at
+// enrolment and can be changed by exactly one thing: an operator pasting a new
+// enrolment token, which carries the fingerprint of the CA they meant.
+var ErrTrustAnchorChanged = errors.New("agent pki: the panel presented a different certificate authority")
 
 // state is the small amount of metadata kept next to the key material.
 type state struct {
@@ -176,23 +211,15 @@ func (m *Manager) NotAfter() time.Time {
 
 // Load reads an existing identity. It returns ErrNotEnrolled when there is
 // nothing to load, which is the installer's signal to enrol.
+//
+// If the current pair is unusable - a rotation that was interrupted between the
+// two writes, a restored snapshot, a truncated file - the identity kept from
+// before the last rotation is loaded instead. The panel accepts it for the
+// overlap window, so the agent comes back up and renews, rather than sitting
+// there enrolled and unable to prove it.
 func (m *Manager) Load() error {
 	st, err := m.readState()
 	if err != nil {
-		return err
-	}
-	keyPEM, err := os.ReadFile(filepath.Join(m.dir, keyFile))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return ErrNotEnrolled
-		}
-		return err
-	}
-	certPEM, err := os.ReadFile(filepath.Join(m.dir, certFile))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return ErrNotEnrolled
-		}
 		return err
 	}
 	caPEM, err := os.ReadFile(filepath.Join(m.dir, caFile))
@@ -202,28 +229,71 @@ func (m *Manager) Load() error {
 		}
 		return err
 	}
-	return m.install(keyPEM, certPEM, caPEM, st)
+	keyPEM, certPEM, readErr := readPair(m.dir, keyFile, certFile)
+	if readErr == nil {
+		readErr = m.install(keyPEM, certPEM, caPEM, st)
+		if readErr == nil {
+			return nil
+		}
+	}
+	if errors.Is(readErr, os.ErrNotExist) {
+		// Nothing current at all. There may still be a previous identity, from
+		// a rotation that wrote the new files away and then lost them.
+		readErr = ErrNotEnrolled
+	}
+
+	prevKeyPEM, prevCertPEM, prevErr := readPair(m.dir, prevKeyFile, prevCertFile)
+	if prevErr != nil {
+		return readErr
+	}
+	if err := m.install(prevKeyPEM, prevCertPEM, caPEM, st); err != nil {
+		return readErr
+	}
+	m.logger.Printf("WARNING: the current certificate is unusable (%v); "+
+		"falling back to the one held before the last rotation, serial %s, which the panel accepts "+
+		"for its overlap window. A renewal will replace it.", readErr, m.Serial())
+	// Renew at once rather than at half life: what is in hand is on borrowed
+	// time by definition.
+	m.mu.Lock()
+	m.renewAfter = m.now().Add(-time.Second)
+	m.mu.Unlock()
+	return nil
 }
 
-func (m *Manager) install(keyPEM, certPEM, caPEM []byte, st *state) error {
+// readPair reads a key and certificate together, so a half-written rotation is
+// one error rather than two states.
+func readPair(dir, keyName, certName string) ([]byte, []byte, error) {
+	keyPEM, err := os.ReadFile(filepath.Join(dir, keyName))
+	if err != nil {
+		return nil, nil, err
+	}
+	certPEM, err := os.ReadFile(filepath.Join(dir, certName))
+	if err != nil {
+		return nil, nil, err
+	}
+	return keyPEM, certPEM, nil
+}
+
+// verifyMaterial checks a key, certificate and CA as a set: the key matches the
+// certificate, the certificate chains to that CA, and it is inside its validity
+// window. It mutates nothing, so it can be called before a write as well as
+// after a read.
+func verifyMaterial(keyPEM, certPEM, caPEM []byte, now time.Time) (*tls.Certificate, *x509.Certificate, *x509.CertPool, error) {
 	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		return fmt.Errorf("agent pki: the stored key and certificate do not match: %w", err)
+		return nil, nil, nil, fmt.Errorf("agent pki: the key and certificate do not match: %w", err)
 	}
 	leaf, err := x509.ParseCertificate(pair.Certificate[0])
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 	pair.Leaf = leaf
-
-	signer, ok := pair.PrivateKey.(crypto.Signer)
-	if !ok {
-		return errors.New("agent pki: the stored private key cannot sign")
+	if _, ok := pair.PrivateKey.(crypto.Signer); !ok {
+		return nil, nil, nil, errors.New("agent pki: the private key cannot sign")
 	}
-
 	caCert, err := parseCACert(caPEM)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
@@ -233,11 +303,20 @@ func (m *Manager) install(keyPEM, certPEM, caPEM []byte, st *state) error {
 	// network faults. Failing here says what is actually wrong.
 	if _, err := leaf.Verify(x509.VerifyOptions{
 		Roots:       pool,
-		CurrentTime: m.now(),
+		CurrentTime: now,
 		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}); err != nil {
-		return fmt.Errorf("agent pki: the stored certificate is not usable: %w", err)
+		return nil, nil, nil, fmt.Errorf("agent pki: the certificate is not usable: %w", err)
 	}
+	return &pair, leaf, pool, nil
+}
+
+func (m *Manager) install(keyPEM, certPEM, caPEM []byte, st *state) error {
+	pair, leaf, pool, err := verifyMaterial(keyPEM, certPEM, caPEM, m.now())
+	if err != nil {
+		return err
+	}
+	signer := pair.PrivateKey.(crypto.Signer)
 
 	denied := make(map[string]bool, len(st.Denied))
 	for _, serial := range st.Denied {
@@ -246,7 +325,7 @@ func (m *Manager) install(keyPEM, certPEM, caPEM []byte, st *state) error {
 
 	m.mu.Lock()
 	m.key = signer
-	m.cert = &pair
+	m.cert = pair
 	m.caPool = pool
 	m.caPEM = append([]byte(nil), caPEM...)
 	m.agentID = leaf.Subject.CommonName
@@ -323,13 +402,70 @@ type issuedResponse struct {
 
 // Enrol trades the one-time token for a certificate. It is called once, by the
 // installer; afterwards the token is dead and Renew takes over.
+//
+// If this agent already trusts a certificate authority, Enrol refuses a token
+// that names a different one. Changing the trust anchor is the one thing that
+// cannot be allowed to happen quietly, so it needs ReEnrol, which an operator
+// asks for by name.
 func (m *Manager) Enrol(token, hostname, agentVersion string) error {
+	return m.enrol(token, hostname, agentVersion, false)
+}
+
+// ReEnrol is the explicit, operator-initiated re-enrolment. It is the only path
+// that may replace this agent's trust anchor, and it exists for exactly two
+// situations: the panel's CA was rebuilt, or the CA key leaked and every
+// certificate it ever signed is worthless.
+//
+// The operator mints a fresh enrolment token in the new panel and pastes it
+// here. The token carries the new CA's public key fingerprint, so the anchor
+// still arrives through the operator rather than off the wire - trust on paste,
+// not trust on first sight.
+func (m *Manager) ReEnrol(token, hostname, agentVersion string) error {
+	return m.enrol(token, hostname, agentVersion, true)
+}
+
+// TrustAnchorFingerprint is the SHA-256 of the public key of the CA this agent
+// trusts, lowercase hex, or "" when it is not enrolled. It is what an operator
+// compares against the panel before deciding that a change is legitimate.
+func (m *Manager) TrustAnchorFingerprint() string {
+	m.mu.RLock()
+	caPEM := m.caPEM
+	m.mu.RUnlock()
+	if len(caPEM) == 0 {
+		// Not loaded, or loaded from a broken identity. The anchor on disk is
+		// still the anchor: an enrolment that would replace it has to see it,
+		// whether or not the certificate beside it could be used.
+		onDisk, err := os.ReadFile(filepath.Join(m.dir, caFile))
+		if err != nil {
+			return ""
+		}
+		caPEM = onDisk
+	}
+	cert, err := parseCACert(caPEM)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	return hex.EncodeToString(sum[:])
+}
+
+func (m *Manager) enrol(token, hostname, agentVersion string, allowAnchorChange bool) error {
 	// Only the fingerprint is needed here: the whole token string is what the
 	// panel checks, and the fingerprint is what this side checks the answer
 	// against.
 	caFingerprint, err := tokenCAFingerprint(token)
 	if err != nil {
 		return err
+	}
+	// An anchor is already installed and the token names a different CA. That
+	// is either a panel rebuild or an attempt to hand this root-privileged
+	// agent to somebody else; the two are indistinguishable from here, so it
+	// takes a decision an operator made deliberately.
+	if current := m.TrustAnchorFingerprint(); current != "" &&
+		!strings.EqualFold(current, caFingerprint) && !allowAnchorChange {
+		return fmt.Errorf("%w: this agent trusts the CA with fingerprint %s and the token names %s. "+
+			"Run `%s re-enrol` if an operator really is moving this agent to a new certificate authority",
+			ErrTrustAnchorChanged, current, caFingerprint, "vkaid")
 	}
 
 	key, csrPEM, err := generateKeyAndCSR(hostname)
@@ -363,11 +499,16 @@ func (m *Manager) Enrol(token, hostname, agentVersion string) error {
 	if err != nil {
 		return err
 	}
+	previousAnchor := m.TrustAnchorFingerprint()
 	if err := m.persist(keyPEM, []byte(issued.CertPEM), []byte(issued.CAPEM), issued.RenewAfter); err != nil {
 		return err
 	}
-	m.logger.Printf("enrolled with the panel: agent_id=%s serial=%s expires=%s",
-		issued.AgentID, issued.Serial, issued.NotAfter.Format(time.RFC3339))
+	if previousAnchor != "" && !strings.EqualFold(previousAnchor, caFingerprint) {
+		m.logger.Printf("WARNING: the trust anchor was replaced by an operator-initiated re-enrolment: %s -> %s",
+			previousAnchor, caFingerprint)
+	}
+	m.logger.Printf("enrolled with the panel: agent_id=%s serial=%s expires=%s ca_fingerprint=%s",
+		issued.AgentID, issued.Serial, issued.NotAfter.Format(time.RFC3339), caFingerprint)
 	return nil
 }
 
@@ -402,16 +543,61 @@ func (m *Manager) Renew(hostname string) error {
 	if err := m.postJSON(pathRenew, body, headers, &issued); err != nil {
 		return err
 	}
+
+	// A renewal may not change what this agent trusts. The reply's ca_pem is
+	// compared against the anchor on disk and then thrown away: what gets
+	// written is the anchor this agent already had. A panel that has genuinely
+	// rebuilt its CA cannot renew this agent - it has to re-enrol it, which is
+	// an operator pasting a token, which is the point.
+	m.mu.RLock()
+	anchorPEM := append([]byte(nil), m.caPEM...)
+	m.mu.RUnlock()
+	if err := m.checkAnchorUnchanged([]byte(issued.CAPEM), anchorPEM); err != nil {
+		m.logger.Printf("SECURITY: refusing this renewal: %v", err)
+		return err
+	}
+
 	keyPEM, err := marshalKey(key)
 	if err != nil {
 		return err
 	}
 	previous := m.Serial()
-	if err := m.persist(keyPEM, []byte(issued.CertPEM), []byte(issued.CAPEM), issued.RenewAfter); err != nil {
+	if err := m.persist(keyPEM, []byte(issued.CertPEM), anchorPEM, issued.RenewAfter); err != nil {
 		return err
 	}
 	m.logger.Printf("certificate rotated: serial %s -> %s, expires %s",
 		previous, issued.Serial, issued.NotAfter.Format(time.RFC3339))
+	return nil
+}
+
+// checkAnchorUnchanged compares a CA offered in a renewal reply with the one
+// this agent is pinned to. An empty offer is fine - it means the panel sent no
+// CA and there is nothing to disagree about.
+func (m *Manager) checkAnchorUnchanged(offered, pinned []byte) error {
+	if len(bytes.TrimSpace(offered)) == 0 {
+		return nil
+	}
+	if len(pinned) == 0 {
+		return ErrNotEnrolled
+	}
+	offeredCert, err := parseCACert(offered)
+	if err != nil {
+		return fmt.Errorf("%w: the renewal carried a CA this agent cannot parse: %v", ErrTrustAnchorChanged, err)
+	}
+	pinnedCert, err := parseCACert(pinned)
+	if err != nil {
+		return err
+	}
+	offeredSum := sha256.Sum256(offeredCert.RawSubjectPublicKeyInfo)
+	pinnedSum := sha256.Sum256(pinnedCert.RawSubjectPublicKeyInfo)
+	// Constant time out of habit rather than necessity: both values are public.
+	if subtle.ConstantTimeCompare(offeredSum[:], pinnedSum[:]) != 1 {
+		return fmt.Errorf("%w: the renewal offered the CA with fingerprint %s, this agent trusts %s. "+
+			"Nothing was written. If an operator really did rebuild the panel CA, re-enrol this agent with a "+
+			"fresh enrolment token; if not, this is somebody trying to become this agent's certificate authority",
+			ErrTrustAnchorChanged,
+			hex.EncodeToString(offeredSum[:]), hex.EncodeToString(pinnedSum[:]))
+	}
 	return nil
 }
 
@@ -426,9 +612,31 @@ func (m *Manager) NeedsRenewal() bool {
 }
 
 // persist writes the new material and only then swaps it in.
+//
+// The order matters, and it is chosen so that no failure leaves this agent
+// unable to talk to its panel:
+//
+//  1. The new key, certificate and CA are checked together before anything is
+//     written. Material that does not verify is refused while the identity in
+//     use is still untouched.
+//  2. The identity currently on disk is copied aside as the previous one. The
+//     panel goes on accepting it for its overlap window, so it is a working
+//     fallback, not a museum piece.
+//  3. Only then are the new files written, each through a temporary file and a
+//     rename.
+//
+// A crash at any point leaves either the old identity or the new one, and Load
+// prefers the new and falls back to the old.
 func (m *Manager) persist(keyPEM, certPEM, caPEM []byte, renewAfter time.Time) error {
 	if err := os.MkdirAll(m.dir, 0o700); err != nil {
 		return fmt.Errorf("agent pki: cannot create %s: %w", m.dir, err)
+	}
+	if _, _, _, err := verifyMaterial(keyPEM, certPEM, caPEM, m.now()); err != nil {
+		return fmt.Errorf("agent pki: refusing to install this identity, the one in use is untouched: %w", err)
+	}
+	if err := m.keepPrevious(); err != nil {
+		// Not fatal: it costs the fallback, not the rotation.
+		m.logger.Printf("warning: cannot keep the previous identity as a fallback: %v", err)
 	}
 	if err := writeSecret(filepath.Join(m.dir, keyFile), keyPEM); err != nil {
 		return err
@@ -448,6 +656,23 @@ func (m *Manager) persist(keyPEM, certPEM, caPEM []byte, renewAfter time.Time) e
 		return err
 	}
 	return m.writeState()
+}
+
+// keepPrevious copies the identity that is on disk now to the .prev files. It
+// does nothing when there is no complete identity to keep, which is the case on
+// first enrolment.
+func (m *Manager) keepPrevious() error {
+	keyPEM, certPEM, err := readPair(m.dir, keyFile, certFile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if err := writeSecret(filepath.Join(m.dir, prevKeyFile), keyPEM); err != nil {
+		return err
+	}
+	return writeSecret(filepath.Join(m.dir, prevCertFile), certPEM)
 }
 
 // ============================================================

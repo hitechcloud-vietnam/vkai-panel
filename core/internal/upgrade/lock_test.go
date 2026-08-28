@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -224,4 +225,187 @@ func TestCurrentVersionFallsBackToStateThenSymlink(t *testing.T) {
 	if v.String() != "1.3.0" {
 		t.Errorf("currentVersion = %s, want 1.3.0 from the state file", v)
 	}
+}
+
+// newLockPeer builds an independent Upgrader against a shared root, as a second
+// process would see it.
+func newLockPeer(t *testing.T, root string, pid int, alive func(int) bool) *Upgrader {
+	t.Helper()
+	if alive == nil {
+		alive = func(int) bool { return false }
+	}
+	u, err := New(Config{Root: root, StaleLockAge: DefaultStaleLockAge}, Deps{
+		Clock:        newFakeClock(),
+		ProcessAlive: alive,
+		PID:          pid,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return u
+}
+
+// TestConcurrentLockAcquisitionHasExactlyOneWinner is the test the audit said
+// was missing: not "can the lock be taken" but "can it be taken twice".
+//
+// Every goroutine here is a separate Upgrader with its own pid, which is what a
+// second process looks like from the filesystem's point of view. flock(2) is
+// per open file description, so two descriptors in one process contend exactly
+// as two processes would.
+func TestConcurrentLockAcquisitionHasExactlyOneWinner(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	const peers = 8
+	var (
+		mu      sync.Mutex
+		handles []*lockHandle
+		locked  int
+		other   []error
+		wg      sync.WaitGroup
+		start   = make(chan struct{})
+	)
+
+	for i := 0; i < peers; i++ {
+		u := newLockPeer(t, root, 5000+i, nil)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			h, err := u.acquireLock("2.0.0")
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				handles = append(handles, h)
+			case errors.As(err, new(*LockedError)):
+				locked++
+			default:
+				other = append(other, err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if len(other) > 0 {
+		t.Fatalf("unexpected errors: %v", other)
+	}
+	if len(handles) != 1 {
+		t.Fatalf("%d of %d upgrades took the lock at once; want exactly 1 (the rest reported: %d locked)",
+			len(handles), peers, locked)
+	}
+	if locked != peers-1 {
+		t.Errorf("%d peers were told the lock was held, want %d", locked, peers-1)
+	}
+
+	// And the winner can hand it on once it is done.
+	if err := handles[0].release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	next, err := newLockPeer(t, root, 6000, nil).acquireLock("2.0.1")
+	if err != nil {
+		t.Fatalf("acquireLock after release: %v", err)
+	}
+	_ = next.release()
+}
+
+// TestStaleLockRecoveryIsNotRacy is the regression test for the second finding
+// in the audit's proof of concept: two upgrades that both find the same
+// abandoned lock, both decide it is abandoned, and both take it.
+//
+// The interleaving is forced rather than hoped for. While the second upgrade is
+// probing the recorded owner - the exact window the old implementation decided
+// in - the first one runs to completion and takes the lock.
+func TestStaleLockRecoveryIsNotRacy(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	var (
+		mu         sync.Mutex
+		firstHold  *lockHandle
+		firstErr   error
+		firstTried bool
+	)
+
+	first := newLockPeer(t, root, 1001, nil)
+	second := newLockPeer(t, root, 1002, func(pid int) bool {
+		if pid == 4242 {
+			mu.Lock()
+			if !firstTried {
+				firstTried = true
+				firstHold, firstErr = first.acquireLock("2.0.0")
+			}
+			mu.Unlock()
+		}
+		return false // pid 4242 is gone either way
+	})
+
+	if err := os.MkdirAll(first.EtcDir(), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	stale, _ := json.Marshal(lockInfo{PID: 4242, StartedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Version: "1.0.0"})
+	if err := os.WriteFile(first.LockFile(), stale, 0o640); err != nil {
+		t.Fatalf("write stale lock: %v", err)
+	}
+
+	secondHold, secondErr := second.acquireLock("2.0.0")
+
+	mu.Lock()
+	defer mu.Unlock()
+	held := 0
+	if firstErr == nil && firstHold != nil {
+		held++
+	}
+	if secondErr == nil && secondHold != nil {
+		held++
+	}
+	if held != 1 {
+		t.Fatalf("%d upgrades hold the lock (first: %v, second: %v); want exactly 1", held, firstErr, secondErr)
+	}
+	// Whichever lost was told why, in a form the CLI can act on.
+	loser := firstErr
+	if loser == nil {
+		loser = secondErr
+	}
+	if !errors.As(loser, new(*LockedError)) {
+		t.Errorf("the upgrade that lost the race got %v, want *LockedError", loser)
+	}
+	_ = firstHold.release()
+	_ = secondHold.release()
+}
+
+// The lock survives its own release-and-retake cycle: a handle that has already
+// removed the file must not let a later release remove somebody else's lock.
+func TestReleasingTwiceDoesNotStealTheNextLock(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	first := newLockPeer(t, root, 7001, nil)
+	h1, err := first.acquireLock("1.0.0")
+	if err != nil {
+		t.Fatalf("first acquire: %v", err)
+	}
+	if err := h1.release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+
+	second := newLockPeer(t, root, 7002, func(int) bool { return true })
+	h2, err := second.acquireLock("1.1.0")
+	if err != nil {
+		t.Fatalf("second acquire: %v", err)
+	}
+
+	// The first handle releasing again must be a no-op, not a theft.
+	if err := h1.release(); err != nil {
+		t.Fatalf("second release of the first handle: %v", err)
+	}
+	if !exists(second.LockFile()) {
+		t.Fatal("releasing a handle twice removed a lock held by someone else")
+	}
+	third := newLockPeer(t, root, 7003, func(int) bool { return true })
+	if _, err := third.acquireLock("1.2.0"); !errors.As(err, new(*LockedError)) {
+		t.Fatalf("acquireLock = %v, want *LockedError while the second peer holds it", err)
+	}
+	_ = h2.release()
 }

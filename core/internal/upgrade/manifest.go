@@ -4,15 +4,34 @@ package upgrade
 //
 // IMPORTANT: the wire format below is shared with the release tooling that
 // produces the feed. The JSON field names - version, released_at,
-// min_upgrade_from, tarball_url, sha256, changelog_url - are the contract; the
-// Go struct is free to change around them but those names are not.
+// min_upgrade_from, tarball_url, sha256, changelog_url, size_bytes, signature -
+// are the contract; the Go struct is free to change around them but those names
+// are not.
+//
+// # What a manifest is trusted to decide
+//
+// A manifest names a URL and a digest, and this package then installs whatever
+// that URL serves, as root, and restarts the machine's services onto it.
+// Without a signature the only thing standing between "whoever can answer for
+// the feed host" and root on every installation is TLS - which means the feed's
+// certificate, its CA, its DNS, its CDN and everyone with commit access to the
+// bucket behind it. Config.ReleasePublicKeys closes that: when it is set, every
+// manifest in the feed has to carry an ed25519 signature over its own contents,
+// made by a key that never has to be on the release host at all. It is off by
+// default, because turning it on without published keys would brick upgrades on
+// existing installations, and that is stated as a residual risk rather than
+// quietly assumed away.
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,6 +51,17 @@ type Manifest struct {
 	TarballURL     string    `json:"tarball_url"`
 	SHA256         string    `json:"sha256"`
 	ChangelogURL   string    `json:"changelog_url"`
+
+	// SizeBytes is the exact size of the tarball, when the release tooling
+	// publishes it. It lets the disk check happen before a gigabyte is
+	// downloaded rather than after, and a download of a different length is
+	// refused without hashing it.
+	SizeBytes int64 `json:"size_bytes,omitempty"`
+
+	// Signature is an ed25519 signature over ManifestSigningPayload, hex
+	// encoded. Required when Config.ReleasePublicKeys is set, ignored when
+	// it is not.
+	Signature string `json:"signature,omitempty"`
 }
 
 // Validate checks that a manifest can actually be acted on. A feed that is
@@ -55,11 +85,72 @@ func (m Manifest) Validate() error {
 	if err := validateChecksum(m.SHA256); err != nil {
 		return fmt.Errorf("manifest for %s: %w", m.Version, err)
 	}
+	if m.SizeBytes < 0 {
+		return fmt.Errorf("manifest for %s has a negative size_bytes", m.Version)
+	}
 	return nil
 }
 
 // ParsedVersion returns the manifest version already parsed.
 func (m Manifest) ParsedVersion() (Version, error) { return ParseVersion(m.Version) }
+
+// ManifestSigningPayload is the exact byte string a release signature covers.
+//
+// It is built from the fields rather than from the JSON, because two encoders
+// produce two different JSON documents for the same manifest and a signature
+// over "whatever bytes arrived" would either break on a whitespace change or
+// have to canonicalise JSON, which is a well-known way to get this wrong. The
+// release tooling must produce this string exactly; it is part of the contract.
+//
+//	vkai-panel-release-manifest-v1\n
+//	<version>\n
+//	<released_at as RFC3339 in UTC, empty when unset>\n
+//	<min_upgrade_from>\n
+//	<tarball_url>\n
+//	<sha256, lowercase>\n
+//	<size_bytes as decimal>\n
+//	<changelog_url>\n
+func ManifestSigningPayload(m Manifest) []byte {
+	released := ""
+	if !m.ReleasedAt.IsZero() {
+		released = m.ReleasedAt.UTC().Format(time.RFC3339)
+	}
+	fields := []string{
+		"vkai-panel-release-manifest-v1",
+		strings.TrimSpace(m.Version),
+		released,
+		strings.TrimSpace(m.MinUpgradeFrom),
+		strings.TrimSpace(m.TarballURL),
+		strings.ToLower(strings.TrimSpace(m.SHA256)),
+		strconv.FormatInt(m.SizeBytes, 10),
+		strings.TrimSpace(m.ChangelogURL),
+	}
+	return []byte(strings.Join(fields, "\n") + "\n")
+}
+
+// verifySignature checks a manifest against the configured release keys.
+//
+// Every listed manifest has to verify, not just the one that is about to be
+// installed: the others decide which upgrades are legal - min_upgrade_from and
+// the intermediate release the operator is told to install first - so an
+// unsigned entry in the list is still an entry that changes what happens.
+func (u *Upgrader) verifySignature(m Manifest) error {
+	if len(u.releaseKeys) == 0 {
+		return nil
+	}
+	sig, err := hex.DecodeString(strings.TrimSpace(m.Signature))
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return fmt.Errorf("release %s is not signed, or its signature is not %d hex-encoded bytes",
+			m.Version, ed25519.SignatureSize)
+	}
+	payload := ManifestSigningPayload(m)
+	for _, key := range u.releaseKeys {
+		if ed25519.Verify(key, payload, sig) {
+			return nil
+		}
+	}
+	return fmt.Errorf("the signature on release %s was not made by any configured release key; refusing to install it", m.Version)
+}
 
 func validateChecksum(sum string) error {
 	s := strings.TrimSpace(sum)
@@ -75,6 +166,28 @@ func validateChecksum(sum string) error {
 		}
 	}
 	return nil
+}
+
+// checkDownloadURL refuses a tarball URL that would be fetched over a channel
+// nobody authenticates. Without signatures TLS is the only thing making the
+// feed's answer trustworthy at all, so a plaintext URL - or one the feed
+// redirected to plaintext - is an unauthenticated root install.
+func (u *Upgrader) checkDownloadURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("tarball_url %q is not a URL: %w", raw, err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if u.cfg.AllowInsecureURLs {
+			return nil
+		}
+		return fmt.Errorf("tarball_url %q is plaintext http; set AllowInsecureURLs only for a mirror on a trusted network", raw)
+	default:
+		return fmt.Errorf("tarball_url %q has scheme %q; only https is supported", raw, parsed.Scheme)
+	}
 }
 
 // maxFeedBytes caps what the feed may hand us. The feed is a small JSON
@@ -131,7 +244,20 @@ func (u *Upgrader) fetchFeed(ctx context.Context) ([]Manifest, error) {
 	if len(body) > maxFeedBytes {
 		return nil, fmt.Errorf("release feed %s is larger than %d bytes", u.cfg.FeedURL, maxFeedBytes)
 	}
-	return parseFeed(body)
+
+	releases, err := parseFeed(body)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range releases {
+		if err := u.verifySignature(m); err != nil {
+			return nil, err
+		}
+		if err := u.checkDownloadURL(m.TarballURL); err != nil {
+			return nil, fmt.Errorf("release %s: %w", m.Version, err)
+		}
+	}
+	return releases, nil
 }
 
 func parseFeed(body []byte) ([]Manifest, error) {
@@ -166,10 +292,23 @@ func parseFeed(body []byte) ([]Manifest, error) {
 	if len(releases) == 0 {
 		return nil, fmt.Errorf("release feed lists no releases")
 	}
+	seen := make(map[string]int, len(releases))
 	for i, m := range releases {
 		if err := m.Validate(); err != nil {
 			return nil, fmt.Errorf("release feed entry %d: %w", i, err)
 		}
+		// Two entries for one version would make "the newest release"
+		// depend on sort stability, and the two entries can name
+		// different tarballs. There is no honest way to pick one.
+		v, err := m.ParsedVersion()
+		if err != nil {
+			return nil, fmt.Errorf("release feed entry %d: %w", i, err)
+		}
+		key := v.Canonical()
+		if first, dup := seen[key]; dup {
+			return nil, fmt.Errorf("release feed lists version %s twice, at entries %d and %d", m.Version, first, i)
+		}
+		seen[key] = i
 	}
 	return releases, nil
 }

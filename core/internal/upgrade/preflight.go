@@ -19,6 +19,75 @@ import (
 	"path/filepath"
 )
 
+// releaseExpansionEstimate is how much bigger an extracted release is assumed
+// to be than its gzipped tarball, used only before the download when the real
+// size is not known yet. Three is what the panel's own releases measure at;
+// four is that rounded up. Guessing high costs a refusal on a nearly full disk,
+// which is the failure worth having: the alternative is filling the disk half
+// way through extraction, on a machine nobody can log in to.
+const releaseExpansionEstimate = 4
+
+// earlyPreflight runs the checks that do not need the release on disk, before
+// anything is downloaded.
+//
+// The full preflight below happens after the download and the extraction, which
+// is the right place for the checks that measure what was extracted - and the
+// wrong place for "is there room for any of this at all". Pulling a gigabyte
+// onto a disk with a hundred megabytes free, expanding it, and only then
+// reporting that there was never enough room is a bad way to find out, so the
+// disk and the services are checked here as well.
+func (u *Upgrader) earlyPreflight(ctx context.Context, m Manifest) error {
+	var failures []string
+
+	need := u.requiredFreeBeforeDownload(m)
+	free, err := u.deps.DiskFree(u.cfg.Root)
+	if err != nil {
+		failures = append(failures, fmt.Sprintf("cannot measure free space on %s: %v", u.cfg.Root, err))
+	} else if int64(free) < need {
+		failures = append(failures, fmt.Sprintf(
+			"not enough free space on %s: %s available, %s required (%s for the download and the release it expands to, %s for the database dump, %s headroom)",
+			u.cfg.Root, humanBytes(int64(free)), humanBytes(need),
+			humanBytes(u.downloadFootprint(m)), humanBytes(u.dumpReservation()), humanBytes(u.cfg.DiskSafetyMargin)))
+	}
+
+	// Upgrading an installation that is already broken means the health
+	// check after the switch cannot distinguish "the new release is bad"
+	// from "it was never up". That is worth knowing before the download,
+	// not after it.
+	if err := u.healthCheck(ctx); err != nil {
+		failures = append(failures, fmt.Sprintf("services are not healthy before the upgrade: %v", err))
+	}
+
+	if len(failures) > 0 {
+		return &PreflightError{Failures: failures}
+	}
+	return nil
+}
+
+// downloadFootprint is what the download plus its extraction is expected to
+// occupy. Zero when the manifest does not publish a size, in which case this
+// check reduces to "there is room for the dump and the headroom", which is
+// still better than no check at all.
+func (u *Upgrader) downloadFootprint(m Manifest) int64 {
+	if m.SizeBytes <= 0 {
+		return 0
+	}
+	return m.SizeBytes + m.SizeBytes*releaseExpansionEstimate
+}
+
+func (u *Upgrader) dumpReservation() int64 {
+	if !u.cfg.Database.Enabled {
+		return 0
+	}
+	return u.cfg.Database.EstimateBytes
+}
+
+// requiredFreeBeforeDownload is what has to be free before the first byte is
+// fetched.
+func (u *Upgrader) requiredFreeBeforeDownload(m Manifest) int64 {
+	return u.downloadFootprint(m) + u.dumpReservation() + u.cfg.DiskSafetyMargin
+}
+
 // preflight runs every pre-switch check against the staged release.
 func (u *Upgrader) preflight(ctx context.Context, staging string, m Manifest) error {
 	var failures []string
@@ -56,9 +125,15 @@ func (u *Upgrader) preflight(ctx context.Context, staging string, m Manifest) er
 	}
 
 	// 4. Disk space for the new release plus the database dump plus a
-	// margin. The new release is counted even though it is already staged,
-	// because the promotion is a rename and costs nothing - what has to fit
-	// is the dump and the headroom the next steps will use.
+	// margin.
+	//
+	// The accounting is deliberately conservative. By this point the tarball
+	// and the extracted release are both already on disk, and the promotion
+	// is a rename, which costs nothing; what still has to fit is the dump
+	// and the headroom. Counting the staged release again on top of that is
+	// an over-estimate roughly the size of the tarball plus the extraction,
+	// which is exactly the space a failed upgrade has to have free to clean
+	// up after itself.
 	need := u.requiredFreeBytes(stagedSize)
 	free, err := u.deps.DiskFree(u.cfg.Root)
 	if err != nil {
@@ -67,7 +142,7 @@ func (u *Upgrader) preflight(ctx context.Context, staging string, m Manifest) er
 		failures = append(failures, fmt.Sprintf(
 			"not enough free space on %s: %s available, %s required (%s for the release, %s for the database dump, %s headroom)",
 			u.cfg.Root, humanBytes(int64(free)), humanBytes(need),
-			humanBytes(stagedSize), humanBytes(u.cfg.Database.EstimateBytes), humanBytes(u.cfg.DiskSafetyMargin)))
+			humanBytes(stagedSize), humanBytes(u.dumpReservation()), humanBytes(u.cfg.DiskSafetyMargin)))
 	}
 
 	// 5. The services have to be healthy now. Upgrading an installation
@@ -87,11 +162,7 @@ func (u *Upgrader) preflight(ctx context.Context, staging string, m Manifest) er
 // requiredFreeBytes is what preflight insists on: the release, the dump, and
 // the margin.
 func (u *Upgrader) requiredFreeBytes(stagedSize int64) int64 {
-	need := stagedSize + u.cfg.DiskSafetyMargin
-	if u.cfg.Database.Enabled {
-		need += u.cfg.Database.EstimateBytes
-	}
-	return need
+	return stagedSize + u.dumpReservation() + u.cfg.DiskSafetyMargin
 }
 
 // checkWritableDir proves a directory exists and that this process can create

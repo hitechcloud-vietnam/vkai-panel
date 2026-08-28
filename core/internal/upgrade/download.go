@@ -12,6 +12,7 @@ package upgrade
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -24,6 +25,12 @@ import (
 // download fetches the tarball into the panel's tmp directory and returns the
 // path plus its sha256, lowercase hex.
 func (u *Upgrader) download(ctx context.Context, m Manifest) (path string, sum string, err error) {
+	// fetchFeed checked this already. It is checked again here because this
+	// is the function that opens the connection, and a caller that assembled
+	// a Manifest by hand would otherwise walk straight past it.
+	if err := u.checkDownloadURL(m.TarballURL); err != nil {
+		return "", "", err
+	}
 	if err := os.MkdirAll(u.TmpDir(), 0o750); err != nil {
 		return "", "", fmt.Errorf("create %s: %w", u.TmpDir(), err)
 	}
@@ -76,6 +83,11 @@ func (u *Upgrader) download(ctx context.Context, m Manifest) (path string, sum s
 	case written == 0:
 		_ = os.Remove(dest)
 		return "", "", fmt.Errorf("download %s returned an empty body", m.TarballURL)
+	case m.SizeBytes > 0 && written != m.SizeBytes:
+		// A different length is a different file. Saying so here costs
+		// nothing and is a clearer failure than a checksum mismatch.
+		_ = os.Remove(dest)
+		return "", "", fmt.Errorf("download %s is %d bytes, but the manifest says %d", m.TarballURL, written, m.SizeBytes)
 	}
 
 	return dest, hex.EncodeToString(hasher.Sum(nil)), nil
@@ -94,27 +106,41 @@ func (u *Upgrader) download(ctx context.Context, m Manifest) (path string, sum s
 // On any mismatch the archive is deleted before returning, so no later step can
 // find it and use it.
 func (u *Upgrader) verifyChecksum(path, streamed string, m Manifest) error {
-	expected := strings.ToLower(strings.TrimSpace(m.SHA256))
+	expected, err := decodeSHA256(m.SHA256)
+	if err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("verify %s: %w", path, err)
+	}
 
 	onDisk, err := fileSHA256(path)
 	if err != nil {
 		_ = os.Remove(path)
 		return fmt.Errorf("verify %s: %w", path, err)
 	}
+	onDiskRaw, err := decodeSHA256(onDisk)
+	if err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("verify %s: %w", path, err)
+	}
 
-	if !strings.EqualFold(onDisk, streamed) {
+	// Both comparisons are constant time. Nothing here is secret, so this is
+	// discipline rather than a fix for a known oracle: digest comparisons
+	// get copied, and the copy is eventually made against something that is
+	// secret.
+	if streamedRaw, derr := decodeSHA256(streamed); derr != nil ||
+		subtle.ConstantTimeCompare(streamedRaw, onDiskRaw) != 1 {
 		_ = os.Remove(path)
 		return fmt.Errorf("the download at %s changed between being written and being verified (%s while downloading, %s on disk); refusing to use it",
 			path, streamed, onDisk)
 	}
-	if strings.EqualFold(expected, onDisk) {
+	if subtle.ConstantTimeCompare(expected, onDiskRaw) == 1 {
 		return nil
 	}
 
 	_ = os.Remove(path)
 	return &ChecksumMismatchError{
 		URL:      m.TarballURL,
-		Expected: expected,
+		Expected: hex.EncodeToString(expected),
 		Actual:   onDisk,
 	}
 }

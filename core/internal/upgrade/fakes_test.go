@@ -149,6 +149,9 @@ type fakeSystemd struct {
 	// dumpWritesNothing makes the dump command succeed without producing a
 	// file, which the upgrader must catch.
 	dumpWritesNothing bool
+	// verifyFails makes the dump read-back fail while the dump itself
+	// succeeds: a truncated or corrupt dump that still looks like a file.
+	verifyFails bool
 
 	calls []string
 }
@@ -177,6 +180,7 @@ func (r *fakeSystemd) Run(_ context.Context, name string, args ...string) ([]byt
 	restartFails := r.restartFailsFor
 	dumpFails := r.dumpFails
 	dumpWritesNothing := r.dumpWritesNothing
+	verifyFails := r.verifyFails
 	r.mu.Unlock()
 
 	if name == "systemctl" {
@@ -198,6 +202,14 @@ func (r *fakeSystemd) Run(_ context.Context, name string, args ...string) ([]byt
 		default:
 			return nil, nil
 		}
+	}
+
+	if name == "pg_restore" {
+		if verifyFails {
+			return []byte("pg_restore: error: did not find magic string in file header"),
+				fmt.Errorf("pg_restore failed")
+		}
+		return []byte("; Archive created at 2026-03-01\n"), nil
 	}
 
 	// Anything else is treated as the database dump command.
@@ -407,6 +419,7 @@ func (e *testEnv) publish(version, minUpgradeFrom string) Manifest {
 		MinUpgradeFrom: minUpgradeFrom,
 		TarballURL:     url,
 		SHA256:         sha256Hex(tarball),
+		SizeBytes:      int64(len(tarball)),
 		ChangelogURL:   "https://docs.example.test/changelog/" + version,
 	}
 	e.publishManifests(m)

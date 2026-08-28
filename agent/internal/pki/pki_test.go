@@ -1,6 +1,7 @@
 package pki
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -455,5 +456,227 @@ func TestSignedHeadersAreVerifiableWithTheIssuedPublicKey(t *testing.T) {
 		headers[HeaderTimestamp], headers[HeaderNonce], []byte(`{"cpu":0}`)))
 	if ecdsa.VerifyASN1(pub, other[:], sig) {
 		t.Fatal("the signature verifies over a body it did not cover")
+	}
+}
+
+// ============================================================
+// THE TRUST ANCHOR
+//
+// The anchor is what every other guarantee rests on: if something else can
+// become this agent's certificate authority, then "issued by the panel CA"
+// means nothing. These tests are the reason renewal cannot write ca.crt.
+// ============================================================
+
+func TestRenewalCannotChangeTheTrustAnchor(t *testing.T) {
+	realCA := newTestCA(t)
+	attackerCA := newTestCA(t)
+	panel := &fakePanel{ca: realCA}
+	srv := panel.start(t)
+	m := newManager(t, srv.URL)
+
+	if err := m.Enrol(mintToken(realCA), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment failed: %v", err)
+	}
+	enrolledSerial := m.Serial()
+	anchorBefore, err := os.ReadFile(filepath.Join(m.dir, caFile))
+	if err != nil {
+		t.Fatalf("cannot read the stored CA: %v", err)
+	}
+
+	// From here the renewal is answered by something holding a different CA:
+	// an interceptor, or a panel whose CA was silently rebuilt.
+	panel.ca = attackerCA
+	panel.answerWith = attackerCA.certPEM
+
+	err = m.Renew("node-1")
+	if !errors.Is(err, ErrTrustAnchorChanged) {
+		t.Fatalf("Renew returned %v, want ErrTrustAnchorChanged", err)
+	}
+	anchorAfter, err := os.ReadFile(filepath.Join(m.dir, caFile))
+	if err != nil {
+		t.Fatalf("cannot read the stored CA: %v", err)
+	}
+	if !bytes.Equal(anchorBefore, anchorAfter) {
+		t.Fatal("a refused renewal replaced the trust anchor on disk")
+	}
+	if m.Serial() != enrolledSerial {
+		t.Fatal("a refused renewal replaced the certificate in use")
+	}
+	if m.TrustAnchorFingerprint() != realCA.fingerprint() {
+		t.Fatal("the agent is trusting a CA it was not enrolled against")
+	}
+
+	// And the agent is not broken by having refused: it still serves its panel.
+	restarted := New(Options{Dir: m.dir, PanelURL: srv.URL, Logger: log.New(io.Discard, "", 0)})
+	if err := restarted.Load(); err != nil {
+		t.Fatalf("the agent that refused a renewal cannot load its identity: %v", err)
+	}
+	if restarted.Serial() != enrolledSerial {
+		t.Fatal("the identity changed across a restart after a refused renewal")
+	}
+}
+
+func TestRenewalSignedByAnotherCAIsRefusedEvenWhenTheAnchorLooksRight(t *testing.T) {
+	realCA := newTestCA(t)
+	attackerCA := newTestCA(t)
+	panel := &fakePanel{ca: realCA}
+	srv := panel.start(t)
+	m := newManager(t, srv.URL)
+
+	if err := m.Enrol(mintToken(realCA), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment failed: %v", err)
+	}
+	before := m.Serial()
+
+	// The reply carries the right CA certificate but a leaf signed by another
+	// one - the fingerprint check passes and the chain check has to catch it.
+	panel.ca = attackerCA
+	panel.answerWith = realCA.certPEM
+
+	if err := m.Renew("node-1"); err == nil {
+		t.Fatal("the agent installed a certificate that does not chain to its CA")
+	}
+	if m.Serial() != before {
+		t.Fatal("a refused renewal replaced the certificate in use")
+	}
+}
+
+func TestEnrolRefusesToChangeTheAnchorAndReEnrolIsTheWayThrough(t *testing.T) {
+	firstCA := newTestCA(t)
+	secondCA := newTestCA(t)
+	panel := &fakePanel{ca: firstCA}
+	srv := panel.start(t)
+	m := newManager(t, srv.URL)
+
+	if err := m.Enrol(mintToken(firstCA), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment failed: %v", err)
+	}
+	if got := m.TrustAnchorFingerprint(); got != firstCA.fingerprint() {
+		t.Fatalf("trust anchor is %s, want %s", got, firstCA.fingerprint())
+	}
+
+	panel.ca = secondCA
+	panel.answerWith = secondCA.certPEM
+
+	// An ordinary enrolment against a different CA is refused: an unattended
+	// path may not move the anchor.
+	err := m.Enrol(mintToken(secondCA), "node-1", "test")
+	if !errors.Is(err, ErrTrustAnchorChanged) {
+		t.Fatalf("Enrol returned %v, want ErrTrustAnchorChanged", err)
+	}
+	if m.TrustAnchorFingerprint() != firstCA.fingerprint() {
+		t.Fatal("a refused enrolment moved the trust anchor")
+	}
+
+	// The operator, having compared the fingerprints, says so explicitly.
+	if err := m.ReEnrol(mintToken(secondCA), "node-1", "test"); err != nil {
+		t.Fatalf("re-enrolment failed: %v", err)
+	}
+	if got := m.TrustAnchorFingerprint(); got != secondCA.fingerprint() {
+		t.Fatalf("after re-enrolment the trust anchor is %s, want %s", got, secondCA.fingerprint())
+	}
+
+	// Re-enrolling against the CA already trusted is not a change and stays
+	// allowed through the ordinary path.
+	if err := m.Enrol(mintToken(secondCA), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment against the CA already trusted was refused: %v", err)
+	}
+}
+
+// ============================================================
+// ROTATION MUST NOT LOCK THE AGENT OUT
+// ============================================================
+
+func TestARotationInterruptedHalfwayFallsBackToTheWorkingIdentity(t *testing.T) {
+	ca := newTestCA(t)
+	srv := (&fakePanel{ca: ca}).start(t)
+	m := newManager(t, srv.URL)
+
+	if err := m.Enrol(mintToken(ca), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment failed: %v", err)
+	}
+	enrolled := m.Serial()
+	if err := m.Renew("node-1"); err != nil {
+		t.Fatalf("renewal failed: %v", err)
+	}
+	rotated := m.Serial()
+	if rotated == enrolled {
+		t.Fatal("renewal did not change the certificate in use")
+	}
+
+	// The machine loses power between the two writes of the next rotation, or a
+	// snapshot is restored: what is left is a certificate the key no longer
+	// matches.
+	other := newTestCA(t)
+	strayPair := other.clientPair(t, "agent-test", RoleAgent)
+	strayPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: strayPair.Certificate[0]})
+	if err := os.WriteFile(filepath.Join(m.dir, certFile), strayPEM, 0o600); err != nil {
+		t.Fatalf("cannot corrupt the certificate: %v", err)
+	}
+
+	restarted := New(Options{Dir: m.dir, PanelURL: srv.URL, Logger: log.New(io.Discard, "", 0)})
+	if err := restarted.Load(); err != nil {
+		t.Fatalf("the agent locked itself out of its panel with a half-written rotation: %v", err)
+	}
+	if restarted.Serial() != enrolled {
+		t.Fatalf("fell back to serial %s, want the one held before the rotation, %s",
+			restarted.Serial(), enrolled)
+	}
+	if !restarted.NeedsRenewal() {
+		t.Fatal("an agent running on its previous certificate must renew at once, not at half life")
+	}
+	if _, err := restarted.ServerTLSConfig(); err != nil {
+		t.Fatalf("the fallback identity cannot serve the panel: %v", err)
+	}
+}
+
+func TestAFirstEnrolmentLeavesNoPreviousIdentityBehind(t *testing.T) {
+	ca := newTestCA(t)
+	srv := (&fakePanel{ca: ca}).start(t)
+	m := newManager(t, srv.URL)
+
+	if err := m.Enrol(mintToken(ca), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment failed: %v", err)
+	}
+	for _, name := range []string{prevKeyFile, prevCertFile} {
+		if _, err := os.Stat(filepath.Join(m.dir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s exists after a first enrolment, which had nothing to keep", name)
+		}
+	}
+	if err := m.Renew("node-1"); err != nil {
+		t.Fatalf("renewal failed: %v", err)
+	}
+	for _, name := range []string{prevKeyFile, prevCertFile} {
+		info, err := os.Stat(filepath.Join(m.dir, name))
+		if err != nil {
+			t.Fatalf("%s was not kept by the rotation: %v", name, err)
+		}
+		if mode := info.Mode().Perm(); mode != 0o600 {
+			t.Fatalf("%s has mode %#o, want 0600", name, mode)
+		}
+	}
+}
+
+func TestAnAgentThatHasNotLoadedStillSeesItsAnchorOnDisk(t *testing.T) {
+	firstCA := newTestCA(t)
+	secondCA := newTestCA(t)
+	panel := &fakePanel{ca: firstCA}
+	srv := panel.start(t)
+	m := newManager(t, srv.URL)
+
+	if err := m.Enrol(mintToken(firstCA), "node-1", "test"); err != nil {
+		t.Fatalf("enrolment failed: %v", err)
+	}
+
+	// A fresh process that has not called Load yet - the installer being run a
+	// second time, say - must not be a way around the pin.
+	panel.ca = secondCA
+	panel.answerWith = secondCA.certPEM
+	fresh := New(Options{Dir: m.dir, PanelURL: srv.URL, Logger: log.New(io.Discard, "", 0)})
+	if got := fresh.TrustAnchorFingerprint(); got != firstCA.fingerprint() {
+		t.Fatalf("an unloaded manager reports the anchor %q, want the one on disk %q", got, firstCA.fingerprint())
+	}
+	if err := fresh.Enrol(mintToken(secondCA), "node-1", "test"); !errors.Is(err, ErrTrustAnchorChanged) {
+		t.Fatalf("Enrol returned %v, want ErrTrustAnchorChanged", err)
 	}
 }

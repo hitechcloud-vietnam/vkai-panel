@@ -26,13 +26,29 @@ type Version struct {
 	text string // as written, minus any leading "v"
 }
 
+// maxVersionLength bounds a version string. A version becomes a directory name
+// under /vkai-panel/releases, appears in a filename and is printed in every
+// error message, and nothing legitimate is anywhere near this long.
+const maxVersionLength = 100
+
 // ParseVersion parses "1.2.3", "v1.2.3", "1.2.3-rc.1" or "1.2.3-rc.1+build.5".
 // A leading "v" is accepted because that is how the tags are written, and
 // dropped so that "v1.2.3" and "1.2.3" are the same version.
+//
+// Every character of every section is validated, including the build metadata,
+// which the specification says takes no part in ordering. That used to make it
+// look unimportant, and it was where a hostile feed got in: build metadata was
+// copied into the version string unchecked, the version string became a path
+// element, and "1.0.0+/../../../../root/.ssh" turned filepath.Join into a write
+// outside the installation root. Ordering is not the only thing a version is
+// used for.
 func ParseVersion(s string) (Version, error) {
 	raw := strings.TrimSpace(s)
 	if raw == "" {
 		return Version{}, fmt.Errorf("empty version string")
+	}
+	if len(raw) > maxVersionLength {
+		return Version{}, fmt.Errorf("version string is %d characters, longer than the %d allowed", len(raw), maxVersionLength)
 	}
 	raw = strings.TrimPrefix(raw, "v")
 
@@ -45,6 +61,14 @@ func ParseVersion(s string) (Version, error) {
 		raw = raw[:i]
 		if v.Build == "" {
 			return Version{}, fmt.Errorf("version %q has an empty build metadata section", s)
+		}
+		for _, id := range strings.Split(v.Build, ".") {
+			if id == "" {
+				return Version{}, fmt.Errorf("version %q has an empty build metadata identifier", s)
+			}
+			if !isValidIdentifier(id) {
+				return Version{}, fmt.Errorf("version %q has an invalid build metadata identifier %q", s, id)
+			}
 		}
 	}
 
@@ -60,7 +84,7 @@ func ParseVersion(s string) (Version, error) {
 			if id == "" {
 				return Version{}, fmt.Errorf("version %q has an empty pre-release identifier", s)
 			}
-			if !isValidPreReleaseIdentifier(id) {
+			if !isValidIdentifier(id) {
 				return Version{}, fmt.Errorf("version %q has an invalid pre-release identifier %q", s, id)
 			}
 		}
@@ -102,6 +126,12 @@ func parseNumericComponent(p string) (int, error) {
 			return 0, fmt.Errorf("non-numeric component %q", p)
 		}
 	}
+	// The specification forbids leading zeros, and so does this: "01.0.0"
+	// and "1.0.0" would otherwise be two spellings of one version that
+	// compare equal but produce two different release directories.
+	if len(p) > 1 && p[0] == '0' {
+		return 0, fmt.Errorf("numeric component %q has a leading zero", p)
+	}
 	n, err := strconv.Atoi(p)
 	if err != nil {
 		return 0, fmt.Errorf("numeric component %q out of range", p)
@@ -109,7 +139,11 @@ func parseNumericComponent(p string) (int, error) {
 	return n, nil
 }
 
-func isValidPreReleaseIdentifier(id string) bool {
+// isValidIdentifier reports whether id is a legal pre-release or build
+// metadata identifier: ASCII alphanumerics and hyphens, nothing else. Slashes,
+// dots and NULs are what a traversal is made of, so they are not "unusual", they
+// are the reason this function exists.
+func isValidIdentifier(id string) bool {
 	for _, r := range id {
 		switch {
 		case r >= '0' && r <= '9':
@@ -135,6 +169,18 @@ func (v Version) String() string {
 	}
 	if v.Build != "" {
 		s += "+" + v.Build
+	}
+	return s
+}
+
+// Canonical renders the version in the one spelling that orders identically:
+// no leading "v", no build metadata. Two versions are the same release exactly
+// when their canonical forms are equal, which is what makes it usable as a map
+// key when deduplicating a feed.
+func (v Version) Canonical() string {
+	s := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+	if len(v.PreRelease) > 0 {
+		s += "-" + strings.Join(v.PreRelease, ".")
 	}
 	return s
 }
