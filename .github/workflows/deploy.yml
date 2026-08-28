@@ -86,6 +86,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # This job compiles the source, so it has to decrypt first. Without it the
+      # Go compiler reads ciphertext and stops with
+      # "unexpected NUL in input", which points at the file rather than at the
+      # missing step and reads like a corrupt checkout. The action is a no-op on
+      # a repository that has not enabled encryption, so it is safe in both
+      # states. The deploy jobs below need nothing: they download the built
+      # artifact and never see the source.
+      - name: Decrypt source
+        uses: ./.github/actions/decrypt-source
+        env:
+          VKAI_CRYPT_KEY: ${{ secrets.VKAI_CRYPT_KEY }}
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
